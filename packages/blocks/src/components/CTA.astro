@@ -1,0 +1,79 @@
+---
+/**
+ * CTA — a focused call-to-action banner, typically used to close a page.
+ * Deliberately minimal: a heading, optional supporting copy, and up to
+ * two actions.
+ */
+import { Button, Container, Heading, Text } from "@generate-web-ai/ui";
+import type { BlockAction } from "../types";
+
+export interface CTAContent {
+  heading: string;
+  subheading?: string;
+  primaryAction: BlockAction;
+  secondaryAction?: BlockAction;
+}
+
+export interface Props {
+  content: CTAContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, primaryAction, secondaryAction } = content;
+---
+
+<section id={id} class:list={["block-cta", className]}>
+  <Container size="md">
+  <div class="block-cta__panel">
+    <Heading level={2}>{heading}</Heading>
+    {subheading && (
+      <Text size="lg" variant="muted">
+        {subheading}
+      </Text>
+    )}
+    <div class="block-cta__actions">
+      <Button href={primaryAction.href} variant={primaryAction.variant ?? "solid"} size="lg">
+        {primaryAction.label}
+      </Button>
+      {secondaryAction && (
+        <Button href={secondaryAction.href} variant={secondaryAction.variant ?? "outline"} size="lg">
+          {secondaryAction.label}
+        </Button>
+      )}
+    </div>
+  </div>
+  </Container>
+</section>
+
+<style>
+  .block-cta {
+    padding-block: 3rem;
+  }
+
+  .block-cta__panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+    padding: 2.5rem 1.5rem;
+    border-radius: var(--ui-radius-lg, 0.75rem);
+    background-color: var(--ui-color-border, #e5e7eb);
+  }
+
+  .block-cta__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+
+  @media (min-width: 768px) {
+    .block-cta__panel {
+      padding: 3.5rem 3rem;
+    }
+  }
+</style>

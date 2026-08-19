@@ -37,6 +37,9 @@ importers:
         specifier: workspace:*
         version: link:../ui
     devDependencies:
+      astro:
+        specifier: 7.2.3
+        version: 7.2.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(jiti@2.7.0)(yaml@2.9.0)
       typescript:
         specifier: 6.0.3
         version: 6.0.3

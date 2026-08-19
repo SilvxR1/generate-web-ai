@@ -1,0 +1,130 @@
+---
+/**
+ * Hero — the top-of-page banner: a headline, optional supporting copy,
+ * up to two calls to action, and an optional image. Business-agnostic:
+ * every word and image comes in through `content`.
+ */
+import { Badge, Button, Container, Heading, Text } from "@generate-web-ai/ui";
+import type { BlockAction, BlockImage } from "../types";
+
+export interface HeroContent {
+  /** Small label above the heading (e.g. a category or tagline). */
+  eyebrow?: string;
+  /** Main headline. Rendered as the page's `<h1>`. */
+  heading: string;
+  /** Supporting copy under the heading. */
+  subheading?: string;
+  primaryAction?: BlockAction;
+  secondaryAction?: BlockAction;
+  image?: BlockImage;
+}
+
+export interface Props {
+  content: HeroContent;
+  /** Anchor id for in-page navigation. */
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { eyebrow, heading, subheading, primaryAction, secondaryAction, image } = content;
+---
+
+<section id={id} class:list={["block-hero", className]}>
+  <Container size="lg">
+  <div class="block-hero__layout" data-has-image={image ? "true" : "false"}>
+    <div class="block-hero__copy">
+      {eyebrow && <Badge variant="primary">{eyebrow}</Badge>}
+      <Heading level={1}>{heading}</Heading>
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+      {(primaryAction || secondaryAction) && (
+        <div class="block-hero__actions">
+          {primaryAction && (
+            <Button href={primaryAction.href} variant={primaryAction.variant ?? "solid"} size="lg">
+              {primaryAction.label}
+            </Button>
+          )}
+          {secondaryAction && (
+            <Button href={secondaryAction.href} variant={secondaryAction.variant ?? "outline"} size="lg">
+              {secondaryAction.label}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
+    {image && (
+      <div class="block-hero__media">
+        <img src={image.src} alt={image.alt} width={image.width} height={image.height} loading="eager" />
+      </div>
+    )}
+  </div>
+  </Container>
+</section>
+
+<style>
+  .block-hero {
+    padding-block: 3rem;
+  }
+
+  .block-hero__layout {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    align-items: center;
+    text-align: center;
+  }
+
+  .block-hero__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    align-items: center;
+    max-width: 48rem;
+  }
+
+  .block-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+
+  .block-hero__media img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: var(--ui-radius-lg, 0.75rem);
+  }
+
+  @media (min-width: 768px) {
+    .block-hero {
+      padding-block: 5rem;
+    }
+
+    .block-hero__layout[data-has-image="true"] {
+      flex-direction: row;
+      text-align: left;
+      align-items: center;
+      gap: 3rem;
+    }
+
+    .block-hero__layout[data-has-image="true"] .block-hero__copy {
+      align-items: flex-start;
+      max-width: none;
+      flex: 1;
+    }
+
+    .block-hero__layout[data-has-image="true"] .block-hero__actions {
+      justify-content: flex-start;
+    }
+
+    .block-hero__layout[data-has-image="true"] .block-hero__media {
+      flex: 1;
+    }
+  }
+</style>

@@ -1,0 +1,117 @@
+---
+/**
+ * Features — a list of value propositions/benefits. Purely informational
+ * (no per-item actions), distinct from Services which are actionable
+ * offerings.
+ */
+import { Container, Heading, Text } from "@generate-web-ai/ui";
+
+export interface FeatureItem {
+  title: string;
+  description: string;
+  /** A short decorative glyph or emoji, rendered non-semantically. */
+  icon?: string;
+}
+
+export interface FeaturesContent {
+  heading?: string;
+  subheading?: string;
+  items: FeatureItem[];
+}
+
+export interface Props {
+  content: FeaturesContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, items } = content;
+---
+
+<section id={id} class:list={["block-features", className]}>
+  <Container size="lg">
+  {(heading || subheading) && (
+    <div class="block-features__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <ul class="block-features__grid">
+    {items.map((item) => (
+      <li class="block-features__item">
+        {item.icon && (
+          <span class="block-features__icon" aria-hidden="true">
+            {item.icon}
+          </span>
+        )}
+        <div class="block-features__body">
+          <Heading level={3} size="md">
+            {item.title}
+          </Heading>
+          <Text variant="muted" size="sm">
+            {item.description}
+          </Text>
+        </div>
+      </li>
+    ))}
+  </ul>
+  </Container>
+</section>
+
+<style>
+  .block-features {
+    padding-block: 3rem;
+  }
+
+  .block-features__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 42rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .block-features__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.75rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .block-features__item {
+    display: flex;
+    gap: 0.875rem;
+    align-items: flex-start;
+  }
+
+  .block-features__icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .block-features__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  @media (min-width: 640px) {
+    .block-features__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .block-features__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

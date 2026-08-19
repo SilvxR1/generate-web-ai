@@ -1,0 +1,112 @@
+---
+/**
+ * FAQ — a list of question/answer pairs rendered as native disclosure
+ * widgets (`<details>`/`<summary>`), which are keyboard- and
+ * screen-reader-accessible without any client-side JavaScript.
+ */
+import { Container, Heading, Text } from "@generate-web-ai/ui";
+
+export interface FAQItem {
+  question: string;
+  answer: string;
+}
+
+export interface FAQContent {
+  heading?: string;
+  subheading?: string;
+  items: FAQItem[];
+}
+
+export interface Props {
+  content: FAQContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, items } = content;
+---
+
+<section id={id} class:list={["block-faq", className]}>
+  <Container size="md">
+  {(heading || subheading) && (
+    <div class="block-faq__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <div class="block-faq__list">
+    {items.map((item) => (
+      <details class="block-faq__item">
+        <summary class="block-faq__question">{item.question}</summary>
+        <Text as="div" variant="muted" class="block-faq__answer">
+          {item.answer}
+        </Text>
+      </details>
+    ))}
+  </div>
+  </Container>
+</section>
+
+<style>
+  .block-faq {
+    padding-block: 3rem;
+  }
+
+  .block-faq__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
+
+  .block-faq__list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .block-faq__item {
+    padding-block: 1.25rem;
+    border-bottom: 1px solid var(--ui-color-border, #e5e7eb);
+  }
+
+  .block-faq__item:first-child {
+    border-top: 1px solid var(--ui-color-border, #e5e7eb);
+  }
+
+  .block-faq__question {
+    cursor: pointer;
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-weight: 600;
+    color: var(--ui-color-fg, #111827);
+    list-style: none;
+  }
+
+  .block-faq__question::-webkit-details-marker {
+    display: none;
+  }
+
+  .block-faq__question::before {
+    content: "+";
+    display: inline-block;
+    width: 1em;
+    margin-right: 0.5rem;
+  }
+
+  details[open] > .block-faq__question::before {
+    content: "\2212";
+  }
+
+  .block-faq__question:focus-visible {
+    outline: 2px solid var(--ui-color-primary, #2563eb);
+    outline-offset: 2px;
+  }
+
+  .block-faq__answer {
+    margin-top: 0.75rem;
+  }
+</style>

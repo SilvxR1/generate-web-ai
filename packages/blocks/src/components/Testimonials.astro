@@ -1,0 +1,178 @@
+---
+/**
+ * Testimonials — a set of customer quotes. Uses `blockquote`/`cite` so the
+ * relationship between quote and attribution is conveyed to assistive tech
+ * without relying on visual layout alone.
+ */
+import { Card, Container, Heading, Text } from "@generate-web-ai/ui";
+import type { BlockImage } from "../types";
+
+export interface TestimonialItem {
+  quote: string;
+  author: string;
+  /** Job title or relationship to the business (e.g. "Homeowner"). */
+  role?: string;
+  company?: string;
+  avatar?: BlockImage;
+  /** Optional 1-5 star rating. */
+  rating?: number;
+}
+
+export interface TestimonialsContent {
+  heading?: string;
+  subheading?: string;
+  items: TestimonialItem[];
+}
+
+export interface Props {
+  content: TestimonialsContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, items } = content;
+const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)));
+---
+
+<section id={id} class:list={["block-testimonials", className]}>
+  <Container size="lg">
+  {(heading || subheading) && (
+    <div class="block-testimonials__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <ul class="block-testimonials__grid">
+    {items.map((item) => {
+      const rating = item.rating !== undefined ? clampRating(item.rating) : undefined;
+      return (
+        <Card as="li" variant="elevated" padding="lg" class="block-testimonials__item">
+          {rating !== undefined && (
+            <p class="block-testimonials__rating">
+              <span aria-hidden="true">{"★".repeat(rating)}{"☆".repeat(5 - rating)}</span>
+              <span class="block-testimonials__sr-only">Rated {rating} out of 5</span>
+            </p>
+          )}
+          <blockquote class="block-testimonials__quote">
+            <Text as="p" size="lg">{item.quote}</Text>
+          </blockquote>
+          <div class="block-testimonials__author">
+            {item.avatar && (
+              <img
+                src={item.avatar.src}
+                alt={item.avatar.alt}
+                width={item.avatar.width ?? 48}
+                height={item.avatar.height ?? 48}
+                loading="lazy"
+                class="block-testimonials__avatar"
+              />
+            )}
+            <span>
+              <Text as="span" size="sm" class="block-testimonials__name">
+                <cite>{item.author}</cite>
+              </Text>
+              {(item.role || item.company) && (
+                <Text as="span" size="sm" variant="muted" class="block-testimonials__meta">
+                  {[item.role, item.company].filter(Boolean).join(", ")}
+                </Text>
+              )}
+            </span>
+          </div>
+        </Card>
+      );
+    })}
+  </ul>
+  </Container>
+</section>
+
+<style>
+  .block-testimonials {
+    padding-block: 3rem;
+  }
+
+  .block-testimonials__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 42rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .block-testimonials__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .block-testimonials__item {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .block-testimonials__rating {
+    margin: 0;
+    color: var(--ui-color-warning, #d97706);
+    letter-spacing: 0.05em;
+  }
+
+  .block-testimonials__quote {
+    margin: 0;
+  }
+
+  .block-testimonials__author {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+  }
+
+  .block-testimonials__author > span {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .block-testimonials__avatar {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 9999px;
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .block-testimonials__name {
+    font-weight: 600;
+  }
+
+  .block-testimonials__sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @media (min-width: 640px) {
+    .block-testimonials__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .block-testimonials__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

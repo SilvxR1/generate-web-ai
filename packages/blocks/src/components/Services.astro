@@ -1,0 +1,116 @@
+---
+/**
+ * Services — a grid of business offerings, each optionally linking to more
+ * detail. Distinct from Features: services are things a visitor can act on.
+ */
+import { Card, Container, Heading, Link, Text } from "@generate-web-ai/ui";
+import type { BlockAction } from "../types";
+
+export interface ServiceItem {
+  title: string;
+  description: string;
+  /** A short decorative glyph or emoji, rendered non-semantically. */
+  icon?: string;
+  action?: BlockAction;
+}
+
+export interface ServicesContent {
+  heading?: string;
+  subheading?: string;
+  items: ServiceItem[];
+}
+
+export interface Props {
+  content: ServicesContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, items } = content;
+---
+
+<section id={id} class:list={["block-services", className]}>
+  <Container size="lg">
+  {(heading || subheading) && (
+    <div class="block-services__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <ul class="block-services__grid">
+    {items.map((item) => (
+      <Card as="li" variant="outlined" padding="lg" class="block-services__item">
+        {item.icon && (
+          <span class="block-services__icon" aria-hidden="true">
+            {item.icon}
+          </span>
+        )}
+        <Heading level={3} size="lg">
+          {item.title}
+        </Heading>
+        <Text variant="muted">{item.description}</Text>
+        {item.action && (
+          <Link href={item.action.href} class="block-services__link">
+            {item.action.label}
+          </Link>
+        )}
+      </Card>
+    ))}
+  </ul>
+  </Container>
+</section>
+
+<style>
+  .block-services {
+    padding-block: 3rem;
+  }
+
+  .block-services__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 42rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .block-services__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .block-services__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .block-services__icon {
+    font-size: 1.75rem;
+    line-height: 1;
+  }
+
+  .block-services__link {
+    margin-top: 0.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .block-services__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .block-services__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

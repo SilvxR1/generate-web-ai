@@ -24,7 +24,9 @@ are only worth the added complexity once a client need justifies them.
 
 ## Current state
 
-Workspace scaffold only: `apps/site-template` is a placeholder Astro app
-(no real page content or design), `packages/ui` and `packages/blocks` are
-empty scaffolds establishing the dependency boundary between them. No client
-site has been created yet.
+`apps/site-template` is a placeholder Astro app (no real page content or
+design). `packages/ui` has seven UI primitives. `packages/blocks` has seven
+business-agnostic content blocks (Hero, Services, Features, Testimonials,
+FAQ, CTA, Contact) built from those primitives, each driven by a typed
+`content` prop and no page composition engine yet. No client site has been
+created yet.

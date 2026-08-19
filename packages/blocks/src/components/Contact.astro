@@ -1,0 +1,232 @@
+---
+/**
+ * Contact — business contact details plus an optional native contact form.
+ * The form is presentational only: it renders accessible fields and submits
+ * via standard HTML `action`/`method`, with no client-side submission logic
+ * (wiring an endpoint is a site/app concern, not this block's).
+ */
+import { Container, Heading, Link, Text } from "@generate-web-ai/ui";
+
+export interface ContactDetail {
+  /** e.g. "Phone", "Email", "Address". */
+  label: string;
+  value: string;
+  /** e.g. "tel:+1..." or "mailto:...". Renders the value as a link when set. */
+  href?: string;
+}
+
+export interface ContactFormField {
+  name: string;
+  label: string;
+  type?: "text" | "email" | "tel" | "textarea";
+  required?: boolean;
+  placeholder?: string;
+}
+
+export interface ContactForm {
+  action?: string;
+  method?: "get" | "post";
+  fields: ContactFormField[];
+  submitLabel?: string;
+}
+
+export interface ContactContent {
+  heading?: string;
+  subheading?: string;
+  details?: ContactDetail[];
+  form?: ContactForm;
+}
+
+export interface Props {
+  content: ContactContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, details, form } = content;
+const formIdPrefix = id ?? "contact";
+---
+
+<section id={id} class:list={["block-contact", className]}>
+  <Container size="md">
+  {(heading || subheading) && (
+    <div class="block-contact__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <div class="block-contact__layout">
+    {details && details.length > 0 && (
+      <dl class="block-contact__details">
+        {details.map((detail) => (
+          <div class="block-contact__detail">
+            <dt>
+              <Text as="span" size="sm" variant="muted">
+                {detail.label}
+              </Text>
+            </dt>
+            <dd>
+              {detail.href ? (
+                <Link href={detail.href}>{detail.value}</Link>
+              ) : (
+                <Text as="span">{detail.value}</Text>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    )}
+    {form && (
+      <form class="block-contact__form" action={form.action} method={form.method ?? "post"}>
+        {form.fields.map((field) => {
+          const fieldId = `${formIdPrefix}-${field.name}`;
+          return (
+            <div class="block-contact__field">
+              <label for={fieldId}>{field.label}</label>
+              {field.type === "textarea" ? (
+                <textarea
+                  id={fieldId}
+                  name={field.name}
+                  required={field.required}
+                  placeholder={field.placeholder}
+                  rows={5}
+                />
+              ) : (
+                <input
+                  id={fieldId}
+                  name={field.name}
+                  type={field.type ?? "text"}
+                  required={field.required}
+                  placeholder={field.placeholder}
+                />
+              )}
+            </div>
+          );
+        })}
+        <button type="submit" class="block-contact__submit">
+          {form.submitLabel ?? "Send message"}
+        </button>
+      </form>
+    )}
+  </div>
+  </Container>
+</section>
+
+<style>
+  .block-contact {
+    padding-block: 3rem;
+  }
+
+  .block-contact__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+  }
+
+  .block-contact__layout {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+  }
+
+  .block-contact__details {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin: 0;
+  }
+
+  .block-contact__detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .block-contact__detail dt,
+  .block-contact__detail dd {
+    margin: 0;
+  }
+
+  .block-contact__form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .block-contact__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .block-contact__field label {
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ui-color-fg, #111827);
+  }
+
+  .block-contact__field input,
+  .block-contact__field textarea {
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 1rem;
+    color: var(--ui-color-fg, #111827);
+    background-color: var(--ui-color-bg, #ffffff);
+    border: 1px solid var(--ui-color-border, #e5e7eb);
+    border-radius: var(--ui-radius, 0.5rem);
+    padding: 0.625rem 0.875rem;
+  }
+
+  .block-contact__field input:focus-visible,
+  .block-contact__field textarea:focus-visible {
+    outline: 2px solid var(--ui-color-primary, #2563eb);
+    outline-offset: 2px;
+  }
+
+  .block-contact__field textarea {
+    resize: vertical;
+  }
+
+  .block-contact__submit {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-weight: 600;
+    font-size: 1rem;
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--ui-radius, 0.5rem);
+    border: 1px solid transparent;
+    cursor: pointer;
+    background-color: var(--ui-color-primary, #2563eb);
+    color: var(--ui-color-primary-fg, #ffffff);
+    transition: filter 0.15s ease;
+  }
+
+  .block-contact__submit:hover {
+    filter: brightness(0.92);
+  }
+
+  .block-contact__submit:focus-visible {
+    outline: 2px solid var(--ui-color-primary, #2563eb);
+    outline-offset: 2px;
+  }
+
+  @media (min-width: 768px) {
+    .block-contact__layout {
+      flex-direction: row;
+    }
+
+    .block-contact__details,
+    .block-contact__form {
+      flex: 1;
+    }
+  }
+</style>
