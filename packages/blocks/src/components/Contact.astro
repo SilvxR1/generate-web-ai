@@ -15,13 +15,51 @@ export interface ContactDetail {
   href?: string;
 }
 
-export interface ContactFormField {
+export interface ContactFormFieldOption {
+  label: string;
+  value: string;
+}
+
+interface ContactFormFieldBase {
   name: string;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea";
   required?: boolean;
   placeholder?: string;
 }
+
+export interface TextContactFormField extends ContactFormFieldBase {
+  type?: "text" | "email" | "tel" | "textarea";
+}
+
+export interface SelectContactFormField extends ContactFormFieldBase {
+  type: "select";
+  options: ContactFormFieldOption[];
+}
+
+export interface RadioContactFormField extends ContactFormFieldBase {
+  type: "radio";
+  options: ContactFormFieldOption[];
+}
+
+/** No `options` renders a single toggle; `options` renders a checkbox group. */
+export interface CheckboxContactFormField extends ContactFormFieldBase {
+  type: "checkbox";
+  options?: ContactFormFieldOption[];
+}
+
+/** Presentational only — no upload wiring. Submission handling is a site/app concern. */
+export interface FileContactFormField extends ContactFormFieldBase {
+  type: "file";
+  accept?: string;
+  multiple?: boolean;
+}
+
+export type ContactFormField =
+  | TextContactFormField
+  | SelectContactFormField
+  | RadioContactFormField
+  | CheckboxContactFormField
+  | FileContactFormField;
 
 export interface ContactForm {
   action?: string;
@@ -85,6 +123,33 @@ const formIdPrefix = id ?? "contact";
       <form class="block-contact__form" action={form.action} method={form.method ?? "post"}>
         {form.fields.map((field) => {
           const fieldId = `${formIdPrefix}-${field.name}`;
+
+          const groupOptions: ContactFormFieldOption[] | undefined =
+            field.type === "radio" ? field.options : field.type === "checkbox" ? field.options : undefined;
+
+          if (groupOptions) {
+            const inputType = field.type === "radio" ? "radio" : "checkbox";
+            const isRequired = field.required;
+            return (
+              <fieldset class="block-contact__field block-contact__fieldset">
+                <legend>{field.label}</legend>
+                <div class="block-contact__option-group">
+                  {groupOptions.map((option) => (
+                    <label class="block-contact__option">
+                      <input
+                        type={inputType}
+                        name={field.name}
+                        value={option.value}
+                        required={inputType === "radio" ? isRequired : undefined}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            );
+          }
+
           return (
             <div class="block-contact__field">
               <label for={fieldId}>{field.label}</label>
@@ -95,6 +160,26 @@ const formIdPrefix = id ?? "contact";
                   required={field.required}
                   placeholder={field.placeholder}
                   rows={5}
+                />
+              ) : field.type === "select" ? (
+                <select id={fieldId} name={field.name} required={field.required}>
+                  {field.options.map((option) => (
+                    <option value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              ) : field.type === "checkbox" ? (
+                <label class="block-contact__option">
+                  <input id={fieldId} type="checkbox" name={field.name} required={field.required} />
+                  <span>{field.placeholder ?? field.label}</span>
+                </label>
+              ) : field.type === "file" ? (
+                <input
+                  id={fieldId}
+                  type="file"
+                  name={field.name}
+                  accept={field.accept}
+                  multiple={field.multiple}
+                  required={field.required}
                 />
               ) : (
                 <input
@@ -191,6 +276,39 @@ const formIdPrefix = id ?? "contact";
 
   .block-contact__field textarea {
     resize: vertical;
+  }
+
+  .block-contact__fieldset {
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .block-contact__fieldset legend {
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ui-color-fg, #111827);
+    padding: 0;
+  }
+
+  .block-contact__option-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .block-contact__option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 1rem;
+    color: var(--ui-color-fg, #111827);
+    cursor: pointer;
   }
 
   .block-contact__submit {

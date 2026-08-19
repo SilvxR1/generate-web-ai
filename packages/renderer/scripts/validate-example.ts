@@ -1,9 +1,9 @@
 // Standalone, framework-free validation: proves (1) every block in the
-// example SiteConfig — which covers all seven current block types — passes
+// example SiteConfig — which covers all current block types — passes
 // the renderer's type check, and (2) an unrecognized block type fails
 // clearly instead of being silently ignored. Run with:
 //   node scripts/validate-example.ts
-import { assertKnownBlockType, exampleSiteConfig, type BlockConfig } from "@generate-web-ai/site-config";
+import { assertKnownBlockType, BLOCK_TYPES, exampleSiteConfig, type BlockConfig } from "@generate-web-ai/site-config";
 
 let failures = 0;
 
@@ -24,7 +24,7 @@ if (!page) {
 }
 
 const blockTypesInExample = new Set(page.blocks.map((block) => block.type));
-const expectedTypes = ["hero", "services", "features", "testimonials", "faq", "cta", "contact"];
+const expectedTypes = BLOCK_TYPES;
 
 check(`example SiteConfig covers all ${expectedTypes.length} known block types`, () => {
   for (const type of expectedTypes) {
@@ -41,14 +41,14 @@ check("every block in the example SiteConfig is a known, renderable type", () =>
 });
 
 check("a block with an unrecognized type fails clearly instead of being ignored", () => {
-  const bogusBlock = { type: "gallery", content: {} } as unknown as BlockConfig;
+  const bogusBlock = { type: "pricing", content: {} } as unknown as BlockConfig;
   let threw = false;
   try {
     assertKnownBlockType(bogusBlock);
   } catch (error) {
     threw = true;
     const message = (error as Error).message;
-    if (!message.includes("gallery")) {
+    if (!message.includes("pricing")) {
       throw new Error(`error message did not name the offending type: ${message}`);
     }
   }

@@ -27,7 +27,10 @@ export interface HeroBlockContent {
 export interface ServiceItemConfig {
   title: string;
   description: string;
+  /** Ignored when `image` is set. */
   icon?: string;
+  /** Takes precedence over `icon` when both are set. */
+  image?: AssetConfig;
   action?: BlockActionConfig;
 }
 
@@ -35,6 +38,42 @@ export interface ServicesBlockContent {
   heading?: string;
   subheading?: string;
   items: ServiceItemConfig[];
+}
+
+export interface ProcessStepConfig {
+  title: string;
+  description: string;
+  icon?: string;
+}
+
+export interface ProcessBlockContent {
+  heading?: string;
+  subheading?: string;
+  steps: ProcessStepConfig[];
+}
+
+export interface GalleryBeforeAfterConfig {
+  before: AssetConfig;
+  after: AssetConfig;
+  /** Defaults to "Before". */
+  beforeLabel?: string;
+  /** Defaults to "After". */
+  afterLabel?: string;
+}
+
+export interface GalleryItemConfig {
+  title: string;
+  category?: string;
+  image: AssetConfig;
+  description?: string;
+  link?: BlockActionConfig;
+  beforeAfter?: GalleryBeforeAfterConfig;
+}
+
+export interface GalleryBlockContent {
+  heading?: string;
+  subheading?: string;
+  items: GalleryItemConfig[];
 }
 
 export interface FeatureItemConfig {
@@ -89,13 +128,51 @@ export interface ContactDetailConfig {
   href?: string;
 }
 
-export interface ContactFormFieldConfig {
+export interface ContactFormFieldOptionConfig {
+  label: string;
+  value: string;
+}
+
+interface ContactFormFieldConfigBase {
   name: string;
   label: string;
-  type?: "text" | "email" | "tel" | "textarea";
   required?: boolean;
   placeholder?: string;
 }
+
+export interface TextContactFormFieldConfig extends ContactFormFieldConfigBase {
+  type?: "text" | "email" | "tel" | "textarea";
+}
+
+export interface SelectContactFormFieldConfig extends ContactFormFieldConfigBase {
+  type: "select";
+  options: ContactFormFieldOptionConfig[];
+}
+
+export interface RadioContactFormFieldConfig extends ContactFormFieldConfigBase {
+  type: "radio";
+  options: ContactFormFieldOptionConfig[];
+}
+
+/** No `options` describes a single toggle; `options` describes a checkbox group. */
+export interface CheckboxContactFormFieldConfig extends ContactFormFieldConfigBase {
+  type: "checkbox";
+  options?: ContactFormFieldOptionConfig[];
+}
+
+/** Configuration layer only — no upload infrastructure implemented yet. */
+export interface FileContactFormFieldConfig extends ContactFormFieldConfigBase {
+  type: "file";
+  accept?: string;
+  multiple?: boolean;
+}
+
+export type ContactFormFieldConfig =
+  | TextContactFormFieldConfig
+  | SelectContactFormFieldConfig
+  | RadioContactFormFieldConfig
+  | CheckboxContactFormFieldConfig
+  | FileContactFormFieldConfig;
 
 export interface ContactFormConfig {
   action?: string;
@@ -131,6 +208,16 @@ export interface FeaturesBlockConfig extends BlockConfigBase {
   content: FeaturesBlockContent;
 }
 
+export interface ProcessBlockConfig extends BlockConfigBase {
+  type: "process";
+  content: ProcessBlockContent;
+}
+
+export interface GalleryBlockConfig extends BlockConfigBase {
+  type: "gallery";
+  content: GalleryBlockContent;
+}
+
 export interface TestimonialsBlockConfig extends BlockConfigBase {
   type: "testimonials";
   content: TestimonialsBlockContent;
@@ -160,6 +247,8 @@ export type BlockConfig =
   | HeroBlockConfig
   | ServicesBlockConfig
   | FeaturesBlockConfig
+  | ProcessBlockConfig
+  | GalleryBlockConfig
   | TestimonialsBlockConfig
   | FAQBlockConfig
   | CTABlockConfig
@@ -176,6 +265,8 @@ export const BLOCK_TYPES = [
   "hero",
   "services",
   "features",
+  "process",
+  "gallery",
   "testimonials",
   "faq",
   "cta",

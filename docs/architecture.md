@@ -25,8 +25,9 @@ are only worth the added complexity once a client need justifies them.
 ## Current state
 
 `apps/site-template` is a placeholder Astro app (no real page content or
-design). `packages/ui` has seven UI primitives. `packages/blocks` has seven
-business-agnostic content blocks (Hero, Services, Features, Testimonials,
-FAQ, CTA, Contact) built from those primitives, each driven by a typed
-`content` prop and no page composition engine yet. No client site has been
-created yet.
+design). `packages/ui` has seven UI primitives. `packages/blocks` has nine
+business-agnostic content blocks (Hero, Services, Features, Process,
+Gallery, Testimonials, FAQ, CTA, Contact) built from those primitives, each
+driven by a typed `content` prop. `packages/site-config` mirrors each
+block's content shape as data plus basic `SEOConfig` (title/description/
+ogImage) at the site and page level. No client site has been created yet.

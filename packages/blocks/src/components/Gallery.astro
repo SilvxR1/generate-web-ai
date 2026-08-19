@@ -1,0 +1,213 @@
+---
+/**
+ * Gallery — a grid of items (projects, work samples, portfolio pieces),
+ * each with a primary image and an optional before/after pair. Generic
+ * across industries: renovation, landscaping, design, photography, etc.
+ * all fit the same shape.
+ */
+import { Card, Container, Heading, Link, Text } from "@generate-web-ai/ui";
+import type { BlockAction, BlockImage } from "../types";
+
+export interface GalleryBeforeAfter {
+  before: BlockImage;
+  after: BlockImage;
+  /** Defaults to "Before". */
+  beforeLabel?: string;
+  /** Defaults to "After". */
+  afterLabel?: string;
+}
+
+export interface GalleryItem {
+  title: string;
+  /** e.g. a service or work type this item belongs to. */
+  category?: string;
+  image: BlockImage;
+  description?: string;
+  link?: BlockAction;
+  beforeAfter?: GalleryBeforeAfter;
+}
+
+export interface GalleryContent {
+  heading?: string;
+  subheading?: string;
+  items: GalleryItem[];
+}
+
+export interface Props {
+  content: GalleryContent;
+  id?: string;
+  class?: string;
+}
+
+const { content, id, class: className } = Astro.props;
+const { heading, subheading, items } = content;
+---
+
+<section id={id} class:list={["block-gallery", className]}>
+  <Container size="lg">
+  {(heading || subheading) && (
+    <div class="block-gallery__intro">
+      {heading && <Heading level={2}>{heading}</Heading>}
+      {subheading && (
+        <Text size="lg" variant="muted">
+          {subheading}
+        </Text>
+      )}
+    </div>
+  )}
+  <ul class="block-gallery__grid">
+    {items.map((item) => (
+      <Card as="li" variant="outlined" padding="md" class="block-gallery__item">
+        {item.beforeAfter ? (
+          <div class="block-gallery__before-after">
+            <figure class="block-gallery__ba-figure">
+              <img
+                src={item.beforeAfter.before.src}
+                alt={item.beforeAfter.before.alt}
+                width={item.beforeAfter.before.width}
+                height={item.beforeAfter.before.height}
+                loading="lazy"
+              />
+              <figcaption>{item.beforeAfter.beforeLabel ?? "Before"}</figcaption>
+            </figure>
+            <figure class="block-gallery__ba-figure">
+              <img
+                src={item.beforeAfter.after.src}
+                alt={item.beforeAfter.after.alt}
+                width={item.beforeAfter.after.width}
+                height={item.beforeAfter.after.height}
+                loading="lazy"
+              />
+              <figcaption>{item.beforeAfter.afterLabel ?? "After"}</figcaption>
+            </figure>
+          </div>
+        ) : (
+          <img
+            src={item.image.src}
+            alt={item.image.alt}
+            width={item.image.width}
+            height={item.image.height}
+            loading="lazy"
+            class="block-gallery__image"
+          />
+        )}
+        <div class="block-gallery__body">
+          {item.category && (
+            <Text as="span" size="sm" variant="muted" class="block-gallery__category">
+              {item.category}
+            </Text>
+          )}
+          <Heading level={3} size="md">
+            {item.title}
+          </Heading>
+          {item.description && (
+            <Text variant="muted" size="sm">
+              {item.description}
+            </Text>
+          )}
+          {item.link && (
+            <Link href={item.link.href} class="block-gallery__link">
+              {item.link.label}
+            </Link>
+          )}
+        </div>
+      </Card>
+    ))}
+  </ul>
+  </Container>
+</section>
+
+<style>
+  .block-gallery {
+    padding-block: 3rem;
+  }
+
+  .block-gallery__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 42rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .block-gallery__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .block-gallery__item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .block-gallery__image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: var(--ui-radius, 0.5rem);
+  }
+
+  .block-gallery__before-after {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+  }
+
+  .block-gallery__ba-figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .block-gallery__ba-figure img {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border-radius: var(--ui-radius, 0.5rem);
+  }
+
+  .block-gallery__ba-figure figcaption {
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ui-color-muted-fg, #6b7280);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .block-gallery__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .block-gallery__category {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+  }
+
+  .block-gallery__link {
+    margin-top: 0.25rem;
+  }
+
+  @media (min-width: 640px) {
+    .block-gallery__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .block-gallery__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

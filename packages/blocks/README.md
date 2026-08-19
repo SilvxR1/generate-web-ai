@@ -17,6 +17,8 @@ properties `packages/ui` exposes, so theming a client site themes blocks too.
 | `Hero`         | Top-of-page banner: headline, subheading, up to two actions, optional image. |
 | `Services`     | Grid of business offerings, each optionally linking to more detail. |
 | `Features`     | Informational list of value propositions/benefits (no actions).  |
+| `Process`      | Ordered sequence of steps ("how it works"), rendered as a native `<ol>`. |
+| `Gallery`      | Grid of items (projects, work samples), each with an image and optional before/after pair. |
 | `Testimonials` | Customer quotes with attribution, optional rating.                |
 | `FAQ`          | Question/answer pairs as native, JS-free `<details>` disclosures. |
 | `CTA`          | Focused call-to-action banner with up to two actions.             |
@@ -55,7 +57,7 @@ const hero: HeroContent = {
 | ----------- | ------------------ | --------------------------------- |
 | `heading`   | `string?`          |                                    |
 | `subheading`| `string?`          |                                    |
-| `items`     | `ServiceItem[]`    | `{ title, description, icon?, action?: BlockAction }` |
+| `items`     | `ServiceItem[]`    | `{ title, description, icon?, image?: BlockImage, action?: BlockAction }` — `image` takes precedence over `icon` when both are set. |
 
 ### Features — `FeaturesContent`
 
@@ -64,6 +66,22 @@ const hero: HeroContent = {
 | `heading`   | `string?`          |                                    |
 | `subheading`| `string?`          |                                    |
 | `items`     | `FeatureItem[]`    | `{ title, description, icon? }` — no per-item action, unlike `Services`. |
+
+### Process — `ProcessContent`
+
+| Field       | Type              | Notes                          |
+| ----------- | ------------------ | --------------------------------- |
+| `heading`   | `string?`          |                                    |
+| `subheading`| `string?`          |                                    |
+| `steps`     | `ProcessStep[]`    | `{ title, description, icon? }`, rendered as a native `<ol>` — step numbers come from list position, not content. |
+
+### Gallery — `GalleryContent`
+
+| Field       | Type              | Notes                          |
+| ----------- | ------------------ | --------------------------------- |
+| `heading`   | `string?`          |                                    |
+| `subheading`| `string?`          |                                    |
+| `items`     | `GalleryItem[]`    | `{ title, category?, image: BlockImage, description?, link?: BlockAction, beforeAfter?: { before: BlockImage, after: BlockImage, beforeLabel?, afterLabel? } }`. When `beforeAfter` is set it's rendered instead of `image`. |
 
 ### Testimonials — `TestimonialsContent`
 
@@ -99,6 +117,8 @@ const hero: HeroContent = {
 | `details`   | `ContactDetail[]?` | `{ label, value, href? }` — phone, email, address, hours, etc. |
 | `form`      | `ContactForm?`     | `{ action?, method?, fields: ContactFormField[], submitLabel? }`. Renders a native `<form>`; submission wiring is a site/app concern, not this block's. |
 
+`ContactFormField` is a discriminated union on `type`: `text \| email \| tel \| textarea` (default `text`, plain `<input>`/`<textarea>`), `select` and `radio` (require `options: { label, value }[]`), `checkbox` (`options` omitted renders a single toggle, `options` set renders a checkbox group), and `file` (`accept?`, `multiple?` — presentational only, no upload wiring). `radio` and multi-option `checkbox` render inside a `<fieldset>`/`<legend>` rather than a `<label>`, since a label can't correctly describe a group of inputs.
+
 ### Shared types
 
 | Type          | Shape                                                    |
@@ -113,6 +133,7 @@ Blocks are `.astro` files, so `pnpm check` here runs `astro check` (same as
 
 ## Deliberately not included
 
-`Navbar`, `Footer`, `Gallery`, `Pricing`, booking, chatbot, blog, and any
-client-specific block. See the repo root `CLAUDE.md` and `docs/architecture.md`
-for current scope.
+`Navbar`, `Footer`, `Pricing`, booking, chatbot, blog, file upload
+infrastructure (the `Contact` block's `file` field type is configuration-only),
+and any client-specific block. See the repo root `CLAUDE.md` and
+`docs/architecture.md` for current scope.

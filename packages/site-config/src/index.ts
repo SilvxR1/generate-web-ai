@@ -16,6 +16,13 @@ export type {
   FeatureItemConfig,
   FeaturesBlockContent,
   FeaturesBlockConfig,
+  ProcessStepConfig,
+  ProcessBlockContent,
+  ProcessBlockConfig,
+  GalleryBeforeAfterConfig,
+  GalleryItemConfig,
+  GalleryBlockContent,
+  GalleryBlockConfig,
   TestimonialItemConfig,
   TestimonialsBlockContent,
   TestimonialsBlockConfig,
@@ -25,6 +32,12 @@ export type {
   CTABlockContent,
   CTABlockConfig,
   ContactDetailConfig,
+  ContactFormFieldOptionConfig,
+  TextContactFormFieldConfig,
+  SelectContactFormFieldConfig,
+  RadioContactFormFieldConfig,
+  CheckboxContactFormFieldConfig,
+  FileContactFormFieldConfig,
   ContactFormFieldConfig,
   ContactFormConfig,
   ContactBlockContent,
@@ -34,5 +47,6 @@ export type {
 } from "./blocks.ts";
 export { BLOCK_TYPES, isKnownBlockType, assertKnownBlockType } from "./blocks.ts";
 export type { PageConfig } from "./pages.ts";
+export type { SEOConfig } from "./seo.ts";
 export type { SiteConfig } from "./site-config.ts";
 export { exampleSiteConfig } from "./example.ts";

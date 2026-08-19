@@ -4,13 +4,15 @@
  * detail. Distinct from Features: services are things a visitor can act on.
  */
 import { Card, Container, Heading, Link, Text } from "@generate-web-ai/ui";
-import type { BlockAction } from "../types";
+import type { BlockAction, BlockImage } from "../types";
 
 export interface ServiceItem {
   title: string;
   description: string;
-  /** A short decorative glyph or emoji, rendered non-semantically. */
+  /** A short decorative glyph or emoji, rendered non-semantically. Ignored when `image` is set. */
   icon?: string;
+  /** A photo for the service card. Takes precedence over `icon` when both are set. */
+  image?: BlockImage;
   action?: BlockAction;
 }
 
@@ -45,10 +47,21 @@ const { heading, subheading, items } = content;
   <ul class="block-services__grid">
     {items.map((item) => (
       <Card as="li" variant="outlined" padding="lg" class="block-services__item">
-        {item.icon && (
-          <span class="block-services__icon" aria-hidden="true">
-            {item.icon}
-          </span>
+        {item.image ? (
+          <img
+            src={item.image.src}
+            alt={item.image.alt}
+            width={item.image.width}
+            height={item.image.height}
+            loading="lazy"
+            class="block-services__image"
+          />
+        ) : (
+          item.icon && (
+            <span class="block-services__icon" aria-hidden="true">
+              {item.icon}
+            </span>
+          )
         )}
         <Heading level={3} size="lg">
           {item.title}
@@ -96,6 +109,14 @@ const { heading, subheading, items } = content;
   .block-services__icon {
     font-size: 1.75rem;
     line-height: 1;
+  }
+
+  .block-services__image {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+    border-radius: var(--ui-radius, 0.5rem);
   }
 
   .block-services__link {

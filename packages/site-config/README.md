@@ -6,16 +6,22 @@ The typed schema a client site is described by, as data:
 SiteConfig
   -> brand:    BrandConfig
   -> theme:    ThemeConfig
-  -> pages:    PageConfig[]  (each with blocks: BlockConfig[])
+  -> pages:    PageConfig[]  (each with blocks: BlockConfig[], optional seo: SEOConfig override)
   -> features: FeatureConfig
+  -> seo:      SEOConfig  (site-wide default; a page's own `seo` overrides it)
 ```
 
 `BlockConfig` is a discriminated union on `type` (`hero`, `services`,
-`features`, `testimonials`, `faq`, `cta`, `contact`), one variant per block
-in `@generate-web-ai/blocks`, each with its own `content` shape. This
-package has no Astro dependency — it is the layer an AI (or a human) is
-meant to generate, and `@generate-web-ai/renderer` is what turns it into
-Astro components.
+`features`, `process`, `gallery`, `testimonials`, `faq`, `cta`, `contact`),
+one variant per block in `@generate-web-ai/blocks`, each with its own
+`content` shape. `ContactFormFieldConfig` (part of the `contact` block's
+content) is itself a discriminated union on `type`: `text`/`email`/`tel`/
+`textarea` (default), `select`/`radio` (require `options`), `checkbox`
+(`options` optional — a group when set, a single toggle when omitted), and
+`file` (`accept?`, `multiple?` — configuration only, no upload
+infrastructure). This package has no Astro dependency — it is the layer an
+AI (or a human) is meant to generate, and `@generate-web-ai/renderer` is
+what turns it into Astro components.
 
 ```ts
 import type { SiteConfig } from "@generate-web-ai/site-config";
@@ -41,8 +47,8 @@ const site: SiteConfig = {
 ```
 
 `exampleSiteConfig` (exported from this package) is a complete, valid
-example covering all seven block types — used by
-`@generate-web-ai/renderer`'s example page and validation script.
+example covering all block types — used by `@generate-web-ai/renderer`'s
+example page and validation script.
 
 ## Type-checking
 
@@ -52,4 +58,7 @@ Plain TypeScript, no `.astro` files: `pnpm check` here runs `tsc --noEmit`.
 
 Validation beyond `assertKnownBlockType`/`isKnownBlockType` (e.g. a full
 runtime schema validator), theme/brand rendering, and anything that turns
-this data into HTML — that's `@generate-web-ai/renderer`'s job.
+this data into HTML — that's `@generate-web-ai/renderer`'s job. `SEOConfig`
+is deliberately minimal (`title`, `description`, `ogImage?`) — no structured
+data (schema.org), canonical URLs, or sitemap generation yet, and no
+site/page `seo` merge logic is implemented (that's a renderer/app concern).

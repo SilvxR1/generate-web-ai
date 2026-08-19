@@ -4,7 +4,7 @@
  * component. `assertKnownBlockType` fails clearly (throws) for a `type`
  * that isn't recognized, rather than silently rendering nothing.
  */
-import { CTA, Contact, FAQ, Features, Hero, Services, Testimonials } from "@generate-web-ai/blocks";
+import { CTA, Contact, FAQ, Features, Gallery, Hero, Process, Services, Testimonials } from "@generate-web-ai/blocks";
 import { assertKnownBlockType, type BlockConfig } from "@generate-web-ai/site-config";
 
 export interface Props {
@@ -18,6 +18,8 @@ assertKnownBlockType(block);
 {block.type === "hero" && <Hero id={block.id} content={block.content} />}
 {block.type === "services" && <Services id={block.id} content={block.content} />}
 {block.type === "features" && <Features id={block.id} content={block.content} />}
+{block.type === "process" && <Process id={block.id} content={block.content} />}
+{block.type === "gallery" && <Gallery id={block.id} content={block.content} />}
 {block.type === "testimonials" && <Testimonials id={block.id} content={block.content} />}
 {block.type === "faq" && <FAQ id={block.id} content={block.content} />}
 {block.type === "cta" && <CTA id={block.id} content={block.content} />}
