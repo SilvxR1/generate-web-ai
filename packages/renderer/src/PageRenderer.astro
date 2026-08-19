@@ -1,0 +1,15 @@
+---
+/**
+ * PageRenderer — renders a PageConfig as its ordered sequence of blocks.
+ */
+import type { PageConfig } from "@generate-web-ai/site-config";
+import BlockRenderer from "./BlockRenderer.astro";
+
+export interface Props {
+  page: PageConfig;
+}
+
+const { page } = Astro.props;
+---
+
+{page.blocks.map((block) => <BlockRenderer block={block} />)}

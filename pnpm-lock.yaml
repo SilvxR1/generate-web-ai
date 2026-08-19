@@ -14,6 +14,12 @@ importers:
 
   apps/site-template:
     dependencies:
+      '@generate-web-ai/renderer':
+        specifier: workspace:*
+        version: link:../../packages/renderer
+      '@generate-web-ai/site-config':
+        specifier: workspace:*
+        version: link:../../packages/site-config
       '@tailwindcss/vite':
         specifier: 4.3.3
         version: 4.3.3(vite@8.2.1(esbuild@0.28.2)(jiti@2.7.0)(yaml@2.9.0))
@@ -45,6 +51,28 @@ importers:
         version: 6.0.3
 
   packages/config: {}
+
+  packages/renderer:
+    dependencies:
+      '@generate-web-ai/blocks':
+        specifier: workspace:*
+        version: link:../blocks
+      '@generate-web-ai/site-config':
+        specifier: workspace:*
+        version: link:../site-config
+    devDependencies:
+      astro:
+        specifier: 7.2.3
+        version: 7.2.3(@emnapi/core@1.11.1)(@emnapi/runtime@1.11.3)(jiti@2.7.0)(yaml@2.9.0)
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/site-config:
+    devDependencies:
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
 
   packages/ui:
     devDependencies:

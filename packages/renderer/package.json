@@ -1,0 +1,24 @@
+{
+  "name": "@generate-web-ai/renderer",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Turns a typed SiteConfig/PageConfig into rendered Astro components, mapping each block's type to its @generate-web-ai/blocks component.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "check": "astro check",
+    "validate": "node scripts/validate-example.ts"
+  },
+  "dependencies": {
+    "@generate-web-ai/blocks": "workspace:*",
+    "@generate-web-ai/site-config": "workspace:*"
+  },
+  "peerDependencies": {
+    "astro": "^7.2.3"
+  },
+  "devDependencies": {
+    "astro": "7.2.3",
+    "typescript": "6.0.3"
+  }
+}
