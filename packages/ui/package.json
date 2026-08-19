@@ -7,9 +7,13 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "astro check"
+  },
+  "peerDependencies": {
+    "astro": "^7.2.3"
   },
   "devDependencies": {
+    "astro": "7.2.3",
     "typescript": "6.0.3"
   }
 }

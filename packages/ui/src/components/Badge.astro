@@ -1,0 +1,60 @@
+---
+/**
+ * Badge — a small label for status or metadata ("New", "Popular", "Open
+ * now", a category tag). Not interactive; for a clickable tag, wrap it in
+ * a Link or Button instead.
+ */
+export interface Props {
+  /** Color treatment. Defaults to "neutral". */
+  variant?: "neutral" | "primary" | "success" | "warning" | "danger";
+  /** Element tag to render. Use "li" inside a list of badges. Defaults to "span". */
+  as?: "span" | "li";
+  /** Additional class names to merge onto the root element. */
+  class?: string;
+}
+
+const { variant = "neutral", as: Tag = "span", class: className } = Astro.props;
+---
+
+<Tag class:list={["ui-badge", `ui-badge--${variant}`, className]}>
+  <slot />
+</Tag>
+
+<style>
+  .ui-badge {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.4;
+    padding: 0.125rem 0.625rem;
+    border-radius: var(--ui-radius, 0.5rem);
+    white-space: nowrap;
+  }
+
+  .ui-badge--neutral {
+    background-color: var(--ui-color-border, #e5e7eb);
+    color: var(--ui-color-fg, #111827);
+  }
+
+  .ui-badge--primary {
+    background-color: color-mix(in srgb, var(--ui-color-primary, #2563eb) 15%, white);
+    color: var(--ui-color-primary, #2563eb);
+  }
+
+  .ui-badge--success {
+    background-color: color-mix(in srgb, var(--ui-color-success, #16a34a) 15%, white);
+    color: var(--ui-color-success, #16a34a);
+  }
+
+  .ui-badge--warning {
+    background-color: color-mix(in srgb, var(--ui-color-warning, #d97706) 18%, white);
+    color: var(--ui-color-warning, #d97706);
+  }
+
+  .ui-badge--danger {
+    background-color: color-mix(in srgb, var(--ui-color-danger, #dc2626) 15%, white);
+    color: var(--ui-color-danger, #dc2626);
+  }
+</style>

@@ -1,3 +1,9 @@
-// Entry point for the UI primitives package. Components (Button, Card,
-// Input, Nav, ...) will be added here as the design system is built out.
-export {};
+// Entry point for the UI primitives package — the shared design-system
+// layer every client app and `packages/blocks` compose from.
+export { default as Button } from "./components/Button.astro";
+export { default as Container } from "./components/Container.astro";
+export { default as Card } from "./components/Card.astro";
+export { default as Badge } from "./components/Badge.astro";
+export { default as Heading } from "./components/Heading.astro";
+export { default as Text } from "./components/Text.astro";
+export { default as Link } from "./components/Link.astro";

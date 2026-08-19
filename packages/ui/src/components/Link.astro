@@ -1,0 +1,81 @@
+---
+/**
+ * Link — an inline text link, for navigation and in-copy references.
+ * Distinct from Button, which is for actions styled as buttons. Setting
+ * `external` marks the link as leaving the site: it opens in a new tab,
+ * gets a safe `rel`, and gains a visually-hidden hint for screen readers.
+ */
+export interface Props {
+  href: string;
+  /** Color treatment. Defaults to "default". */
+  variant?: "default" | "muted";
+  /** Underline behavior. Defaults to "hover". */
+  underline?: "always" | "hover";
+  /** Marks the link as pointing off-site: opens in a new tab with a safe `rel`. */
+  external?: boolean;
+  /** Additional class names to merge onto the root element. */
+  class?: string;
+}
+
+const {
+  href,
+  variant = "default",
+  underline = "hover",
+  external = false,
+  class: className,
+} = Astro.props;
+---
+
+<a
+  class:list={["ui-link", `ui-link--${variant}`, `ui-link--underline-${underline}`, className]}
+  href={href}
+  target={external ? "_blank" : undefined}
+  rel={external ? "noopener noreferrer" : undefined}
+>
+  <slot />
+  {external && <span class="ui-link__sr-hint"> (opens in a new tab)</span>}
+</a>
+
+<style>
+  .ui-link {
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    text-decoration-thickness: from-font;
+  }
+
+  .ui-link:focus-visible {
+    outline: 2px solid var(--ui-color-primary, #2563eb);
+    outline-offset: 2px;
+  }
+
+  .ui-link--default {
+    color: var(--ui-color-primary, #2563eb);
+  }
+
+  .ui-link--muted {
+    color: var(--ui-color-muted-fg, #6b7280);
+  }
+
+  .ui-link--underline-always {
+    text-decoration: underline;
+  }
+
+  .ui-link--underline-hover {
+    text-decoration: none;
+  }
+
+  .ui-link--underline-hover:hover {
+    text-decoration: underline;
+  }
+
+  .ui-link__sr-hint {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

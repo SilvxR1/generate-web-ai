@@ -1,0 +1,50 @@
+---
+/**
+ * Text — body copy. Use for paragraphs and inline runs of text; use Heading
+ * for headings and Link for anything that navigates.
+ */
+export interface Props {
+  /** Element tag to render. Defaults to "p". */
+  as?: "p" | "span" | "div";
+  /** Size scale. Defaults to "md". */
+  size?: "sm" | "md" | "lg";
+  /** Color treatment. "muted" is for secondary/supporting copy. Defaults to "default". */
+  variant?: "default" | "muted";
+  /** Additional class names to merge onto the root element. */
+  class?: string;
+}
+
+const { as: Tag = "p", size = "md", variant = "default", class: className } = Astro.props;
+---
+
+<Tag class:list={["ui-text", `ui-text--${size}`, `ui-text--${variant}`, className]}>
+  <slot />
+</Tag>
+
+<style>
+  .ui-text {
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    line-height: 1.6;
+    margin: 0;
+  }
+
+  .ui-text--sm {
+    font-size: 0.875rem;
+  }
+
+  .ui-text--md {
+    font-size: 1rem;
+  }
+
+  .ui-text--lg {
+    font-size: 1.125rem;
+  }
+
+  .ui-text--default {
+    color: var(--ui-color-fg, #111827);
+  }
+
+  .ui-text--muted {
+    color: var(--ui-color-muted-fg, #6b7280);
+  }
+</style>

@@ -1,0 +1,62 @@
+---
+/**
+ * Card — a surface for grouping related content (a service, a pricing tier,
+ * a feature). Provides consistent padding, border/shadow and radius; layout
+ * and content inside are left to the caller (compose with Heading, Text,
+ * Badge, Button, etc.).
+ */
+export interface Props {
+  /** Element tag to render. Use "article" for a self-contained piece of
+   * content, "li" when rendering a list of cards. Defaults to "div". */
+  as?: "div" | "article" | "li";
+  /** Inner spacing. Defaults to "md". */
+  padding?: "sm" | "md" | "lg";
+  /** Surface treatment. Defaults to "outlined". */
+  variant?: "flat" | "outlined" | "elevated";
+  /** Additional class names to merge onto the root element. */
+  class?: string;
+}
+
+const { as: Tag = "div", padding = "md", variant = "outlined", class: className } = Astro.props;
+---
+
+<Tag
+  class:list={["ui-card", `ui-card--${variant}`, `ui-card--pad-${padding}`, className]}
+>
+  <slot />
+</Tag>
+
+<style>
+  .ui-card {
+    background-color: var(--ui-color-bg, #ffffff);
+    border-radius: var(--ui-radius-lg, 0.75rem);
+    border: 1px solid transparent;
+  }
+
+  .ui-card--pad-sm {
+    padding: 1rem;
+  }
+
+  .ui-card--pad-md {
+    padding: 1.5rem;
+  }
+
+  .ui-card--pad-lg {
+    padding: 2rem;
+  }
+
+  .ui-card--flat {
+    border-color: transparent;
+  }
+
+  .ui-card--outlined {
+    border-color: var(--ui-color-border, #e5e7eb);
+  }
+
+  .ui-card--elevated {
+    border-color: var(--ui-color-border, #e5e7eb);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.04),
+      0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+</style>
