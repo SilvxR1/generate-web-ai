@@ -1,0 +1,15 @@
+{
+  "name": "@generate-web-ai/ui",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Reusable, accessible UI primitives (the design-system layer) shared across all client sites.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

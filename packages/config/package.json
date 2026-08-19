@@ -1,0 +1,9 @@
+{
+  "name": "@generate-web-ai/config",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Shared configuration used across the monorepo, starting with the base TypeScript config.",
+  "files": [
+    "tsconfig.base.json"
+  ]
+}

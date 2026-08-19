@@ -1,0 +1,18 @@
+{
+  "name": "@generate-web-ai/blocks",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Reusable, composable page sections (Hero, Services, Gallery, ...) built from @generate-web-ai/ui, used to assemble client pages.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@generate-web-ai/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}
