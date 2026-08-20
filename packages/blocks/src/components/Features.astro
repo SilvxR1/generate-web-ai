@@ -22,18 +22,23 @@ export interface FeaturesContent {
 export interface Props {
   content: FeaturesContent;
   id?: string;
+  /** Section surface tone. Defaults to "base". */
+  background?: "base" | "surface";
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
+const { content, id, background = "base", reveal = true, class: className } = Astro.props;
 const { heading, subheading, items } = content;
 ---
 
-<section id={id} class:list={["block-features", className]}>
+<section id={id} data-surface={background} class:list={["block-features", { "block-reveal": reveal }, className]}>
   <Container size="lg">
   {(heading || subheading) && (
     <div class="block-features__intro">
-      {heading && <Heading level={2}>{heading}</Heading>}
+      {heading && <Heading level={2} font="display">{heading}</Heading>}
       {subheading && (
         <Text size="lg" variant="muted">
           {subheading}
@@ -65,7 +70,12 @@ const { heading, subheading, items } = content;
 
 <style>
   .block-features {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-sm, clamp(3rem, 2.6rem + 1.6vw, 4rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-features[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
   }
 
   .block-features__intro {

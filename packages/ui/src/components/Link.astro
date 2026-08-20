@@ -59,12 +59,20 @@ const {
     text-decoration: underline;
   }
 
+  /* Underline drawn via a background gradient rather than text-decoration,
+     so it can grow in from the left on hover instead of snapping on/off. */
   .ui-link--underline-hover {
     text-decoration: none;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0% 1px;
+    transition: background-size 0.25s ease;
   }
 
-  .ui-link--underline-hover:hover {
-    text-decoration: underline;
+  .ui-link--underline-hover:hover,
+  .ui-link--underline-hover:focus-visible {
+    background-size: 100% 1px;
   }
 
   .ui-link__sr-hint {

@@ -1,0 +1,135 @@
+---
+/**
+ * Media — a framed, cropped image: the shared "photograph" treatment used
+ * wherever a block shows a photo (Hero, Services, Gallery, ...). Introduced
+ * because those blocks were each hand-rolling near-identical
+ * object-fit/radius/hover-zoom CSS independently; this consolidates it
+ * without forcing every image on a page through it (avatars, icons, etc.
+ * stay plain `<img>`).
+ *
+ * Photography defaults to a sharp (unrounded) frame — deliberately distinct
+ * from `Card`'s softer `--ui-radius-lg`, so UI chrome and photography read
+ * as two intentionally different materials rather than one uniform
+ * rounded-everything look.
+ *
+ * `src` accepts either a plain string (a remote URL, or a path already in
+ * `public/`) or a `LocalImageRef` — the object an Astro ESM image import
+ * produces. Only the object form carries what `astro:assets`' `<Picture>`
+ * needs to generate a real responsive `srcset` (multiple widths, AVIF/WebP
+ * with a same-format fallback). A plain string still renders — as a single
+ * unoptimized `<img>`, same as before this component knew about `Picture`
+ * — so passing a remote/external URL keeps working exactly as it always
+ * has; it just doesn't get the optimization only a local file allows.
+ */
+import { Picture } from "astro:assets";
+
+/** Structural shape of an Astro-imported local image — see this package's
+ * README / @generate-web-ai/site-config's `LocalImageRef` for why this is
+ * declared independently rather than imported from `astro`. */
+export interface LocalImageRef {
+  src: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+export interface Props {
+  src: string | LocalImageRef;
+  alt: string;
+  /** Only used for the plain-string `src` case; a `LocalImageRef` already
+   * carries its own intrinsic width/height. */
+  width?: number;
+  height?: number;
+  /** CSS `aspect-ratio` value, e.g. "16/10", "4/3", "1/1". Omit to use the image's intrinsic ratio. */
+  ratio?: string;
+  /** Frame corner treatment. Defaults to "none" (sharp, architectural). */
+  radius?: "none" | "sm" | "lg";
+  /** Scales the image slightly on hover. Respects prefers-reduced-motion. Defaults to false. */
+  zoom?: boolean;
+  loading?: "eager" | "lazy";
+  /** Additional class names to merge onto the root element. */
+  class?: string;
+}
+
+const { src, alt, width, height, ratio, radius = "none", zoom = false, loading = "lazy", class: className } = Astro.props;
+
+const isLocal = typeof src !== "string";
+
+// Responsive width candidates, capped at the source's intrinsic width so
+// nothing is ever upscaled; the intrinsic width itself is always included
+// as the largest candidate, as a safety net.
+const WIDTH_CANDIDATES = [400, 800, 1200, 1600];
+const widths = isLocal
+  ? Array.from(new Set([...WIDTH_CANDIDATES.filter((candidate) => candidate < src.width), src.width])).sort((a, b) => a - b)
+  : undefined;
+
+const imgClassList = ["ui-media__img", { "ui-media__img--zoom": zoom }];
+
+// `LocalImageRef` is a structural stand-in for Astro's own `ImageMetadata`
+// (see the type comment above) — that type isn't part of `astro:assets`'
+// public export surface, so rather than reach into Astro's internals to
+// name it, `<Picture src={src as any}>` below is the one intentional seam
+// where that stand-in meets the real API.
+---
+
+<div class:list={["ui-media", `ui-media--radius-${radius}`, className]} style={ratio ? `aspect-ratio: ${ratio};` : undefined}>
+  {
+    isLocal ? (
+      <Picture
+        src={src as any}
+        alt={alt}
+        widths={widths}
+        sizes="100vw"
+        formats={["avif", "webp"]}
+        loading={loading}
+        decoding="async"
+        class:list={imgClassList}
+      />
+    ) : (
+      <img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" class:list={imgClassList} />
+    )
+  }
+</div>
+
+<style>
+  .ui-media {
+    overflow: hidden;
+    display: block;
+  }
+
+  .ui-media--radius-none {
+    border-radius: 0;
+  }
+
+  .ui-media--radius-sm {
+    border-radius: var(--ui-radius, 0.5rem);
+  }
+
+  .ui-media--radius-lg {
+    border-radius: var(--ui-radius-lg, 0.75rem);
+  }
+
+  /* `:global()` here because `.ui-media__img` may land on an `<img>`
+     rendered by the imported `Picture` component, not written directly in
+     this file — Astro's scoped-style attribute wouldn't reach it otherwise. */
+  .ui-media :global(picture) {
+    display: contents;
+  }
+
+  .ui-media :global(.ui-media__img) {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-media :global(.ui-media__img--zoom) {
+      transition: transform 0.5s ease;
+    }
+
+    .ui-media:hover :global(.ui-media__img--zoom) {
+      transform: scale(1.05);
+    }
+  }
+</style>

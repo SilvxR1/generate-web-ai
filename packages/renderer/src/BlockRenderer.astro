@@ -15,12 +15,26 @@ const { block } = Astro.props;
 assertKnownBlockType(block);
 ---
 
-{block.type === "hero" && <Hero id={block.id} content={block.content} />}
-{block.type === "services" && <Services id={block.id} content={block.content} />}
-{block.type === "features" && <Features id={block.id} content={block.content} />}
-{block.type === "process" && <Process id={block.id} content={block.content} />}
-{block.type === "gallery" && <Gallery id={block.id} content={block.content} />}
-{block.type === "testimonials" && <Testimonials id={block.id} content={block.content} />}
-{block.type === "faq" && <FAQ id={block.id} content={block.content} />}
-{block.type === "cta" && <CTA id={block.id} content={block.content} />}
-{block.type === "contact" && <Contact id={block.id} content={block.content} />}
+{block.type === "hero" && (
+  <Hero id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "services" && (
+  <Services id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "features" && (
+  <Features id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "process" && (
+  <Process id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "gallery" && (
+  <Gallery id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "testimonials" && (
+  <Testimonials id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}
+{block.type === "faq" && <FAQ id={block.id} content={block.content} background={block.background} reveal={block.reveal} />}
+{block.type === "cta" && <CTA id={block.id} content={block.content} reveal={block.reveal} />}
+{block.type === "contact" && (
+  <Contact id={block.id} content={block.content} background={block.background} reveal={block.reveal} />
+)}

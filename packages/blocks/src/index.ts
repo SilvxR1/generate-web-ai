@@ -12,7 +12,7 @@ export { default as FAQ } from "./components/FAQ.astro";
 export { default as CTA } from "./components/CTA.astro";
 export { default as Contact } from "./components/Contact.astro";
 
-export type { HeroContent } from "./components/Hero.astro";
+export type { HeroContent, HeroStat } from "./components/Hero.astro";
 export type { ServicesContent, ServiceItem } from "./components/Services.astro";
 export type { FeaturesContent, FeatureItem } from "./components/Features.astro";
 export type { ProcessContent, ProcessStep } from "./components/Process.astro";

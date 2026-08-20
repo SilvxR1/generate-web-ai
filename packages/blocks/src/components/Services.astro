@@ -1,9 +1,15 @@
 ---
 /**
- * Services — a grid of business offerings, each optionally linking to more
- * detail. Distinct from Features: services are things a visitor can act on.
+ * Services — a business's offerings, each optionally linking to more detail.
+ * Distinct from Features: services are things a visitor can act on.
+ *
+ * One item can be marked `featured` for a larger, horizontal spotlight
+ * treatment; the rest render as a tighter supporting grid. If no item is
+ * marked, the first item is treated as featured — existing configs with no
+ * `featured` field get this layout automatically, no content changes
+ * required.
  */
-import { Card, Container, Heading, Link, Text } from "@generate-web-ai/ui";
+import { Card, Container, Heading, Link, Media, Text } from "@generate-web-ai/ui";
 import type { BlockAction, BlockImage } from "../types";
 
 export interface ServiceItem {
@@ -14,6 +20,8 @@ export interface ServiceItem {
   /** A photo for the service card. Takes precedence over `icon` when both are set. */
   image?: BlockImage;
   action?: BlockAction;
+  /** Renders with larger visual emphasis. When no item sets this, the first item is treated as featured. */
+  featured?: boolean;
 }
 
 export interface ServicesContent {
@@ -25,18 +33,24 @@ export interface ServicesContent {
 export interface Props {
   content: ServicesContent;
   id?: string;
+  /** Section surface tone. Defaults to "base". */
+  background?: "base" | "surface";
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
+const { content, id, background = "base", reveal = true, class: className } = Astro.props;
 const { heading, subheading, items } = content;
+const hasExplicitFeatured = items.some((item) => item.featured);
 ---
 
-<section id={id} class:list={["block-services", className]}>
+<section id={id} data-surface={background} class:list={["block-services", { "block-reveal": reveal }, className]}>
   <Container size="lg">
   {(heading || subheading) && (
     <div class="block-services__intro">
-      {heading && <Heading level={2}>{heading}</Heading>}
+      {heading && <Heading level={2} font="display">{heading}</Heading>}
       {subheading && (
         <Text size="lg" variant="muted">
           {subheading}
@@ -45,42 +59,61 @@ const { heading, subheading, items } = content;
     </div>
   )}
   <ul class="block-services__grid">
-    {items.map((item) => (
-      <Card as="li" variant="outlined" padding="lg" class="block-services__item">
-        {item.image ? (
-          <img
-            src={item.image.src}
-            alt={item.image.alt}
-            width={item.image.width}
-            height={item.image.height}
-            loading="lazy"
-            class="block-services__image"
-          />
-        ) : (
-          item.icon && (
-            <span class="block-services__icon" aria-hidden="true">
-              {item.icon}
-            </span>
-          )
-        )}
-        <Heading level={3} size="lg">
-          {item.title}
-        </Heading>
-        <Text variant="muted">{item.description}</Text>
-        {item.action && (
-          <Link href={item.action.href} class="block-services__link">
-            {item.action.label}
-          </Link>
-        )}
-      </Card>
-    ))}
+    {items.map((item, index) => {
+      const isFeatured = hasExplicitFeatured ? Boolean(item.featured) : index === 0;
+      return (
+        <Card
+          as="li"
+          variant="outlined"
+          padding="lg"
+          interactive
+          class="block-services__item"
+          data-featured={isFeatured ? "true" : "false"}
+        >
+          {item.image ? (
+            <div class="block-services__media">
+              <Media
+                src={item.image.src}
+                alt={item.image.alt}
+                width={item.image.width}
+                height={item.image.height}
+                ratio={isFeatured ? "16/10" : "4/3"}
+                zoom
+              />
+            </div>
+          ) : (
+            item.icon && (
+              <span class="block-services__icon" aria-hidden="true">
+                {item.icon}
+              </span>
+            )
+          )}
+          <div class="block-services__body">
+            <Heading level={3} size={isFeatured ? "xl" : "lg"}>
+              {item.title}
+            </Heading>
+            <Text variant="muted">{item.description}</Text>
+            {item.action && (
+              <Link href={item.action.href} class="block-services__link" underline="hover">
+                {item.action.label} →
+              </Link>
+            )}
+          </div>
+        </Card>
+      );
+    })}
   </ul>
   </Container>
 </section>
 
 <style>
   .block-services {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-services[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
   }
 
   .block-services__intro {
@@ -88,7 +121,7 @@ const { heading, subheading, items } = content;
     flex-direction: column;
     gap: 0.75rem;
     max-width: 42rem;
-    margin-bottom: 2.5rem;
+    margin-bottom: 3rem;
   }
 
   .block-services__grid {
@@ -103,24 +136,31 @@ const { heading, subheading, items } = content;
   .block-services__item {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .block-services__media {
+    margin: -2rem -2rem 1.5rem;
   }
 
   .block-services__icon {
     font-size: 1.75rem;
     line-height: 1;
+    margin-bottom: 0.5rem;
   }
 
-  .block-services__image {
-    display: block;
-    width: 100%;
-    aspect-ratio: 16 / 10;
-    object-fit: cover;
-    border-radius: var(--ui-radius, 0.5rem);
+  .block-services__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    flex: 1;
   }
 
   .block-services__link {
     margin-top: 0.25rem;
+    align-self: flex-start;
+    font-weight: 600;
   }
 
   @media (min-width: 640px) {
@@ -132,6 +172,23 @@ const { heading, subheading, items } = content;
   @media (min-width: 1024px) {
     .block-services__grid {
       grid-template-columns: repeat(3, 1fr);
+      gap: 1.75rem;
+    }
+
+    .block-services__item[data-featured="true"] {
+      grid-column: 1 / -1;
+      flex-direction: row;
+      align-items: stretch;
+    }
+
+    .block-services__item[data-featured="true"] .block-services__media {
+      margin: -2rem 0 -2rem -2rem;
+      flex: 0 0 46%;
+    }
+
+    .block-services__item[data-featured="true"] .block-services__body {
+      padding-left: 2.5rem;
+      justify-content: center;
     }
   }
 </style>

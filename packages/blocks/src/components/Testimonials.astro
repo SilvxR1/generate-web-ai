@@ -1,8 +1,13 @@
 ---
 /**
- * Testimonials — a set of customer quotes. Uses `blockquote`/`cite` so the
- * relationship between quote and attribution is conveyed to assistive tech
- * without relying on visual layout alone.
+ * Testimonials — a set of customer quotes. One item can be marked
+ * `featured` to render as a large, editorial lead quote; the rest render as
+ * a tighter supporting row. If no item is marked, the first item is
+ * treated as featured — existing configs with no `featured` field get this
+ * layout automatically.
+ *
+ * Uses `blockquote`/`cite` throughout so the relationship between quote and
+ * attribution is conveyed to assistive tech without relying on layout.
  */
 import { Card, Container, Heading, Text } from "@generate-web-ai/ui";
 import type { BlockImage } from "../types";
@@ -16,6 +21,8 @@ export interface TestimonialItem {
   avatar?: BlockImage;
   /** Optional 1-5 star rating. */
   rating?: number;
+  /** Renders larger, as the section's lead quote. When no item sets this, the first item is treated as featured. */
+  featured?: boolean;
 }
 
 export interface TestimonialsContent {
@@ -27,19 +34,29 @@ export interface TestimonialsContent {
 export interface Props {
   content: TestimonialsContent;
   id?: string;
+  /** Section surface tone. Defaults to "base". */
+  background?: "base" | "surface";
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
+const { content, id, background = "base", reveal = true, class: className } = Astro.props;
 const { heading, subheading, items } = content;
 const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)));
+
+const hasExplicitFeatured = items.some((item) => item.featured);
+const featuredIndex = hasExplicitFeatured ? items.findIndex((item) => item.featured) : 0;
+const featured = items[featuredIndex];
+const supporting = items.filter((_, index) => index !== featuredIndex);
 ---
 
-<section id={id} class:list={["block-testimonials", className]}>
+<section id={id} data-surface={background} class:list={["block-testimonials", { "block-reveal": reveal }, className]}>
   <Container size="lg">
   {(heading || subheading) && (
     <div class="block-testimonials__intro">
-      {heading && <Heading level={2}>{heading}</Heading>}
+      {heading && <Heading level={2} font="display">{heading}</Heading>}
       {subheading && (
         <Text size="lg" variant="muted">
           {subheading}
@@ -47,52 +64,67 @@ const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)
       )}
     </div>
   )}
-  <ul class="block-testimonials__grid">
-    {items.map((item) => {
-      const rating = item.rating !== undefined ? clampRating(item.rating) : undefined;
-      return (
-        <Card as="li" variant="elevated" padding="lg" class="block-testimonials__item">
-          {rating !== undefined && (
-            <p class="block-testimonials__rating">
-              <span aria-hidden="true">{"★".repeat(rating)}{"☆".repeat(5 - rating)}</span>
-              <span class="block-testimonials__sr-only">Rated {rating} out of 5</span>
-            </p>
-          )}
-          <blockquote class="block-testimonials__quote">
-            <Text as="p" size="lg">{item.quote}</Text>
-          </blockquote>
-          <div class="block-testimonials__author">
-            {item.avatar && (
-              <img
-                src={item.avatar.src}
-                alt={item.avatar.alt}
-                width={item.avatar.width ?? 48}
-                height={item.avatar.height ?? 48}
-                loading="lazy"
-                class="block-testimonials__avatar"
-              />
+
+  {featured && (
+    <figure class="block-testimonials__featured">
+      <span class="block-testimonials__mark" aria-hidden="true">&ldquo;</span>
+      <blockquote class="block-testimonials__featured-quote">
+        <Text as="p" size="lg" class="block-testimonials__featured-text">{featured.quote}</Text>
+      </blockquote>
+      <figcaption class="block-testimonials__author">
+        <cite class="block-testimonials__name">{featured.author}</cite>
+        {(featured.role || featured.company) && (
+          <Text as="span" size="sm" variant="muted">
+            {[featured.role, featured.company].filter(Boolean).join(", ")}
+          </Text>
+        )}
+      </figcaption>
+    </figure>
+  )}
+
+  {supporting.length > 0 && (
+    <ul class="block-testimonials__grid">
+      {supporting.map((item) => {
+        const rating = item.rating !== undefined ? clampRating(item.rating) : undefined;
+        return (
+          <Card as="li" variant="flat" padding="md" interactive class="block-testimonials__item">
+            {rating !== undefined && (
+              <p class="block-testimonials__rating">
+                <span aria-hidden="true">{"★".repeat(rating)}{"☆".repeat(5 - rating)}</span>
+                <span class="block-testimonials__sr-only">Rated {rating} out of 5</span>
+              </p>
             )}
-            <span>
-              <Text as="span" size="sm" class="block-testimonials__name">
-                <cite>{item.author}</cite>
-              </Text>
-              {(item.role || item.company) && (
-                <Text as="span" size="sm" variant="muted" class="block-testimonials__meta">
-                  {[item.role, item.company].filter(Boolean).join(", ")}
+            <blockquote class="block-testimonials__quote">
+              <Text as="p" size="md">{item.quote}</Text>
+            </blockquote>
+            <div class="block-testimonials__author">
+              <span>
+                <Text as="span" size="sm" class="block-testimonials__name">
+                  <cite>{item.author}</cite>
                 </Text>
-              )}
-            </span>
-          </div>
-        </Card>
-      );
-    })}
-  </ul>
+                {(item.role || item.company) && (
+                  <Text as="span" size="sm" variant="muted">
+                    {[item.role, item.company].filter(Boolean).join(", ")}
+                  </Text>
+                )}
+              </span>
+            </div>
+          </Card>
+        );
+      })}
+    </ul>
+  )}
   </Container>
 </section>
 
 <style>
   .block-testimonials {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-testimonials[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
   }
 
   .block-testimonials__intro {
@@ -103,10 +135,45 @@ const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)
     margin-bottom: 2.5rem;
   }
 
+  .block-testimonials__featured {
+    position: relative;
+    margin: 0 0 3.5rem;
+    max-width: 44rem;
+  }
+
+  .block-testimonials__mark {
+    display: block;
+    font-family: var(--ui-font-display, var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif));
+    font-size: 5rem;
+    line-height: 1;
+    color: color-mix(in srgb, var(--ui-color-primary, #2563eb) 35%, transparent);
+    margin-bottom: -1.5rem;
+  }
+
+  .block-testimonials__featured-quote {
+    margin: 0;
+  }
+
+  .block-testimonials__featured-text {
+    font-family: var(--ui-font-display, var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif));
+    font-size: clamp(1.375rem, 1.1rem + 1.2vw, 1.875rem);
+    line-height: 1.35;
+    font-weight: 500;
+    color: var(--ui-color-fg, #111827);
+  }
+
+  .block-testimonials__featured .block-testimonials__author {
+    margin-top: 1.5rem;
+  }
+
+  .block-testimonials__featured .block-testimonials__name {
+    font-size: 1.0625rem;
+  }
+
   .block-testimonials__grid {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1.5rem;
+    gap: 1.25rem;
     list-style: none;
     margin: 0;
     padding: 0;
@@ -115,7 +182,9 @@ const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)
   .block-testimonials__item {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.875rem;
+    border-top: 1px solid var(--ui-color-border, #e5e7eb);
+    border-radius: 0;
   }
 
   .block-testimonials__rating {
@@ -130,26 +199,21 @@ const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)
 
   .block-testimonials__author {
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
     margin: 0;
   }
 
-  .block-testimonials__author > span {
-    display: flex;
+  .block-testimonials__featured .block-testimonials__author {
     flex-direction: column;
-  }
-
-  .block-testimonials__avatar {
-    width: 3rem;
-    height: 3rem;
-    border-radius: 9999px;
-    object-fit: cover;
-    flex-shrink: 0;
+    align-items: flex-start;
+    gap: 0.125rem;
   }
 
   .block-testimonials__name {
     font-weight: 600;
+    font-style: normal;
   }
 
   .block-testimonials__sr-only {
@@ -164,7 +228,7 @@ const clampRating = (value: number) => Math.min(5, Math.max(0, Math.round(value)
     border: 0;
   }
 
-  @media (min-width: 640px) {
+  @media (min-width: 768px) {
     .block-testimonials__grid {
       grid-template-columns: repeat(2, 1fr);
     }

@@ -1,6 +1,12 @@
 ---
 /**
  * PageRenderer — renders a PageConfig as its ordered sequence of blocks.
+ *
+ * Also owns the one shared piece of client-side behavior in the whole
+ * block system: the scroll-reveal IntersectionObserver that blocks opt
+ * into via their `reveal` prop (see BlockConfigBase in
+ * @generate-web-ai/site-config). It lives here — once per page, not once
+ * per block — rather than duplicated inside each block component.
  */
 import type { PageConfig } from "@generate-web-ai/site-config";
 import BlockRenderer from "./BlockRenderer.astro";
@@ -13,3 +19,47 @@ const { page } = Astro.props;
 ---
 
 {page.blocks.map((block) => <BlockRenderer block={block} />)}
+
+<script>
+  /**
+   * Scroll-reveal: fades/slides `.block-reveal` sections in as they enter
+   * the viewport. Strictly additive to the default (fully visible, static)
+   * appearance — the `js-reveal-active` class below is what actually makes
+   * `.block-reveal` start hidden, and it's only added here, after both
+   * feature checks pass. So: no JS, no `IntersectionObserver` support, or a
+   * `prefers-reduced-motion: reduce` visitor all fall back to every section
+   * simply being visible, never to content stuck invisible.
+   */
+  if ("IntersectionObserver" in window && window.matchMedia("(prefers-reduced-motion: no-preference)").matches) {
+    document.documentElement.classList.add("js-reveal-active");
+
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-revealed");
+            obs.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -10% 0px" },
+    );
+
+    document.querySelectorAll(".block-reveal").forEach((target) => observer.observe(target));
+  }
+</script>
+
+<style is:global>
+  html.js-reveal-active .block-reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s ease;
+  }
+
+  html.js-reveal-active .block-reveal.is-revealed {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>

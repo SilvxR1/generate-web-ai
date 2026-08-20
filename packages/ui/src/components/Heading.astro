@@ -10,6 +10,14 @@ export interface Props {
   level: 1 | 2 | 3 | 4 | 5 | 6;
   /** Visual size. Defaults to a sensible size for `level` if omitted. */
   size?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
+  /**
+   * Typeface voice. "display" reads `--ui-font-display` (falling back to
+   * `--ui-font-sans` if a theme doesn't define one) for editorial/statement
+   * headings — a hero H1, a section's lead H2. "sans" (default) is the
+   * everyday interface voice used for card/item headings. Themes with no
+   * display font configured render identically either way.
+   */
+  font?: "sans" | "display";
   /** Additional class names to merge onto the root element. */
   class?: string;
 }
@@ -23,12 +31,12 @@ const defaultSizeByLevel: Record<Props["level"], NonNullable<Props["size"]>> = {
   6: "sm",
 };
 
-const { level, size, class: className } = Astro.props;
+const { level, size, font = "sans", class: className } = Astro.props;
 const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
 const resolvedSize = size ?? defaultSizeByLevel[level];
 ---
 
-<Tag class:list={["ui-heading", `ui-heading--${resolvedSize}`, className]}>
+<Tag class:list={["ui-heading", `ui-heading--${resolvedSize}`, `ui-heading--font-${font}`, className]}>
   <slot />
 </Tag>
 
@@ -42,28 +50,41 @@ const resolvedSize = size ?? defaultSizeByLevel[level];
     margin: 0;
   }
 
+  .ui-heading--font-display {
+    font-family: var(--ui-font-display, var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif));
+    font-weight: 600;
+    letter-spacing: -0.015em;
+  }
+
+  /* Fluid scale: readable at 375px, reaches full size only on wide viewports. */
   .ui-heading--sm {
-    font-size: 1.125rem;
+    font-size: clamp(1.0625rem, 0.97rem + 0.4vw, 1.1875rem);
   }
 
   .ui-heading--md {
-    font-size: 1.375rem;
+    font-size: clamp(1.1875rem, 1.05rem + 0.65vw, 1.4375rem);
   }
 
   .ui-heading--lg {
-    font-size: 1.75rem;
+    font-size: clamp(1.375rem, 1.15rem + 1.1vw, 1.8125rem);
   }
 
   .ui-heading--xl {
-    font-size: 2.25rem;
+    font-size: clamp(1.625rem, 1.3rem + 1.6vw, 2.3125rem);
   }
 
   .ui-heading--2xl {
-    font-size: 2.75rem;
+    font-size: clamp(1.875rem, 1.4rem + 2.4vw, 2.75rem);
   }
 
   .ui-heading--3xl {
-    font-size: 3.25rem;
+    font-size: clamp(2.25rem, 1.5rem + 3.75vw, 4.25rem);
+    line-height: 1.08;
     letter-spacing: -0.02em;
+  }
+
+  .ui-heading--font-display.ui-heading--3xl,
+  .ui-heading--font-display.ui-heading--2xl {
+    letter-spacing: -0.015em;
   }
 </style>

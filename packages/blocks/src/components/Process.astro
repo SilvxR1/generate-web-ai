@@ -3,6 +3,11 @@
  * Process — an ordered sequence of steps (e.g. "how it works"). Rendered as
  * a native <ol> so the sequence is conveyed semantically, not just visually.
  * Distinct from Features: Process is inherently ordered, Features is not.
+ *
+ * A connecting line threads the numbered steps: vertical through the
+ * single-column mobile layout, horizontal across the desktop row. It's
+ * positioned with percentages derived from the step count (`--step-count`),
+ * so it works for any number of steps, not just four.
  */
 import { Container, Heading, Text } from "@generate-web-ai/ui";
 
@@ -22,18 +27,23 @@ export interface ProcessContent {
 export interface Props {
   content: ProcessContent;
   id?: string;
+  /** Section surface tone. Defaults to "base". */
+  background?: "base" | "surface";
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
+const { content, id, background = "base", reveal = true, class: className } = Astro.props;
 const { heading, subheading, steps } = content;
 ---
 
-<section id={id} class:list={["block-process", className]}>
+<section id={id} data-surface={background} class:list={["block-process", { "block-reveal": reveal }, className]}>
   <Container size="lg">
   {(heading || subheading) && (
     <div class="block-process__intro">
-      {heading && <Heading level={2}>{heading}</Heading>}
+      {heading && <Heading level={2} font="display">{heading}</Heading>}
       {subheading && (
         <Text size="lg" variant="muted">
           {subheading}
@@ -41,10 +51,10 @@ const { heading, subheading, steps } = content;
       )}
     </div>
   )}
-  <ol class="block-process__list">
+  <ol class="block-process__list" style={`--step-count: ${steps.length};`}>
     {steps.map((step, index) => (
       <li class="block-process__item">
-        <span class="block-process__number" aria-hidden="true">{index + 1}</span>
+        <span class="block-process__number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
         <div class="block-process__body">
           {step.icon && (
             <span class="block-process__icon" aria-hidden="true">
@@ -64,7 +74,12 @@ const { heading, subheading, steps } = content;
 
 <style>
   .block-process {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-process[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
   }
 
   .block-process__intro {
@@ -72,22 +87,36 @@ const { heading, subheading, steps } = content;
     flex-direction: column;
     gap: 0.75rem;
     max-width: 42rem;
-    margin-bottom: 2.5rem;
+    margin-bottom: 3rem;
   }
 
   .block-process__list {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 2rem;
+    gap: 2.25rem;
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
   .block-process__item {
+    position: relative;
     display: flex;
-    gap: 1rem;
+    gap: 1.25rem;
     align-items: flex-start;
+  }
+
+  /* Vertical connector: a short segment in the gap below each item's
+     number, sized to match `gap` above — independent of item height, since
+     grid `gap` is constant regardless of how much each description wraps. */
+  .block-process__item:not(:last-child)::after {
+    content: "";
+    position: absolute;
+    left: 1.5rem;
+    top: 3rem;
+    width: 2px;
+    height: 2.25rem;
+    background-color: var(--ui-color-border, #e5e7eb);
   }
 
   .block-process__number {
@@ -95,18 +124,21 @@ const { heading, subheading, steps } = content;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.25rem;
-    height: 2.25rem;
+    width: 3rem;
+    height: 3rem;
     border-radius: 9999px;
     background-color: var(--ui-color-primary, #2563eb);
     color: var(--ui-color-primary-fg, #ffffff);
+    font-family: var(--ui-font-display, var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif));
     font-weight: 600;
+    font-size: 1.125rem;
   }
 
   .block-process__body {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
+    padding-top: 0.5rem;
   }
 
   .block-process__icon {
@@ -118,15 +150,50 @@ const { heading, subheading, steps } = content;
     .block-process__list {
       grid-template-columns: repeat(2, 1fr);
     }
+
+    .block-process__item:not(:last-child)::after {
+      display: none;
+    }
   }
 
   @media (min-width: 1024px) {
     .block-process__list {
       grid-template-columns: repeat(4, 1fr);
+      position: relative;
     }
 
     .block-process__item {
       flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 1rem;
+    }
+
+    .block-process__item::after {
+      display: none;
+    }
+
+    /* Horizontal connector spans between the first and last number's
+       centers: each column is 1/step-count wide, and a circle sits centered
+       in its column, so the centers land at 1/(2*N), 3/(2*N), ... */
+    .block-process__list::before {
+      content: "";
+      position: absolute;
+      top: 1.5rem;
+      left: calc(100% / (var(--step-count) * 2));
+      right: calc(100% / (var(--step-count) * 2));
+      height: 2px;
+      background-color: var(--ui-color-border, #e5e7eb);
+      z-index: 0;
+    }
+
+    .block-process__number {
+      position: relative;
+      z-index: 1;
+    }
+
+    .block-process__body {
+      padding-top: 0;
     }
   }
 </style>

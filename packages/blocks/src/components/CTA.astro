@@ -1,8 +1,9 @@
 ---
 /**
  * CTA — a focused call-to-action banner, typically used to close a page.
- * Deliberately minimal: a heading, optional supporting copy, and up to
- * two actions.
+ * "emphasis" renders a full-bleed, high-contrast panel for a genuine
+ * conversion moment; "default" (the prior appearance) is a lighter inline
+ * panel for a secondary CTA elsewhere on the page.
  */
 import { Button, Container, Heading, Text } from "@generate-web-ai/ui";
 import type { BlockAction } from "../types";
@@ -12,24 +13,29 @@ export interface CTAContent {
   subheading?: string;
   primaryAction: BlockAction;
   secondaryAction?: BlockAction;
+  /** "emphasis" renders a full-bleed, high-contrast panel. Defaults to "default". */
+  variant?: "default" | "emphasis";
 }
 
 export interface Props {
   content: CTAContent;
   id?: string;
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
-const { heading, subheading, primaryAction, secondaryAction } = content;
+const { content, id, reveal = true, class: className } = Astro.props;
+const { heading, subheading, primaryAction, secondaryAction, variant = "default" } = content;
 ---
 
-<section id={id} class:list={["block-cta", className]}>
-  <Container size="md">
+<section id={id} data-variant={variant} class:list={["block-cta", { "block-reveal": reveal }, className]}>
+  <Container size={variant === "emphasis" ? "lg" : "md"}>
   <div class="block-cta__panel">
-    <Heading level={2}>{heading}</Heading>
+    <Heading level={2} font="display" class="block-cta__heading">{heading}</Heading>
     {subheading && (
-      <Text size="lg" variant="muted">
+      <Text size="lg" variant="muted" class="block-cta__subheading">
         {subheading}
       </Text>
     )}
@@ -49,7 +55,7 @@ const { heading, subheading, primaryAction, secondaryAction } = content;
 
 <style>
   .block-cta {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem));
   }
 
   .block-cta__panel {
@@ -58,9 +64,6 @@ const { heading, subheading, primaryAction, secondaryAction } = content;
     align-items: center;
     gap: 1rem;
     text-align: center;
-    padding: 2.5rem 1.5rem;
-    border-radius: var(--ui-radius-lg, 0.75rem);
-    background-color: var(--ui-color-border, #e5e7eb);
   }
 
   .block-cta__actions {
@@ -71,9 +74,55 @@ const { heading, subheading, primaryAction, secondaryAction } = content;
     margin-top: 0.5rem;
   }
 
+  /* Default: a light inline panel, for a secondary CTA moment. */
+  .block-cta[data-variant="default"] .block-cta__panel {
+    padding: 2.5rem 1.5rem;
+    border-radius: var(--ui-radius-lg, 0.75rem);
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
+    border: 1px solid var(--ui-color-border, #e5e7eb);
+  }
+
+  /* Emphasis: a full-bleed, high-contrast panel — the page's strongest
+     conversion moment. */
+  .block-cta[data-variant="emphasis"] {
+    background-color: var(--ui-color-fg, #111827);
+  }
+
+  .block-cta[data-variant="emphasis"] .block-cta__panel {
+    padding-block: 1rem;
+  }
+
+  .block-cta[data-variant="emphasis"] :global(.ui-heading) {
+    color: #ffffff;
+  }
+
+  .block-cta[data-variant="emphasis"] .block-cta__subheading {
+    color: color-mix(in srgb, #ffffff 70%, transparent);
+  }
+
+  /* The outline/ghost Button variants use --ui-color-primary for
+     border/text, tuned for light backgrounds — against this panel's dark
+     fill that combination doesn't reach AA contrast, so it's overridden
+     to white here specifically. */
+  .block-cta[data-variant="emphasis"] :global(.ui-btn--outline),
+  .block-cta[data-variant="emphasis"] :global(.ui-btn--ghost) {
+    border-color: color-mix(in srgb, #ffffff 55%, transparent);
+    color: #ffffff;
+  }
+
+  .block-cta[data-variant="emphasis"] :global(.ui-btn--outline:hover),
+  .block-cta[data-variant="emphasis"] :global(.ui-btn--ghost:hover) {
+    background-color: color-mix(in srgb, #ffffff 12%, transparent);
+    border-color: #ffffff;
+  }
+
   @media (min-width: 768px) {
-    .block-cta__panel {
+    .block-cta[data-variant="default"] .block-cta__panel {
       padding: 3.5rem 3rem;
+    }
+
+    .block-cta[data-variant="emphasis"] .block-cta__panel {
+      padding-block: 1.5rem;
     }
   }
 </style>

@@ -82,6 +82,30 @@ const computedRel = target === "_blank" ? (rel ?? "noopener noreferrer") : rel;
       opacity 0.15s ease;
   }
 
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-btn {
+      transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease,
+        transform 0.15s ease,
+        box-shadow 0.15s ease;
+    }
+
+    .ui-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .ui-btn--solid:hover {
+      box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--ui-color-primary, #2563eb) 45%, transparent);
+    }
+
+    .ui-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+  }
+
   .ui-btn:focus-visible {
     outline: 2px solid var(--ui-color-primary, #2563eb);
     outline-offset: 2px;

@@ -9,9 +9,27 @@ export interface BlockAction {
   variant?: "solid" | "outline" | "ghost";
 }
 
-/** An image reference. `alt` is required so blocks never render inaccessible images. */
-export interface BlockImage {
+/**
+ * Structural shape of an Astro-imported local image. Duplicated from
+ * `@generate-web-ai/site-config`'s `LocalImageRef` rather than imported —
+ * see that file's comment; the same reasoning applies here (this file
+ * stays plain TypeScript, no Astro types, even though the package as a
+ * whole does depend on Astro to compile its `.astro` components).
+ */
+export interface LocalImageRef {
   src: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+/**
+ * An image reference. `alt` is required so blocks never render inaccessible
+ * images. `src` accepts a plain URL/path or a `LocalImageRef` — see
+ * `@generate-web-ai/ui`'s `Media` component for what the latter enables.
+ */
+export interface BlockImage {
+  src: string | LocalImageRef;
   alt: string;
   width?: number;
   height?: number;

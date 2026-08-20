@@ -13,15 +13,23 @@ export interface Props {
   padding?: "sm" | "md" | "lg";
   /** Surface treatment. Defaults to "outlined". */
   variant?: "flat" | "outlined" | "elevated";
+  /** Adds a hover affordance (border + slight lift) for a card that acts as
+   * one hoverable/clickable unit. Leave off for cards with no per-card
+   * destination, where a hover reaction would be a false affordance.
+   * Defaults to false. */
+  interactive?: boolean;
   /** Additional class names to merge onto the root element. */
   class?: string;
+  /** Any other attribute (e.g. `data-*`, `aria-*`) passes through to the root element. */
+  [key: `data-${string}`]: unknown;
 }
 
-const { as: Tag = "div", padding = "md", variant = "outlined", class: className } = Astro.props;
+const { as: Tag = "div", padding = "md", variant = "outlined", interactive = false, class: className, ...rest } = Astro.props;
 ---
 
 <Tag
-  class:list={["ui-card", `ui-card--${variant}`, `ui-card--pad-${padding}`, className]}
+  class:list={["ui-card", `ui-card--${variant}`, `ui-card--pad-${padding}`, { "ui-card--interactive": interactive }, className]}
+  {...rest}
 >
   <slot />
 </Tag>
@@ -58,5 +66,36 @@ const { as: Tag = "div", padding = "md", variant = "outlined", class: className 
     box-shadow:
       0 1px 2px rgba(0, 0, 0, 0.04),
       0 8px 24px rgba(0, 0, 0, 0.06);
+  }
+
+  .ui-card--interactive {
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ui-card--interactive {
+      transition:
+        border-color 0.15s ease,
+        box-shadow 0.15s ease,
+        transform 0.15s ease;
+    }
+
+    .ui-card--interactive:hover {
+      transform: translateY(-2px);
+    }
+  }
+
+  .ui-card--interactive:hover {
+    box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--ui-color-fg, #111827) 18%, transparent);
+  }
+
+  /* Border-color shift only for "outlined", whose border is visible on all
+     sides by design. "flat" cards may deliberately show a border on only
+     one side (e.g. Testimonials' top rule) — shifting `border-color` there
+     would paint in the sides they left transparent on purpose. */
+  .ui-card--outlined.ui-card--interactive:hover {
+    border-color: var(--ui-color-primary, #2563eb);
   }
 </style>

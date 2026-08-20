@@ -15,6 +15,12 @@ export interface BlockActionConfig {
   variant?: "solid" | "outline" | "ghost";
 }
 
+/** A single highlighted figure shown alongside the hero (e.g. years of experience). */
+export interface HeroStatConfig {
+  value: string;
+  label: string;
+}
+
 export interface HeroBlockContent {
   eyebrow?: string;
   heading: string;
@@ -22,6 +28,8 @@ export interface HeroBlockContent {
   primaryAction?: BlockActionConfig;
   secondaryAction?: BlockActionConfig;
   image?: AssetConfig;
+  /** Optional highlighted figure overlaid on the hero image (e.g. "+10 años" / "de experiencia"). */
+  stat?: HeroStatConfig;
 }
 
 export interface ServiceItemConfig {
@@ -32,6 +40,8 @@ export interface ServiceItemConfig {
   /** Takes precedence over `icon` when both are set. */
   image?: AssetConfig;
   action?: BlockActionConfig;
+  /** Renders with larger visual emphasis. When no item sets this, the first item is treated as featured. */
+  featured?: boolean;
 }
 
 export interface ServicesBlockContent {
@@ -68,6 +78,8 @@ export interface GalleryItemConfig {
   description?: string;
   link?: BlockActionConfig;
   beforeAfter?: GalleryBeforeAfterConfig;
+  /** Renders larger in the grid. When no item sets this, the first item is treated as featured. */
+  featured?: boolean;
 }
 
 export interface GalleryBlockContent {
@@ -96,6 +108,8 @@ export interface TestimonialItemConfig {
   avatar?: AssetConfig;
   /** Optional 1-5 star rating. */
   rating?: number;
+  /** Renders larger, as the section's lead quote. When no item sets this, the first item is treated as featured. */
+  featured?: boolean;
 }
 
 export interface TestimonialsBlockContent {
@@ -120,6 +134,8 @@ export interface CTABlockContent {
   subheading?: string;
   primaryAction: BlockActionConfig;
   secondaryAction?: BlockActionConfig;
+  /** "emphasis" renders a full-bleed, high-contrast conversion moment. Defaults to "default". */
+  variant?: "default" | "emphasis";
 }
 
 export interface ContactDetailConfig {
@@ -191,6 +207,22 @@ export interface ContactBlockContent {
 interface BlockConfigBase {
   /** Anchor id for in-page navigation (e.g. a nav link to "#services"). */
   id?: string;
+  /**
+   * Section surface tone, for alternating background rhythm down a page.
+   * "surface" maps to the theme's alternate surface color; omitted/"base"
+   * uses the page background. Purely presentational — content is unaffected.
+   */
+  background?: "base" | "surface";
+  /**
+   * Whether the section animates into view as the visitor scrolls to it.
+   * Purely presentational and always degrades to fully visible: it has no
+   * effect when the visitor prefers reduced motion, and never hides content
+   * if JavaScript doesn't run. Each block picks its own default for this
+   * field (most default to `true`; a block that's typically visible without
+   * scrolling may default to `false` instead), so omitting it is the normal
+   * case, not a gap to fill in.
+   */
+  reveal?: boolean;
 }
 
 export interface HeroBlockConfig extends BlockConfigBase {

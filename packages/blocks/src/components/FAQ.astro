@@ -20,18 +20,23 @@ export interface FAQContent {
 export interface Props {
   content: FAQContent;
   id?: string;
+  /** Section surface tone. Defaults to "base". */
+  background?: "base" | "surface";
+  /** Animates the section into view on scroll. Defaults to true; has no
+   * effect when the visitor prefers reduced motion or JS doesn't run. */
+  reveal?: boolean;
   class?: string;
 }
 
-const { content, id, class: className } = Astro.props;
+const { content, id, background = "base", reveal = true, class: className } = Astro.props;
 const { heading, subheading, items } = content;
 ---
 
-<section id={id} class:list={["block-faq", className]}>
+<section id={id} data-surface={background} class:list={["block-faq", { "block-reveal": reveal }, className]}>
   <Container size="md">
   {(heading || subheading) && (
     <div class="block-faq__intro">
-      {heading && <Heading level={2}>{heading}</Heading>}
+      {heading && <Heading level={2} font="display">{heading}</Heading>}
       {subheading && (
         <Text size="lg" variant="muted">
           {subheading}
@@ -43,9 +48,11 @@ const { heading, subheading, items } = content;
     {items.map((item) => (
       <details class="block-faq__item">
         <summary class="block-faq__question">{item.question}</summary>
-        <Text as="div" variant="muted" class="block-faq__answer">
-          {item.answer}
-        </Text>
+        <div class="block-faq__answer">
+          <Text as="div" variant="muted" class="block-faq__answer-text">
+            {item.answer}
+          </Text>
+        </div>
       </details>
     ))}
   </div>
@@ -54,7 +61,12 @@ const { heading, subheading, items } = content;
 
 <style>
   .block-faq {
-    padding-block: 3rem;
+    padding-block: var(--ui-space-section-sm, clamp(3rem, 2.6rem + 1.6vw, 4rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-faq[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
   }
 
   .block-faq__intro {
@@ -106,7 +118,31 @@ const { heading, subheading, items } = content;
     outline-offset: 2px;
   }
 
+  /* Grid-rows trick: animates from a 0-height row to its content's natural
+     height, which a plain `height`/`max-height` transition can't do without
+     a fixed target height. Relies on `<details>` content no longer being
+     hard `display: none` when closed in current browsers (only hidden via
+     the UA stylesheet's rendering, not removed from layout) — this is what
+     makes it possible to sit an actual box on this element even while
+     closed. Older browsers without transition support here just snap
+     open/closed, same as before this change. */
   .block-faq__answer {
-    margin-top: 0.75rem;
+    display: grid;
+    grid-template-rows: 0fr;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .block-faq__answer {
+      transition: grid-template-rows 0.25s ease;
+    }
+  }
+
+  details[open] > .block-faq__answer {
+    grid-template-rows: 1fr;
+  }
+
+  .block-faq__answer-text {
+    overflow: hidden;
+    padding-top: 0.75rem;
   }
 </style>
