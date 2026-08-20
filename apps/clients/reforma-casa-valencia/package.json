@@ -1,0 +1,26 @@
+{
+  "name": "@generate-web-ai/reforma-casa-valencia",
+  "private": true,
+  "version": "0.0.1",
+  "description": "ReformaCasa Valencia — client site built on the generate-web-ai design system.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@generate-web-ai/renderer": "workspace:*",
+    "@generate-web-ai/site-config": "workspace:*",
+    "@generate-web-ai/ui": "workspace:*",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.2.3",
+    "sharp": "^0.35.3",
+    "tailwindcss": "4.3.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "typescript": "6.0.3"
+  }
+}

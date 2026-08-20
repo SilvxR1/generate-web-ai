@@ -1,0 +1,162 @@
+---
+/**
+ * Layout — the page shell: <head>/SEO wiring, theme application, and the
+ * Header/Footer chrome around whatever page content is passed via <slot />.
+ *
+ * `packages/renderer`'s README explicitly leaves theme application (CSS
+ * custom properties) and page layout (<html>, navigation, footer) to the
+ * app — this is that app-level piece for ReformaCasa Valencia.
+ *
+ * `packages/ui` components read color/typography/radius from `--ui-*` CSS
+ * custom properties (see packages/ui/README.md). `SiteConfig.theme` only
+ * covers five color roles (primary/secondary/accent/background/foreground),
+ * fewer than the `--ui-*` variables the primitives read, so a couple of
+ * additional roles are derived here rather than added to the shared
+ * `ThemeConfig` type — this is the one client so far, so it's not yet clear
+ * those extra roles generalize across clients.
+ *
+ * Note the `--ui-color-primary` variable (the *interactive* accent driving
+ * buttons/links per packages/ui) is intentionally sourced from
+ * `theme.colors.accent`, not `theme.colors.primary` — `theme.colors.primary`
+ * here is the brand's anchor color (used for body text and the dark footer),
+ * while `accent` is the actionable CTA color. The naming overlap between
+ * SiteConfig's `theme.colors.primary` and ui's `--ui-color-primary` is a
+ * latent point of confusion worth resolving in the shared schema later.
+ *
+ * `--ui-color-surface-alt` (alternating section backgrounds) and the three
+ * `--ui-space-section-*` rhythm tokens aren't part of `ThemeConfig` either,
+ * for the same one-client-isn't-enough-evidence reason — blocks that use
+ * them already carry a literal fallback, so they render sensibly even
+ * without this app defining them.
+ */
+import { buildLocalBusinessJsonLd, type SiteConfig } from "@generate-web-ai/site-config";
+import Header from "./Header.astro";
+import Footer from "./Footer.astro";
+import { NAV_LINKS, HEADER_CTA, CONTACT_INFO } from "../config/site";
+import "../styles/global.css";
+
+export interface Props {
+  siteConfig: SiteConfig;
+  seo: {
+    title: string;
+    description: string;
+    /** `src` may be a plain URL or a `LocalImageRef` (see
+     * @generate-web-ai/site-config's `AssetConfig`) — either way, the
+     * og:image/twitter:image meta tags below need a single plain URL, not
+     * a responsive srcset, so `ogImageURL` resolves it to a string. */
+    ogImage?: { src: string | { src: string; width: number; height: number; format: string }; alt: string };
+  };
+}
+
+const { siteConfig, seo } = Astro.props;
+const { theme, brand } = siteConfig;
+
+// Darkened reading of `theme.colors.secondary` so muted/secondary body copy
+// keeps AA contrast (>= 4.5:1) against `theme.colors.background`.
+const MUTED_FOREGROUND = "#655C4F";
+const PRIMARY_FOREGROUND = "#FFFFFF";
+// Warm stone wash for alternating section backgrounds (--ui-color-surface-alt).
+// Not part of ThemeColorConfig yet for the same reason as MUTED_FOREGROUND
+// above — one client isn't enough evidence this exact derivation generalizes.
+const SURFACE_ALT = "#EFE8DC";
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const ogImageSrc = typeof seo.ogImage?.src === "string" ? seo.ogImage.src : seo.ogImage?.src.src;
+const ogImageURL = ogImageSrc ? new URL(ogImageSrc, Astro.site) : undefined;
+
+const localBusinessJsonLd = buildLocalBusinessJsonLd(siteConfig);
+
+const serviceNavLinks = [
+  { label: "Reformas integrales", href: "#servicios" },
+  { label: "Cocinas", href: "#servicios" },
+  { label: "Baños", href: "#servicios" },
+  { label: "Pintura", href: "#servicios" },
+  { label: "Electricidad y fontanería", href: "#servicios" },
+  { label: "Diseño y planificación", href: "#servicios" },
+] as const;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="canonical" href={canonicalURL} />
+
+    <title>{seo.title}</title>
+    <meta name="description" content={seo.description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={seo.title} />
+    <meta property="og:description" content={seo.description} />
+    <meta property="og:url" content={canonicalURL} />
+    {ogImageURL && <meta property="og:image" content={ogImageURL} />}
+    {seo.ogImage && <meta property="og:image:alt" content={seo.ogImage.alt} />}
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={seo.title} />
+    <meta name="twitter:description" content={seo.description} />
+    {ogImageURL && <meta name="twitter:image" content={ogImageURL} />}
+
+    {
+      // `<`-escaped so a `<` in any field value (none today, but this
+      // is system-level code other clients' content will flow through)
+      // can't accidentally close the script tag early.
+      localBusinessJsonLd && (
+        <script type="application/ld+json" is:inline set:html={JSON.stringify(localBusinessJsonLd).replace(/</g, "\\u003c")} />
+      )
+    }
+
+    <style set:html={`:root {
+      --ui-font-sans: ${theme.fonts.sans};
+      ${theme.fonts.display ? `--ui-font-display: ${theme.fonts.display};` : ""}
+      --ui-color-fg: ${theme.colors.foreground};
+      --ui-color-muted-fg: ${MUTED_FOREGROUND};
+      --ui-color-bg: ${theme.colors.background};
+      --ui-color-surface-alt: ${SURFACE_ALT};
+      --ui-color-border: ${theme.colors.secondary};
+      --ui-color-primary: ${theme.colors.accent};
+      --ui-color-primary-fg: ${PRIMARY_FOREGROUND};
+      --ui-radius: ${theme.radius.base};
+      --ui-radius-lg: ${theme.radius.lg};
+      --ui-space-section-sm: clamp(3rem, 2.6rem + 1.6vw, 4rem);
+      --ui-space-section-md: clamp(3.5rem, 3rem + 2.5vw, 5.5rem);
+      --ui-space-section-lg: clamp(4rem, 3.5rem + 3.5vw, 6.5rem);
+    }`} />
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Saltar al contenido principal</a>
+    <Header brandName={brand.name} navLinks={NAV_LINKS} cta={HEADER_CTA} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer
+      brandName={brand.name}
+      tagline={brand.tagline}
+      navLinks={NAV_LINKS}
+      serviceLinks={serviceNavLinks}
+      phoneDisplay={CONTACT_INFO.phoneDisplay}
+      phoneHref={CONTACT_INFO.phoneHref}
+      email={CONTACT_INFO.email}
+    />
+  </body>
+</html>
+
+<style is:global>
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    background-color: var(--ui-color-bg);
+    color: var(--ui-color-fg);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--ui-radius);
+    font-family: var(--ui-font-sans);
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+  }
+</style>
