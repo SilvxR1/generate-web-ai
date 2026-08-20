@@ -1,0 +1,24 @@
+---
+/**
+ * Homepage — content lives entirely in src/config/site.ts (SiteConfig).
+ * This page only resolves the "/" PageConfig and hands it to PageRenderer,
+ * the same renderer every client site uses:
+ *
+ *   content + theme (site.ts) -> PageRenderer -> Astro output
+ */
+import { PageRenderer } from "@generate-web-ai/renderer";
+import Layout from "../components/Layout.astro";
+import BookingCalendar from "../components/BookingCalendar.astro";
+import { siteConfig } from "../config/site";
+
+const page = siteConfig.pages.find((p) => p.path === "/");
+if (!page) {
+  throw new Error('siteConfig has no page configured for path "/".');
+}
+const seo = page.seo ?? siteConfig.seo;
+---
+
+<Layout siteConfig={siteConfig} seo={seo}>
+  <PageRenderer page={page} />
+  <BookingCalendar id="reservar" />
+</Layout>

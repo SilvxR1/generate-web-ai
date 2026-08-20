@@ -1,0 +1,139 @@
+---
+/**
+ * Layout — the page shell: <head>/SEO wiring, theme application, and the
+ * Header/Footer chrome around whatever page content is passed via <slot />.
+ * Same role and structure as apps/clients/reforma-casa-valencia's Layout —
+ * see that file for the fuller rationale behind the CSS-custom-property
+ * wiring. The values below differ because this is a dark theme rather than
+ * a light one, which changes what "muted foreground" and "surface alt"
+ * need to be, and — importantly — which of the two accent-adjacent colors
+ * needs to be dark vs. light for contrast (see PRIMARY_FOREGROUND below).
+ */
+import { buildLocalBusinessJsonLd, type SiteConfig } from "@generate-web-ai/site-config";
+import Header from "./Header.astro";
+import Footer from "./Footer.astro";
+import { NAV_LINKS, HEADER_CTA, CONTACT_INFO } from "../config/site";
+import "../styles/global.css";
+
+export interface Props {
+  siteConfig: SiteConfig;
+  seo: {
+    title: string;
+    description: string;
+    ogImage?: { src: string | { src: string; width: number; height: number; format: string }; alt: string };
+  };
+}
+
+const { siteConfig, seo } = Astro.props;
+const { theme, brand } = siteConfig;
+
+// Lightened reading of `theme.colors.secondary` so muted/secondary body
+// copy keeps AA contrast (>= 4.5:1) against the dark `theme.colors.background`
+// — the dark-theme mirror of reforma-casa-valencia's MUTED_FOREGROUND darkening.
+const MUTED_FOREGROUND = "#B8AA8C";
+// Text color for *solid* buttons (background = theme.colors.accent, the
+// gold). White text on gold fails contrast (gold is a bright, mid-tone
+// color) — unlike reforma-casa-valencia's terracotta accent, which is dark
+// enough for white text to work. Dark text is what actually reaches AA here.
+const PRIMARY_FOREGROUND = "#16130F";
+// Slightly lighter panel than the base background, for alternating section
+// backgrounds (--ui-color-surface-alt) and the footer.
+const SURFACE_ALT = "#211C15";
+
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const ogImageSrc = typeof seo.ogImage?.src === "string" ? seo.ogImage.src : seo.ogImage?.src.src;
+const ogImageURL = ogImageSrc ? new URL(ogImageSrc, Astro.site) : undefined;
+
+const localBusinessJsonLd = buildLocalBusinessJsonLd(siteConfig);
+
+const serviceNavLinks = [
+  { label: "Corte clásico", href: "#servicios" },
+  { label: "Corte + barba", href: "#servicios" },
+  { label: "Afeitado a navaja", href: "#servicios" },
+  { label: "Arreglo de barba", href: "#servicios" },
+  { label: "Diseño de barba", href: "#servicios" },
+  { label: "Coloración", href: "#servicios" },
+] as const;
+---
+
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="canonical" href={canonicalURL} />
+
+    <title>{seo.title}</title>
+    <meta name="description" content={seo.description} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={seo.title} />
+    <meta property="og:description" content={seo.description} />
+    <meta property="og:url" content={canonicalURL} />
+    {ogImageURL && <meta property="og:image" content={ogImageURL} />}
+    {seo.ogImage && <meta property="og:image:alt" content={seo.ogImage.alt} />}
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={seo.title} />
+    <meta name="twitter:description" content={seo.description} />
+    {ogImageURL && <meta name="twitter:image" content={ogImageURL} />}
+
+    {
+      localBusinessJsonLd && (
+        <script type="application/ld+json" is:inline set:html={JSON.stringify(localBusinessJsonLd).replace(/</g, "\\u003c")} />
+      )
+    }
+
+    <style set:html={`:root {
+      --ui-font-sans: ${theme.fonts.sans};
+      ${theme.fonts.display ? `--ui-font-display: ${theme.fonts.display};` : ""}
+      --ui-color-fg: ${theme.colors.foreground};
+      --ui-color-muted-fg: ${MUTED_FOREGROUND};
+      --ui-color-bg: ${theme.colors.background};
+      --ui-color-surface-alt: ${SURFACE_ALT};
+      --ui-color-border: ${theme.colors.secondary};
+      --ui-color-primary: ${theme.colors.accent};
+      --ui-color-primary-fg: ${PRIMARY_FOREGROUND};
+      --ui-radius: ${theme.radius.base};
+      --ui-radius-lg: ${theme.radius.lg};
+      --ui-space-section-sm: clamp(3rem, 2.6rem + 1.6vw, 4rem);
+      --ui-space-section-md: clamp(3.5rem, 3rem + 2.5vw, 5.5rem);
+      --ui-space-section-lg: clamp(4rem, 3.5rem + 3.5vw, 6.5rem);
+    }`} />
+  </head>
+  <body>
+    <a href="#main" class="skip-link">Saltar al contenido principal</a>
+    <Header brandName={brand.name} navLinks={NAV_LINKS} cta={HEADER_CTA} />
+    <main id="main">
+      <slot />
+    </main>
+    <Footer
+      brandName={brand.name}
+      tagline={brand.tagline}
+      navLinks={NAV_LINKS}
+      serviceLinks={serviceNavLinks}
+      phoneDisplay={CONTACT_INFO.phoneDisplay}
+      phoneHref={CONTACT_INFO.phoneHref}
+      email={CONTACT_INFO.email}
+    />
+  </body>
+</html>
+
+<style is:global>
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    background-color: var(--ui-color-bg);
+    color: var(--ui-color-fg);
+    padding: 0.75rem 1.25rem;
+    border-radius: var(--ui-radius);
+    font-family: var(--ui-font-sans);
+    font-weight: 600;
+  }
+
+  .skip-link:focus {
+    left: 1rem;
+    top: 1rem;
+  }
+</style>

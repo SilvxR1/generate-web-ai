@@ -1,0 +1,224 @@
+---
+/**
+ * Header — sticky site navigation for the Sacri Barber shell.
+ * Client-specific: this app doesn't yet have a reusable Navbar in
+ * `packages/ui`/`packages/blocks` (see docs/architecture.md), so the shell
+ * lives here rather than being duplicated shared-component code. Identical
+ * in structure to apps/clients/reforma-casa-valencia's Header — fully
+ * generic, driven only by props, nothing theme- or business-specific baked
+ * in — so it's reused as-is rather than forked.
+ *
+ * The mobile menu is a native <details>/<summary> disclosure — no
+ * client-side JavaScript is shipped for it, matching the zero-JS pattern
+ * `packages/blocks`' FAQ block already uses.
+ */
+import { Button, Container, Link } from "@generate-web-ai/ui";
+
+export interface NavLinkItem {
+  label: string;
+  href: string;
+}
+
+export interface Props {
+  brandName: string;
+  navLinks: readonly NavLinkItem[];
+  cta: { label: string; href: string };
+}
+
+const { brandName, navLinks, cta } = Astro.props;
+---
+
+<header class="site-header">
+  <Container size="xl" as="div" class="site-header__row">
+    <a href="#inicio" class="site-header__brand">{brandName}</a>
+
+    <nav class="site-header__nav" aria-label="Navegación principal">
+      <ul>
+        {navLinks.map((link) => (
+          <li>
+            <Link href={link.href} class="site-header__link" underline="hover">
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+
+    <div class="site-header__cta">
+      <Button href={cta.href} size="md">{cta.label}</Button>
+    </div>
+
+    <details class="site-header__mobile">
+      <summary aria-label="Abrir menú de navegación" class="site-header__mobile-toggle">
+        <span class="site-header__mobile-icon" aria-hidden="true"></span>
+      </summary>
+      <div class="site-header__mobile-panel">
+        <nav aria-label="Navegación móvil">
+          <ul>
+            {navLinks.map((link) => (
+              <li>
+                <a href={link.href} class="site-header__mobile-link">{link.label}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <Button href={cta.href} size="md" class="site-header__mobile-cta">{cta.label}</Button>
+      </div>
+    </details>
+  </Container>
+</header>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background-color: color-mix(in srgb, var(--ui-color-bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--ui-color-border);
+  }
+
+  .site-header__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-block: 1rem;
+  }
+
+  .site-header__brand {
+    font-family: var(--ui-font-display, var(--ui-font-sans));
+    font-weight: 600;
+    font-size: 1.25rem;
+    letter-spacing: -0.01em;
+    color: var(--ui-color-fg);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .site-header__nav {
+    display: none;
+  }
+
+  .site-header__nav ul {
+    display: flex;
+    align-items: center;
+    gap: 1.75rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-header__link {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--ui-color-fg);
+  }
+
+  .site-header__cta {
+    display: none;
+  }
+
+  .site-header__mobile {
+    margin-left: auto;
+  }
+
+  .site-header__mobile > summary {
+    list-style: none;
+  }
+
+  .site-header__mobile > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .site-header__mobile-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    cursor: pointer;
+    border-radius: var(--ui-radius);
+    border: 1px solid var(--ui-color-border);
+  }
+
+  .site-header__mobile-icon,
+  .site-header__mobile-icon::before,
+  .site-header__mobile-icon::after {
+    display: block;
+    width: 1.125rem;
+    height: 2px;
+    background-color: var(--ui-color-fg);
+    border-radius: 1px;
+  }
+
+  .site-header__mobile-icon {
+    position: relative;
+  }
+
+  .site-header__mobile-icon::before,
+  .site-header__mobile-icon::after {
+    content: "";
+    position: absolute;
+    left: 0;
+  }
+
+  .site-header__mobile-icon::before {
+    top: -6px;
+  }
+
+  .site-header__mobile-icon::after {
+    top: 6px;
+  }
+
+  .site-header__mobile[open] .site-header__mobile-toggle {
+    background-color: var(--ui-color-border);
+  }
+
+  .site-header__mobile-panel {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    padding: 1.5rem 1rem 2rem;
+    background-color: var(--ui-color-bg);
+    border-bottom: 1px solid var(--ui-color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .site-header__mobile-panel ul {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-header__mobile-link {
+    font-family: var(--ui-font-sans);
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: var(--ui-color-fg);
+    text-decoration: none;
+  }
+
+  .site-header__mobile-cta {
+    align-self: flex-start;
+  }
+
+  @media (min-width: 900px) {
+    .site-header__nav {
+      display: block;
+    }
+
+    .site-header__cta {
+      display: block;
+    }
+
+    .site-header__mobile {
+      display: none;
+    }
+  }
+</style>

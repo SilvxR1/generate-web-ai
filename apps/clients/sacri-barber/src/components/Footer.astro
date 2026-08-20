@@ -1,0 +1,162 @@
+---
+/**
+ * Footer — client-specific site shell (see Header.astro for why this lives
+ * in the app rather than `packages/ui`/`packages/blocks`).
+ *
+ * Deliberately simpler than reforma-casa-valencia's Footer: that one flips
+ * to a dark panel with forced white text to read as "the footer" against
+ * its light theme. Sacri Barber's theme is dark site-wide, so the footer
+ * just needs a slightly distinct panel — `--ui-color-surface-alt` — and
+ * inherits the theme's normal fg/muted-fg tokens as-is, no color override
+ * needed.
+ */
+import { Container, Link, Text } from "@generate-web-ai/ui";
+
+export interface FooterNavLink {
+  label: string;
+  href: string;
+}
+
+export interface Props {
+  brandName: string;
+  tagline?: string;
+  navLinks: readonly FooterNavLink[];
+  serviceLinks: readonly FooterNavLink[];
+  phoneDisplay: string;
+  phoneHref: string;
+  email: string;
+}
+
+const { brandName, tagline, navLinks, serviceLinks, phoneDisplay, phoneHref, email } = Astro.props;
+const year = new Date().getFullYear();
+---
+
+<footer class="site-footer">
+  <Container size="xl">
+    <div class="site-footer__grid">
+      <div class="site-footer__about">
+        <p class="site-footer__brand">{brandName}</p>
+        <Text variant="muted" size="sm" class="site-footer__tagline">
+          {tagline ?? "Barbería clásica de corte, barba y afeitado."}
+        </Text>
+        <Text variant="muted" size="sm">
+          Sitio de demostración construido sobre la arquitectura generate-web-ai. Los trabajos y opiniones mostrados son
+          contenido ilustrativo.
+        </Text>
+      </div>
+
+      <nav class="site-footer__col" aria-label="Navegación">
+        <p class="site-footer__col-title">Navegación</p>
+        <ul>
+          {navLinks.map((link) => (
+            <li><Link href={link.href} variant="muted" underline="hover">{link.label}</Link></li>
+          ))}
+        </ul>
+      </nav>
+
+      <nav class="site-footer__col" aria-label="Servicios">
+        <p class="site-footer__col-title">Servicios</p>
+        <ul>
+          {serviceLinks.map((link) => (
+            <li><Link href={link.href} variant="muted" underline="hover">{link.label}</Link></li>
+          ))}
+        </ul>
+      </nav>
+
+      <div class="site-footer__col">
+        <p class="site-footer__col-title">Contacto</p>
+        <ul>
+          <li><Link href={phoneHref} variant="muted" underline="hover">{phoneDisplay}</Link></li>
+          <li><Link href={`mailto:${email}`} variant="muted" underline="hover">{email}</Link></li>
+          <li><Text variant="muted" size="sm" as="span">Malasaña, Madrid</Text></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="site-footer__bottom">
+      <Text variant="muted" size="sm" as="span">© {year} {brandName}. Sitio de demostración, sin actividad comercial real.</Text>
+      <ul class="site-footer__legal">
+        <li><Link href="#" variant="muted" underline="hover">Aviso legal</Link></li>
+        <li><Link href="#" variant="muted" underline="hover">Política de privacidad</Link></li>
+        <li><Link href="#" variant="muted" underline="hover">Política de cookies</Link></li>
+      </ul>
+    </div>
+  </Container>
+</footer>
+
+<style>
+  .site-footer {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg));
+    border-top: 1px solid var(--ui-color-border);
+    padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem)) 2rem;
+  }
+
+  .site-footer__grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    padding-bottom: 3rem;
+    border-bottom: 1px solid var(--ui-color-border);
+  }
+
+  .site-footer__brand {
+    font-family: var(--ui-font-display, var(--ui-font-sans));
+    font-weight: 600;
+    font-size: 1.375rem;
+    margin: 0 0 0.75rem;
+    color: var(--ui-color-fg);
+  }
+
+  .site-footer__tagline {
+    margin-bottom: 0.75rem;
+  }
+
+  .site-footer__col-title {
+    font-family: var(--ui-font-sans);
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 0 0 1rem;
+    color: var(--ui-color-fg);
+  }
+
+  .site-footer__col ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-footer__bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-top: 1.5rem;
+  }
+
+  .site-footer__legal {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  @media (min-width: 640px) {
+    .site-footer__grid {
+      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    }
+  }
+
+  @media (min-width: 640px) {
+    .site-footer__bottom {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+  }
+</style>

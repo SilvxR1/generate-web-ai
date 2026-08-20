@@ -1,0 +1,446 @@
+---
+/**
+ * BookingCalendar — Phase-2 prototype: a visual day/time picker with mocked
+ * availability, to test whether an in-page appointment flow is worth
+ * building for real. Deliberately lives only in this client app, not
+ * packages/blocks: the fake-data approach here (see src/data/appointments.ts)
+ * isn't something to promote to every client yet — see docs/architecture.md's
+ * "explicitly deferred" list, which already calls out a booking system as a
+ * real future feature, not something to build as shared infrastructure
+ * speculatively.
+ *
+ * No backend, no submission, nothing persisted — confirming an appointment
+ * only updates this component's own in-memory state and shows a message.
+ * It's the one piece of real client-side JavaScript in this client app
+ * (everything else — the mobile nav, the FAQ-style disclosures elsewhere in
+ * the shared blocks — is intentionally zero-JS); a day/time/service picker
+ * with live selection state genuinely needs it, unlike those.
+ */
+import { Button, Card, Container, Heading, Text } from "@generate-web-ai/ui";
+
+export interface Props {
+  id?: string;
+}
+
+const { id } = Astro.props;
+---
+
+<section id={id} class="booking">
+  <Container size="md">
+    <div class="booking__intro">
+      <Text as="p" size="sm" class="booking__eyebrow">Prototipo — disponibilidad de ejemplo</Text>
+      <Heading level={2} font="display">Reserva tu cita</Heading>
+      <Text size="lg" variant="muted">
+        Elige día, hora y servicio. Esta es una demostración: ninguna cita se guarda ni se envía a nadie.
+      </Text>
+    </div>
+
+    <Card variant="outlined" padding="lg" class="booking__panel">
+      <noscript>
+        <Text variant="muted">
+          Este selector necesita JavaScript para funcionar. Mientras tanto, escríbenos desde el
+          <a href="#contacto">formulario de contacto</a>.
+        </Text>
+      </noscript>
+
+      <div class="booking__app" data-booking-app>
+        <div class="booking__field" data-booking-service-field>
+          <label for="booking-service">Servicio</label>
+          <select id="booking-service" data-booking-service></select>
+        </div>
+
+        <div class="booking__step">
+          <p class="booking__step-label">Elige un día</p>
+          <div class="booking__days" data-booking-days role="list" aria-label="Días disponibles"></div>
+        </div>
+
+        <div class="booking__step" data-booking-slots-step>
+          <p class="booking__step-label">Elige una hora</p>
+          <div class="booking__slots" data-booking-slots aria-live="polite"></div>
+        </div>
+
+        <div class="booking__summary" data-booking-summary hidden>
+          <Text as="p" class="booking__summary-text" />
+          <Button class="booking__confirm" size="lg">Confirmar cita</Button>
+        </div>
+
+        <div class="booking__confirmation" data-booking-confirmation hidden>
+          <p class="booking__confirmation-icon" aria-hidden="true">✓</p>
+          <Heading level={3} size="lg">¡Cita confirmada!</Heading>
+          <Text class="booking__confirmation-text" />
+          <Button variant="outline" class="booking__reset">Reservar otra cita</Button>
+        </div>
+      </div>
+    </Card>
+  </Container>
+</section>
+
+<style>
+  .booking {
+    padding-block: var(--ui-space-section-lg, clamp(4rem, 3.5rem + 3.5vw, 6.5rem));
+  }
+
+  .booking__intro {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+
+  .booking__eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--ui-color-primary);
+  }
+
+  .booking__panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+  }
+
+  .booking__field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    max-width: 22rem;
+  }
+
+  .booking__field label {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .booking__field select {
+    font-family: var(--ui-font-sans);
+    font-size: 1rem;
+    color: var(--ui-color-fg);
+    background-color: var(--ui-color-bg);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius);
+    padding: 0.625rem 0.75rem;
+  }
+
+  .booking__field select:focus-visible {
+    outline: 2px solid var(--ui-color-primary);
+    outline-offset: 1px;
+  }
+
+  .booking__step-label {
+    margin: 0 0 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--ui-color-muted-fg);
+  }
+
+  .booking__days {
+    display: flex;
+    gap: 0.625rem;
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+    scrollbar-width: thin;
+  }
+
+  .booking__slots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+    gap: 0.625rem;
+  }
+
+  .booking__slots:empty::after {
+    content: "Elige un día para ver las horas disponibles.";
+    grid-column: 1 / -1;
+    color: var(--ui-color-muted-fg);
+    font-size: 0.9375rem;
+  }
+
+  .booking__summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--ui-color-border);
+  }
+
+  .booking__summary-text {
+    font-weight: 600;
+  }
+
+  .booking__confirmation {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.625rem;
+  }
+
+  .booking__confirmation-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    margin: 0 0 0.25rem;
+    border-radius: 9999px;
+    background-color: var(--ui-color-primary);
+    color: var(--ui-color-primary-fg);
+    font-size: 1.125rem;
+    font-weight: 700;
+  }
+
+  @media (min-width: 640px) {
+    .booking__summary {
+      flex-wrap: nowrap;
+    }
+  }
+</style>
+
+<!--
+  Astro's scoped styles only reach elements present in the HTML at build
+  time — each gets a `data-astro-cid-*` attribute, and the component's
+  `<style>` selectors are compiled to require it. `.booking__day`/
+  `.booking__slot` and their children are created by the client script
+  below via `document.createElement`, so they never get that attribute:
+  a scoped rule for them would silently never match. This block is the
+  same `is:global` escape hatch Layout.astro already uses for the
+  skip-link — unscoped on purpose, for content this component creates
+  itself at runtime rather than renders in its own template.
+-->
+<style is:global>
+  .booking__day {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.125rem;
+    width: 3.75rem;
+    padding-block: 0.625rem;
+    font-family: var(--ui-font-sans);
+    color: var(--ui-color-fg);
+    background-color: var(--ui-color-bg);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .booking__day-weekday {
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ui-color-muted-fg);
+  }
+
+  .booking__day-number {
+    font-size: 1.125rem;
+    font-weight: 700;
+  }
+
+  .booking__day-month {
+    font-size: 0.6875rem;
+    color: var(--ui-color-muted-fg);
+  }
+
+  .booking__day:hover:not(:disabled) {
+    border-color: var(--ui-color-primary);
+  }
+
+  .booking__day[aria-pressed="true"] {
+    background-color: var(--ui-color-primary);
+    border-color: var(--ui-color-primary);
+  }
+
+  .booking__day[aria-pressed="true"] .booking__day-weekday,
+  .booking__day[aria-pressed="true"] .booking__day-month {
+    color: color-mix(in srgb, var(--ui-color-primary-fg) 70%, transparent);
+  }
+
+  .booking__day[aria-pressed="true"] .booking__day-number {
+    color: var(--ui-color-primary-fg);
+  }
+
+  .booking__day:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .booking__slot {
+    padding-block: 0.625rem;
+    font-family: var(--ui-font-sans);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--ui-color-fg);
+    background-color: var(--ui-color-bg);
+    border: 1px solid var(--ui-color-border);
+    border-radius: var(--ui-radius);
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .booking__slot:hover:not(:disabled) {
+    border-color: var(--ui-color-primary);
+  }
+
+  .booking__slot[aria-pressed="true"] {
+    background-color: var(--ui-color-primary);
+    border-color: var(--ui-color-primary);
+    color: var(--ui-color-primary-fg);
+  }
+
+  .booking__slot:disabled {
+    opacity: 0.35;
+    text-decoration: line-through;
+    cursor: not-allowed;
+  }
+</style>
+
+<script>
+  import { getTimeSlots, getUpcomingDays, SERVICE_OPTIONS, type DayOption } from "../data/appointments";
+
+  const app = document.querySelector<HTMLElement>("[data-booking-app]");
+  if (app) {
+    const serviceSelect = app.querySelector<HTMLSelectElement>("[data-booking-service]")!;
+    const serviceField = app.querySelector<HTMLElement>("[data-booking-service-field]")!;
+    const daysEl = app.querySelector<HTMLElement>("[data-booking-days]")!;
+    const slotsStep = app.querySelector<HTMLElement>("[data-booking-slots-step]")!;
+    const slotsEl = app.querySelector<HTMLElement>("[data-booking-slots]")!;
+    const summaryEl = app.querySelector<HTMLElement>("[data-booking-summary]")!;
+    // These four are rendered by @generate-web-ai/ui's `Text`/`Button`, which
+    // — unlike `Card` — don't forward arbitrary `data-*` attributes (only
+    // the props they explicitly declare, `class` among them). Selecting by
+    // class instead of a `data-*` hook is what actually reaches the
+    // rendered element for these two components.
+    const summaryText = app.querySelector<HTMLElement>(".booking__summary-text")!;
+    const confirmBtn = app.querySelector<HTMLButtonElement>(".booking__confirm")!;
+    const confirmationEl = app.querySelector<HTMLElement>("[data-booking-confirmation]")!;
+    const confirmationText = app.querySelector<HTMLElement>(".booking__confirmation-text")!;
+    const resetBtn = app.querySelector<HTMLButtonElement>(".booking__reset")!;
+
+    for (const option of SERVICE_OPTIONS) {
+      const el = document.createElement("option");
+      el.value = option.value;
+      el.textContent = option.label;
+      serviceSelect.append(el);
+    }
+
+    const days = getUpcomingDays(14);
+    let selectedDay: DayOption | undefined;
+    let selectedTime: string | undefined;
+
+    function dayLabel(day: DayOption) {
+      return `${day.weekdayShort} ${day.dayNumber} ${day.monthShort}`;
+    }
+
+    // Delegated listeners (below, on the static `daysEl`/`slotsEl`
+    // containers) rather than one `addEventListener` per generated button:
+    // a listener on the static parent never needs to be reattached when
+    // `renderDays()`/`renderSlots()` wipe and recreate their children, so
+    // there's no risk of a freshly-created button ending up without one.
+    function renderDays() {
+      daysEl.innerHTML = "";
+      for (const day of days) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "booking__day";
+        btn.disabled = !day.isOpen;
+        btn.dataset.date = day.dateISO;
+        btn.setAttribute("aria-pressed", String(day.dateISO === selectedDay?.dateISO));
+        btn.setAttribute("aria-label", day.isOpen ? dayLabel(day) : `${dayLabel(day)}, cerrado`);
+        btn.innerHTML = `<span class="booking__day-weekday">${day.weekdayShort}</span><span class="booking__day-number">${day.dayNumber}</span><span class="booking__day-month">${day.monthShort}</span>`;
+        daysEl.append(btn);
+      }
+    }
+
+    function selectDay(day: DayOption) {
+      selectedDay = day;
+      selectedTime = undefined;
+      renderDays();
+      renderSlots();
+      updateSummary();
+    }
+
+    function renderSlots() {
+      slotsEl.innerHTML = "";
+      if (!selectedDay) return;
+      for (const slot of getTimeSlots(selectedDay.dateISO)) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "booking__slot";
+        btn.textContent = slot.time;
+        btn.disabled = !slot.available;
+        btn.dataset.time = slot.time;
+        btn.setAttribute("aria-pressed", String(slot.time === selectedTime));
+        btn.setAttribute("aria-label", slot.available ? slot.time : `${slot.time}, no disponible`);
+        slotsEl.append(btn);
+      }
+    }
+
+    function selectTime(time: string) {
+      selectedTime = time;
+      renderSlots();
+      updateSummary();
+    }
+
+    daysEl.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-date]");
+      if (!btn || btn.disabled) return;
+      const day = days.find((d) => d.dateISO === btn.dataset.date);
+      if (day) selectDay(day);
+    });
+
+    slotsEl.addEventListener("click", (event) => {
+      const btn = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-time]");
+      if (!btn || btn.disabled || !btn.dataset.time) return;
+      selectTime(btn.dataset.time);
+    });
+
+    function updateSummary() {
+      if (selectedDay && selectedTime) {
+        const service = SERVICE_OPTIONS.find((s) => s.value === serviceSelect.value)!;
+        summaryText.textContent = `${service.label} · ${dayLabel(selectedDay)}, ${selectedTime}`;
+        summaryEl.hidden = false;
+      } else {
+        summaryEl.hidden = true;
+      }
+    }
+
+    serviceSelect.addEventListener("change", updateSummary);
+
+    confirmBtn.addEventListener("click", () => {
+      if (!selectedDay || !selectedTime) return;
+      const service = SERVICE_OPTIONS.find((s) => s.value === serviceSelect.value)!;
+      confirmationText.textContent = `Te esperamos el ${dayLabel(selectedDay)} a las ${selectedTime} para ${service.label.toLowerCase()}.`;
+
+      serviceField.hidden = true;
+      daysEl.hidden = true;
+      slotsStep.hidden = true;
+      summaryEl.hidden = true;
+      confirmationEl.hidden = false;
+      confirmationEl.querySelector("h3")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+
+    resetBtn.addEventListener("click", () => {
+      selectedDay = undefined;
+      selectedTime = undefined;
+      confirmationEl.hidden = true;
+      serviceField.hidden = false;
+      daysEl.hidden = false;
+      slotsStep.hidden = false;
+      renderDays();
+      renderSlots();
+      updateSummary();
+    });
+
+    renderDays();
+    renderSlots();
+  }
+</script>

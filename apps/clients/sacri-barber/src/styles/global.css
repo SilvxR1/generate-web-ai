@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/*
+ * Brand theme values live in src/config/site.ts (SiteConfig.theme) and are
+ * applied as CSS custom properties by Layout.astro's <head>. This file only
+ * carries structural/base rules that apply regardless of which client's
+ * theme is loaded, plus this client's self-hosted font files below — same
+ * split as apps/clients/reforma-casa-valencia.
+ *
+ * Both faces are variable fonts, self-hosted as static assets in
+ * /public/fonts so there's no third-party request at runtime and no new
+ * npm dependency. Only the Latin subset was fetched, which already covers
+ * Spanish diacritics (á é í ó ú ñ ü all sit in the U+0000-00FF range).
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/inter-variable-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/oswald-variable-latin.woff2") format("woff2");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-padding-top: 4.5rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  background-color: var(--ui-color-bg);
+  color: var(--ui-color-fg);
+  font-family: var(--ui-font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+::selection {
+  background-color: var(--ui-color-primary);
+  color: var(--ui-color-primary-fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ui-color-primary);
+  outline-offset: 2px;
+}
