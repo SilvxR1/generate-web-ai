@@ -499,7 +499,8 @@ const { id } = Astro.props;
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: SlotsResponse = await res.json();
         renderSlots(data.slots);
-      } catch {
+      } catch (error) {
+        console.error("[booking] failed to load slots for", day.dateISO, error);
         slotsEl.innerHTML = `<p class="booking__error">No se pudieron cargar los horarios. Prueba de nuevo.</p>`;
       } finally {
         slotsLoading.hidden = true;
@@ -602,7 +603,8 @@ const { id } = Astro.props;
           submitError.textContent = data.error ?? "No se pudo confirmar la cita. Inténtalo de nuevo.";
           submitError.hidden = false;
         }
-      } catch {
+      } catch (error) {
+        console.error("[booking] failed to submit reservation", error);
         submitError.textContent = "No se pudo confirmar la cita. Comprueba tu conexión e inténtalo de nuevo.";
         submitError.hidden = false;
       } finally {
@@ -646,7 +648,8 @@ const { id } = Astro.props;
 
         initLoading.hidden = true;
         app.hidden = false;
-      } catch {
+      } catch (error) {
+        console.error("[booking] failed to load initial availability", error);
         initLoading.hidden = true;
         initError.hidden = false;
       }

@@ -23,6 +23,8 @@ export interface Props {
   /** Additional class names to merge onto the root element. */
   class?: string;
   "aria-label"?: string;
+  /** Any other attribute (e.g. `data-*`, `aria-*`) passes through to the root element. */
+  [key: `data-${string}`]: unknown;
 }
 
 const {
@@ -35,6 +37,7 @@ const {
   rel,
   class: className,
   "aria-label": ariaLabel,
+  ...rest
 } = Astro.props;
 
 const Tag = href ? "a" : "button";
@@ -57,6 +60,7 @@ const computedRel = target === "_blank" ? (rel ?? "noopener noreferrer") : rel;
   aria-disabled={href && disabled ? "true" : undefined}
   tabindex={href && disabled ? -1 : undefined}
   aria-label={ariaLabel}
+  {...rest}
 >
   <slot />
 </Tag>

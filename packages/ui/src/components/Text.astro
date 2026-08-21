@@ -12,12 +12,14 @@ export interface Props {
   variant?: "default" | "muted";
   /** Additional class names to merge onto the root element. */
   class?: string;
+  /** Any other attribute (e.g. `data-*`, `aria-*`) passes through to the root element. */
+  [key: `data-${string}`]: unknown;
 }
 
-const { as: Tag = "p", size = "md", variant = "default", class: className } = Astro.props;
+const { as: Tag = "p", size = "md", variant = "default", class: className, ...rest } = Astro.props;
 ---
 
-<Tag class:list={["ui-text", `ui-text--${size}`, `ui-text--${variant}`, className]}>
+<Tag class:list={["ui-text", `ui-text--${size}`, `ui-text--${variant}`, className]} {...rest}>
   <slot />
 </Tag>
 
