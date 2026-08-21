@@ -81,7 +81,13 @@ const { as: Tag = "div", padding = "md", variant = "outlined", interactive = fal
         box-shadow 0.15s ease,
         transform 0.15s ease;
     }
+  }
 
+  /* Lift only where hover is a real, hover-capable pointer gesture — see
+     Button.astro for why this needs its own query, separate from the
+     reduced-motion one above (tapping on touch triggers `:hover` and the
+     lift would otherwise stay stuck until the visitor taps elsewhere). */
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
     .ui-card--interactive:hover {
       transform: translateY(-2px);
     }

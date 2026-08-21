@@ -80,20 +80,23 @@ const year = new Date().getFullYear();
 <style>
   .site-footer {
     background-color: var(--ui-color-fg);
-    color: #ffffff;
+    color: var(--ui-color-bg);
     padding-block: var(--ui-space-section-md, clamp(3.5rem, 3rem + 2.5vw, 5.5rem)) 2rem;
   }
 
+  /* Tinted from the brand's own warm cream (--ui-color-bg), not literal
+     white-with-opacity — plain white-on-dark desaturates to neutral gray at
+     partial opacity, which reads as off-brand on this warm palette. */
   .site-footer :global(.ui-text--muted) {
-    color: rgba(255, 255, 255, 0.65);
+    color: color-mix(in srgb, var(--ui-color-bg) 65%, transparent);
   }
 
   .site-footer :global(.ui-link--muted) {
-    color: rgba(255, 255, 255, 0.65);
+    color: color-mix(in srgb, var(--ui-color-bg) 65%, transparent);
   }
 
   .site-footer :global(.ui-link--muted:hover) {
-    color: #ffffff;
+    color: var(--ui-color-bg);
   }
 
   .site-footer__grid {
@@ -101,7 +104,7 @@ const year = new Date().getFullYear();
     grid-template-columns: 1fr;
     gap: 2.5rem;
     padding-bottom: 3rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    border-bottom: 1px solid color-mix(in srgb, var(--ui-color-bg) 12%, transparent);
   }
 
   .site-footer__brand {
@@ -122,7 +125,7 @@ const year = new Date().getFullYear();
     text-transform: uppercase;
     letter-spacing: 0.05em;
     margin: 0 0 1rem;
-    color: rgba(255, 255, 255, 0.85);
+    color: color-mix(in srgb, var(--ui-color-bg) 85%, transparent);
   }
 
   .site-footer__col ul {
@@ -152,15 +155,27 @@ const year = new Date().getFullYear();
 
   @media (min-width: 640px) {
     .site-footer__grid {
-      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
     }
-  }
 
-  @media (min-width: 640px) {
+    .site-footer__about {
+      grid-column: 1 / -1;
+    }
+
     .site-footer__bottom {
       flex-direction: row;
       align-items: center;
       justify-content: space-between;
+    }
+  }
+
+  @media (min-width: 900px) {
+    .site-footer__grid {
+      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    }
+
+    .site-footer__about {
+      grid-column: auto;
     }
   }
 </style>

@@ -109,7 +109,6 @@ export const siteConfig: SiteConfig = {
           type: "hero",
           id: "inicio",
           content: {
-            eyebrow: "Reformas en Valencia",
             heading: "Transformamos espacios para vivirlos mejor.",
             subheading:
               "Reformas integrales y parciales en Valencia, con un equipo que cuida cada detalle desde la primera visita hasta la entrega final.",

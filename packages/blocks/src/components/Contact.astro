@@ -437,13 +437,19 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
   }
 
   @media (prefers-reduced-motion: no-preference) {
+    .block-contact__submit:active {
+      transform: translateY(0) scale(0.98);
+    }
+  }
+
+  /* Lift/glow only where hover is a real, hover-capable pointer gesture —
+     see Button.astro for why this needs its own query, separate from the
+     reduced-motion one above (tapping on touch triggers `:hover` and the
+     lift would otherwise stay stuck until the visitor taps elsewhere). */
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
     .block-contact__submit:hover {
       transform: translateY(-1px);
       box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--ui-color-primary, #2563eb) 45%, transparent);
-    }
-
-    .block-contact__submit:active {
-      transform: translateY(0) scale(0.98);
     }
   }
 

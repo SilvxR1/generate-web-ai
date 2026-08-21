@@ -97,16 +97,22 @@ const computedRel = target === "_blank" ? (rel ?? "noopener noreferrer") : rel;
         box-shadow 0.15s ease;
     }
 
+    .ui-btn:active {
+      transform: translateY(0) scale(0.98);
+    }
+  }
+
+  /* Hover lift/glow only where hover is a real, hover-capable pointer
+     gesture — gated separately from the reduced-motion query above.
+     Without `(hover: hover)`, tapping on touch triggers `:hover` and the
+     lift can stay stuck until the visitor taps elsewhere on the page. */
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
     .ui-btn:hover {
       transform: translateY(-1px);
     }
 
     .ui-btn--solid:hover {
       box-shadow: 0 6px 16px -4px color-mix(in srgb, var(--ui-color-primary, #2563eb) 45%, transparent);
-    }
-
-    .ui-btn:active {
-      transform: translateY(0) scale(0.98);
     }
   }
 

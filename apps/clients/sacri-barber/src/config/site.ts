@@ -108,7 +108,6 @@ export const siteConfig: SiteConfig = {
           type: "hero",
           id: "inicio",
           content: {
-            eyebrow: "Barbería en Malasaña, Madrid",
             heading: "El oficio del barbero, sin prisas.",
             subheading:
               "Corte, barba y afeitado a navaja en un espacio con carácter. Nos tomamos el tiempo que tu imagen merece.",

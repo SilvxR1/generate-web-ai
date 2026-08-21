@@ -127,7 +127,14 @@ const imgClassList = ["ui-media__img", { "ui-media__img--zoom": zoom }];
     .ui-media :global(.ui-media__img--zoom) {
       transition: transform 0.5s ease;
     }
+  }
 
+  /* Zoom only where hover is a real, hover-capable pointer gesture — see
+     Button.astro for why this needs its own query, separate from the
+     reduced-motion one above (tapping on touch triggers `:hover` and the
+     zoomed-in crop would otherwise stay stuck until the visitor taps
+     elsewhere). */
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
     .ui-media:hover :global(.ui-media__img--zoom) {
       transform: scale(1.05);
     }

@@ -148,15 +148,27 @@ const year = new Date().getFullYear();
 
   @media (min-width: 640px) {
     .site-footer__grid {
-      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
     }
-  }
 
-  @media (min-width: 640px) {
+    .site-footer__about {
+      grid-column: 1 / -1;
+    }
+
     .site-footer__bottom {
       flex-direction: row;
       align-items: center;
       justify-content: space-between;
+    }
+  }
+
+  @media (min-width: 900px) {
+    .site-footer__grid {
+      grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    }
+
+    .site-footer__about {
+      grid-column: auto;
     }
   }
 </style>

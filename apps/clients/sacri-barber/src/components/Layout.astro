@@ -39,6 +39,12 @@ const PRIMARY_FOREGROUND = "#16130F";
 // Slightly lighter panel than the base background, for alternating section
 // backgrounds (--ui-color-surface-alt) and the footer.
 const SURFACE_ALT = "#211C15";
+// Lightened reading of `theme.colors.secondary`, the same treatment as
+// MUTED_FOREGROUND above: `theme.colors.secondary` (#3A322A) against
+// `theme.colors.background` (#16130F) computes to ~1.5:1 contrast, well
+// under the 3:1 WCAG non-text/UI-component minimum — every card, form
+// field, and button border in this dark theme would read as invisible.
+const BORDER = "#6B6153";
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const ogImageSrc = typeof seo.ogImage?.src === "string" ? seo.ogImage.src : seo.ogImage?.src.src;
@@ -90,7 +96,7 @@ const serviceNavLinks = [
       --ui-color-muted-fg: ${MUTED_FOREGROUND};
       --ui-color-bg: ${theme.colors.background};
       --ui-color-surface-alt: ${SURFACE_ALT};
-      --ui-color-border: ${theme.colors.secondary};
+      --ui-color-border: ${BORDER};
       --ui-color-primary: ${theme.colors.accent};
       --ui-color-primary-fg: ${PRIMARY_FOREGROUND};
       --ui-radius: ${theme.radius.base};
