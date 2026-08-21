@@ -11,12 +11,7 @@
     {
       "binding": "DB",
       "database_name": "sacri-barber-db",
-      // Placeholder — replace with the real id printed by `wrangler d1
-      // create sacri-barber-db` (needs a Cloudflare account; see the
-      // architecture plan's §5). Local dev (`astro dev` / `wrangler dev
-      // --local`) works fine against this placeholder since local D1 never
-      // calls the real Cloudflare API.
-      "database_id": "REPLACE_WITH_REAL_DATABASE_ID_AFTER_WRANGLER_D1_CREATE",
+      "database_id": "d9c3f062-6dd6-4801-9744-2f1a393035f5",
       "migrations_dir": "migrations"
     }
   ]
