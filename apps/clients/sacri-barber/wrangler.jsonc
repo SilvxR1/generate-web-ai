@@ -14,5 +14,17 @@
       "database_id": "d9c3f062-6dd6-4801-9744-2f1a393035f5",
       "migrations_dir": "migrations"
     }
+  ],
+  // @astrojs/cloudflare auto-provisions a "SESSION" KV namespace for
+  // session storage on first deploy — but a previous deploy attempt
+  // already created one (sacri-barber-session) before failing for an
+  // unrelated reason, so every subsequent deploy tried to create it again
+  // and collided with the existing namespace. Pinning the real id here
+  // makes wrangler reuse it instead of trying to (re-)create it.
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "7172abdbc728429a8afb48b791fe8321"
+    }
   ]
 }
