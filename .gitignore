@@ -8,6 +8,12 @@ dist/
 *.log
 .DS_Store
 
+# Cloudflare/wrangler local dev state and secrets — machine-local, never
+# shared project config (analogous to node_modules/.astro above).
+.wrangler/
+.dev.vars
+.dev.vars.*
+
 # Claude Code local settings — machine/developer-specific (e.g. hook
 # manifests written by `npx impeccable install`), not shared project config.
 .claude/settings.local.json

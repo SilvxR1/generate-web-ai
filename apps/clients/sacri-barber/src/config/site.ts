@@ -86,7 +86,7 @@ export const siteConfig: SiteConfig = {
   features: {
     contactForm: true,
     chatbot: false,
-    booking: false,
+    booking: true,
   },
   seo: {
     title: "Sacri Barber | Barbería clásica en Malasaña, Madrid",

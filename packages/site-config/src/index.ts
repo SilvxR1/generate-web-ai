@@ -8,6 +8,7 @@ export type { LocalBusinessAddress, LocalBusinessOpeningHours, LocalBusinessConf
 export { buildLocalBusinessJsonLd } from "./business.ts";
 export type { ThemeColorConfig, ThemeFontConfig, ThemeRadiusConfig, ThemeConfig } from "./theme.ts";
 export type { FeatureConfig } from "./features.ts";
+export type { BookingServiceConfig, BookingDayConfig, BookingSlotConfig, BookingReservationInput } from "./booking.ts";
 export type {
   BlockActionConfig,
   HeroStatConfig,

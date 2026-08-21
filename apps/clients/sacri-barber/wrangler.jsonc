@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sacri-barber",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sacri-barber-db",
+      // Placeholder — replace with the real id printed by `wrangler d1
+      // create sacri-barber-db` (needs a Cloudflare account; see the
+      // architecture plan's §5). Local dev (`astro dev` / `wrangler dev
+      // --local`) works fine against this placeholder since local D1 never
+      // calls the real Cloudflare API.
+      "database_id": "REPLACE_WITH_REAL_DATABASE_ID_AFTER_WRANGLER_D1_CREATE",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

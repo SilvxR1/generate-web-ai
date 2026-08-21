@@ -8,9 +8,11 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "check": "astro check"
+    "check": "astro check",
+    "db:migrate:local": "wrangler d1 migrations apply sacri-barber-db --local"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "14.2.3",
     "@generate-web-ai/renderer": "workspace:*",
     "@generate-web-ai/site-config": "workspace:*",
     "@generate-web-ai/ui": "workspace:*",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "wrangler": "4.125.0"
   }
 }

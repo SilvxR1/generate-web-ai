@@ -1,20 +1,16 @@
 ---
 /**
- * BookingCalendar — Phase-2 prototype: a visual day/time picker with mocked
- * availability, to test whether an in-page appointment flow is worth
- * building for real. Deliberately lives only in this client app, not
- * packages/blocks: the fake-data approach here (see src/data/appointments.ts)
- * isn't something to promote to every client yet — see docs/architecture.md's
- * "explicitly deferred" list, which already calls out a booking system as a
- * real future feature, not something to build as shared infrastructure
- * speculatively.
+ * BookingCalendar — real day/time/service picker backed by Cloudflare D1
+ * (see src/lib/booking/db.ts and src/pages/api/booking/*.ts). Availability
+ * is fetched per-request from the database, and "Confirmar cita" writes a
+ * real row — the previous in-memory mock (src/data/appointments.ts) has
+ * been removed.
  *
- * No backend, no submission, nothing persisted — confirming an appointment
- * only updates this component's own in-memory state and shows a message.
  * It's the one piece of real client-side JavaScript in this client app
  * (everything else — the mobile nav, the FAQ-style disclosures elsewhere in
  * the shared blocks — is intentionally zero-JS); a day/time/service picker
- * with live selection state genuinely needs it, unlike those.
+ * with live selection state and network round-trips genuinely needs it,
+ * unlike those.
  */
 import { Button, Card, Container, Heading, Text } from "@generate-web-ai/ui";
 
@@ -28,11 +24,8 @@ const { id } = Astro.props;
 <section id={id} class="booking">
   <Container size="md">
     <div class="booking__intro">
-      <Text as="p" size="sm" class="booking__eyebrow">Prototipo — disponibilidad de ejemplo</Text>
       <Heading level={2} font="display">Reserva tu cita</Heading>
-      <Text size="lg" variant="muted">
-        Elige día, hora y servicio. Esta es una demostración: ninguna cita se guarda ni se envía a nadie.
-      </Text>
+      <Text size="lg" variant="muted">Elige servicio, día y hora. Confirmamos tu cita al instante.</Text>
     </div>
 
     <Card variant="outlined" padding="lg" class="booking__panel">
@@ -43,7 +36,12 @@ const { id } = Astro.props;
         </Text>
       </noscript>
 
-      <div class="booking__app" data-booking-app>
+      <Text as="p" variant="muted" class="booking__loading" data-booking-init-loading>Cargando disponibilidad…</Text>
+      <Text as="p" class="booking__error" data-booking-init-error hidden>
+        No se pudo cargar el calendario. Actualiza la página para intentarlo de nuevo.
+      </Text>
+
+      <div class="booking__app" data-booking-app hidden>
         <div class="booking__field" data-booking-service-field>
           <label for="booking-service">Servicio</label>
           <select id="booking-service" data-booking-service></select>
@@ -56,12 +54,47 @@ const { id } = Astro.props;
 
         <div class="booking__step" data-booking-slots-step>
           <p class="booking__step-label">Elige una hora</p>
+          <Text as="p" variant="muted" class="booking__loading" data-booking-slots-loading hidden>Cargando horarios…</Text>
           <div class="booking__slots" data-booking-slots aria-live="polite"></div>
+        </div>
+
+        <div class="booking__contact" data-booking-contact hidden>
+          <p class="booking__step-label">Tus datos</p>
+          <div class="booking__contact-fields">
+            <div class="booking__field">
+              <label for="booking-name">Nombre</label>
+              <input id="booking-name" type="text" autocomplete="name" data-booking-name required />
+            </div>
+            <div class="booking__field">
+              <label for="booking-phone">Teléfono</label>
+              <input id="booking-phone" type="tel" autocomplete="tel" data-booking-phone required />
+            </div>
+            <div class="booking__field">
+              <label for="booking-email">Email (opcional)</label>
+              <input id="booking-email" type="email" autocomplete="email" data-booking-email />
+            </div>
+            <div class="booking__field booking__field--wide">
+              <label for="booking-notes">Notas (opcional)</label>
+              <textarea id="booking-notes" rows="2" data-booking-notes></textarea>
+            </div>
+          </div>
+          <!--
+            Honeypot: hidden from sighted users (CSS below), skipped by
+            keyboard users (`tabindex="-1"`), and skipped entirely by screen
+            readers (`aria-hidden`) — a real visitor never sees or fills
+            this in, so a submission with it filled almost certainly isn't
+            human. See src/pages/api/booking/reserve.ts for the server side.
+          -->
+          <div class="booking__honeypot" aria-hidden="true">
+            <label for="booking-website">Deja este campo vacío</label>
+            <input id="booking-website" type="text" tabindex="-1" autocomplete="off" data-booking-honeypot />
+          </div>
         </div>
 
         <div class="booking__summary" data-booking-summary hidden>
           <Text as="p" class="booking__summary-text" />
-          <Button class="booking__confirm" size="lg">Confirmar cita</Button>
+          <Text as="p" class="booking__error" data-booking-submit-error hidden />
+          <Button class="booking__confirm" size="lg" data-booking-confirm-btn>Confirmar cita</Button>
         </div>
 
         <div class="booking__confirmation" data-booking-confirmation hidden>
@@ -88,17 +121,19 @@ const { id } = Astro.props;
     text-align: center;
   }
 
-  .booking__eyebrow {
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-weight: 600;
-    color: var(--ui-color-primary);
-  }
-
   .booking__panel {
     display: flex;
     flex-direction: column;
     gap: 1.75rem;
+  }
+
+  .booking__loading {
+    margin: 0;
+  }
+
+  .booking__error {
+    margin: 0;
+    color: var(--ui-color-danger, #dc2626);
   }
 
   .booking__field {
@@ -113,7 +148,9 @@ const { id } = Astro.props;
     font-weight: 600;
   }
 
-  .booking__field select {
+  .booking__field select,
+  .booking__field input,
+  .booking__field textarea {
     font-family: var(--ui-font-sans);
     font-size: 1rem;
     color: var(--ui-color-fg);
@@ -123,7 +160,13 @@ const { id } = Astro.props;
     padding: 0.625rem 0.75rem;
   }
 
-  .booking__field select:focus-visible {
+  .booking__field textarea {
+    resize: vertical;
+  }
+
+  .booking__field select:focus-visible,
+  .booking__field input:focus-visible,
+  .booking__field textarea:focus-visible {
     outline: 2px solid var(--ui-color-primary);
     outline-offset: 1px;
   }
@@ -154,6 +197,31 @@ const { id } = Astro.props;
     grid-column: 1 / -1;
     color: var(--ui-color-muted-fg);
     font-size: 0.9375rem;
+  }
+
+  .booking__contact-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .booking__contact-fields .booking__field {
+    max-width: none;
+  }
+
+  .booking__field--wide {
+    grid-column: 1 / -1;
+  }
+
+  /* Same off-screen technique Layout.astro's skip-link already uses —
+     present in the DOM (so a naive bot still finds and fills it) but
+     invisible and untouchable for a real visitor. */
+  .booking__honeypot {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
   }
 
   .booking__summary {
@@ -194,6 +262,10 @@ const { id } = Astro.props;
   @media (min-width: 640px) {
     .booking__summary {
       flex-wrap: nowrap;
+    }
+
+    .booking__contact-fields {
+      grid-template-columns: 1fr 1fr;
     }
   }
 </style>
@@ -304,15 +376,50 @@ const { id } = Astro.props;
 </style>
 
 <script>
-  import { getTimeSlots, getUpcomingDays, SERVICE_OPTIONS, type DayOption } from "../data/appointments";
+  import type { BookingDayConfig, BookingServiceConfig, BookingSlotConfig } from "@generate-web-ai/site-config";
+
+  interface AvailabilityResponse {
+    days: BookingDayConfig[];
+    services: BookingServiceConfig[];
+  }
+
+  interface SlotsResponse {
+    date: string;
+    slots: BookingSlotConfig[];
+  }
+
+  const weekdayFormatter = new Intl.DateTimeFormat("es-ES", { weekday: "short" });
+  const monthFormatter = new Intl.DateTimeFormat("es-ES", { month: "short" });
+
+  /** Parses "YYYY-MM-DD" as a *local* calendar date (not UTC midnight) — the
+   * server generates dates the same way, so this avoids the date shifting
+   * by a day for visitors browsing from a timezone behind the shop's. */
+  function parseISODate(dateISO: string): Date {
+    const [year, month, day] = dateISO.split("-").map(Number);
+    return new Date(year!, month! - 1, day!);
+  }
+
+  function formatPriceCents(cents: number): string {
+    return `${(cents / 100).toFixed(2).replace(".", ",")} €`;
+  }
 
   const app = document.querySelector<HTMLElement>("[data-booking-app]");
-  if (app) {
+  const initLoading = document.querySelector<HTMLElement>("[data-booking-init-loading]");
+  const initError = document.querySelector<HTMLElement>("[data-booking-init-error]");
+
+  if (app && initLoading && initError) {
     const serviceSelect = app.querySelector<HTMLSelectElement>("[data-booking-service]")!;
     const serviceField = app.querySelector<HTMLElement>("[data-booking-service-field]")!;
     const daysEl = app.querySelector<HTMLElement>("[data-booking-days]")!;
     const slotsStep = app.querySelector<HTMLElement>("[data-booking-slots-step]")!;
+    const slotsLoading = app.querySelector<HTMLElement>("[data-booking-slots-loading]")!;
     const slotsEl = app.querySelector<HTMLElement>("[data-booking-slots]")!;
+    const contactEl = app.querySelector<HTMLElement>("[data-booking-contact]")!;
+    const nameInput = app.querySelector<HTMLInputElement>("[data-booking-name]")!;
+    const phoneInput = app.querySelector<HTMLInputElement>("[data-booking-phone]")!;
+    const emailInput = app.querySelector<HTMLInputElement>("[data-booking-email]")!;
+    const notesInput = app.querySelector<HTMLTextAreaElement>("[data-booking-notes]")!;
+    const honeypotInput = app.querySelector<HTMLInputElement>("[data-booking-honeypot]")!;
     const summaryEl = app.querySelector<HTMLElement>("[data-booking-summary]")!;
     // These four are rendered by @generate-web-ai/ui's `Text`/`Button`, which
     // — unlike `Card` — don't forward arbitrary `data-*` attributes (only
@@ -320,24 +427,25 @@ const { id } = Astro.props;
     // class instead of a `data-*` hook is what actually reaches the
     // rendered element for these two components.
     const summaryText = app.querySelector<HTMLElement>(".booking__summary-text")!;
-    const confirmBtn = app.querySelector<HTMLButtonElement>(".booking__confirm")!;
+    const submitError = app.querySelector<HTMLElement>("[data-booking-submit-error]")!;
+    const confirmBtn = app.querySelector<HTMLButtonElement>("[data-booking-confirm-btn]")!;
     const confirmationEl = app.querySelector<HTMLElement>("[data-booking-confirmation]")!;
     const confirmationText = app.querySelector<HTMLElement>(".booking__confirmation-text")!;
     const resetBtn = app.querySelector<HTMLButtonElement>(".booking__reset")!;
 
-    for (const option of SERVICE_OPTIONS) {
-      const el = document.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
-      serviceSelect.append(el);
+    let services: BookingServiceConfig[] = [];
+    let days: BookingDayConfig[] = [];
+    let selectedDay: BookingDayConfig | undefined;
+    let selectedTime: string | undefined;
+    let submitting = false;
+
+    function dayLabel(day: BookingDayConfig): string {
+      const date = parseISODate(day.dateISO);
+      return `${weekdayFormatter.format(date)} ${date.getDate()} ${monthFormatter.format(date)}`;
     }
 
-    const days = getUpcomingDays(14);
-    let selectedDay: DayOption | undefined;
-    let selectedTime: string | undefined;
-
-    function dayLabel(day: DayOption) {
-      return `${day.weekdayShort} ${day.dayNumber} ${day.monthShort}`;
+    function currentService(): BookingServiceConfig | undefined {
+      return services.find((s) => s.id === serviceSelect.value);
     }
 
     // Delegated listeners (below, on the static `daysEl`/`slotsEl`
@@ -348,6 +456,7 @@ const { id } = Astro.props;
     function renderDays() {
       daysEl.innerHTML = "";
       for (const day of days) {
+        const date = parseISODate(day.dateISO);
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "booking__day";
@@ -355,23 +464,14 @@ const { id } = Astro.props;
         btn.dataset.date = day.dateISO;
         btn.setAttribute("aria-pressed", String(day.dateISO === selectedDay?.dateISO));
         btn.setAttribute("aria-label", day.isOpen ? dayLabel(day) : `${dayLabel(day)}, cerrado`);
-        btn.innerHTML = `<span class="booking__day-weekday">${day.weekdayShort}</span><span class="booking__day-number">${day.dayNumber}</span><span class="booking__day-month">${day.monthShort}</span>`;
+        btn.innerHTML = `<span class="booking__day-weekday">${weekdayFormatter.format(date)}</span><span class="booking__day-number">${date.getDate()}</span><span class="booking__day-month">${monthFormatter.format(date)}</span>`;
         daysEl.append(btn);
       }
     }
 
-    function selectDay(day: DayOption) {
-      selectedDay = day;
-      selectedTime = undefined;
-      renderDays();
-      renderSlots();
-      updateSummary();
-    }
-
-    function renderSlots() {
+    function renderSlots(slots: BookingSlotConfig[]) {
       slotsEl.innerHTML = "";
-      if (!selectedDay) return;
-      for (const slot of getTimeSlots(selectedDay.dateISO)) {
+      for (const slot of slots) {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "booking__slot";
@@ -384,9 +484,38 @@ const { id } = Astro.props;
       }
     }
 
+    async function selectDay(day: BookingDayConfig) {
+      selectedDay = day;
+      selectedTime = undefined;
+      renderDays();
+      contactEl.hidden = true;
+      updateSummary();
+
+      slotsEl.hidden = true;
+      slotsEl.innerHTML = "";
+      slotsLoading.hidden = false;
+      try {
+        const res = await fetch(`/api/booking/availability?date=${day.dateISO}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: SlotsResponse = await res.json();
+        renderSlots(data.slots);
+      } catch {
+        slotsEl.innerHTML = `<p class="booking__error">No se pudieron cargar los horarios. Prueba de nuevo.</p>`;
+      } finally {
+        slotsLoading.hidden = true;
+        slotsEl.hidden = false;
+      }
+    }
+
     function selectTime(time: string) {
       selectedTime = time;
-      renderSlots();
+      renderSlots(
+        Array.from(slotsEl.querySelectorAll<HTMLButtonElement>("button[data-time]")).map((btn) => ({
+          time: btn.dataset.time!,
+          available: !btn.disabled,
+        })),
+      );
+      contactEl.hidden = false;
       updateSummary();
     }
 
@@ -394,7 +523,7 @@ const { id } = Astro.props;
       const btn = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-date]");
       if (!btn || btn.disabled) return;
       const day = days.find((d) => d.dateISO === btn.dataset.date);
-      if (day) selectDay(day);
+      if (day) void selectDay(day);
     });
 
     slotsEl.addEventListener("click", (event) => {
@@ -404,43 +533,123 @@ const { id } = Astro.props;
     });
 
     function updateSummary() {
-      if (selectedDay && selectedTime) {
-        const service = SERVICE_OPTIONS.find((s) => s.value === serviceSelect.value)!;
-        summaryText.textContent = `${service.label} · ${dayLabel(selectedDay)}, ${selectedTime}`;
+      submitError.hidden = true;
+      const service = currentService();
+      const contactValid = nameInput.value.trim() !== "" && phoneInput.value.trim() !== "";
+      if (selectedDay && selectedTime && service && contactValid) {
+        summaryText.textContent = `${service.name} (${formatPriceCents(service.priceCents)}) · ${dayLabel(selectedDay)}, ${selectedTime}`;
         summaryEl.hidden = false;
+        confirmBtn.disabled = false;
+      } else if (selectedDay && selectedTime && service) {
+        summaryText.textContent = `${service.name} (${formatPriceCents(service.priceCents)}) · ${dayLabel(selectedDay)}, ${selectedTime}. Añade tu nombre y teléfono para confirmar.`;
+        summaryEl.hidden = false;
+        confirmBtn.disabled = true;
       } else {
         summaryEl.hidden = true;
       }
     }
 
     serviceSelect.addEventListener("change", updateSummary);
+    nameInput.addEventListener("input", updateSummary);
+    phoneInput.addEventListener("input", updateSummary);
 
-    confirmBtn.addEventListener("click", () => {
-      if (!selectedDay || !selectedTime) return;
-      const service = SERVICE_OPTIONS.find((s) => s.value === serviceSelect.value)!;
-      confirmationText.textContent = `Te esperamos el ${dayLabel(selectedDay)} a las ${selectedTime} para ${service.label.toLowerCase()}.`;
+    confirmBtn.addEventListener("click", async () => {
+      if (!selectedDay || !selectedTime || submitting) return;
+      const service = currentService();
+      if (!service) return;
 
-      serviceField.hidden = true;
-      daysEl.hidden = true;
-      slotsStep.hidden = true;
-      summaryEl.hidden = true;
-      confirmationEl.hidden = false;
-      confirmationEl.querySelector("h3")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      submitting = true;
+      confirmBtn.disabled = true;
+      submitError.hidden = true;
+
+      try {
+        const res = await fetch("/api/booking/reserve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            serviceId: service.id,
+            date: selectedDay.dateISO,
+            time: selectedTime,
+            name: nameInput.value,
+            phone: phoneInput.value,
+            email: emailInput.value || undefined,
+            notes: notesInput.value || undefined,
+            website: honeypotInput.value,
+          }),
+        });
+
+        if (res.status === 201) {
+          confirmationText.textContent = `Te esperamos el ${dayLabel(selectedDay)} a las ${selectedTime} para ${service.name.toLowerCase()}.`;
+          serviceField.hidden = true;
+          daysEl.hidden = true;
+          slotsStep.hidden = true;
+          contactEl.hidden = true;
+          summaryEl.hidden = true;
+          confirmationEl.hidden = false;
+          confirmationEl.querySelector("h3")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          return;
+        }
+
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+          submitError.textContent = data.error ?? "Esa hora ya no está disponible. Elige otra.";
+          submitError.hidden = false;
+          selectedTime = undefined;
+          contactEl.hidden = true;
+          summaryEl.hidden = true;
+          await selectDay(selectedDay);
+        } else {
+          submitError.textContent = data.error ?? "No se pudo confirmar la cita. Inténtalo de nuevo.";
+          submitError.hidden = false;
+        }
+      } catch {
+        submitError.textContent = "No se pudo confirmar la cita. Comprueba tu conexión e inténtalo de nuevo.";
+        submitError.hidden = false;
+      } finally {
+        submitting = false;
+        confirmBtn.disabled = false;
+      }
     });
 
     resetBtn.addEventListener("click", () => {
       selectedDay = undefined;
       selectedTime = undefined;
+      nameInput.value = "";
+      phoneInput.value = "";
+      emailInput.value = "";
+      notesInput.value = "";
       confirmationEl.hidden = true;
       serviceField.hidden = false;
       daysEl.hidden = false;
       slotsStep.hidden = false;
+      contactEl.hidden = true;
       renderDays();
-      renderSlots();
+      slotsEl.innerHTML = "";
       updateSummary();
     });
 
-    renderDays();
-    renderSlots();
+    (async () => {
+      try {
+        const res = await fetch("/api/booking/availability");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data: AvailabilityResponse = await res.json();
+        days = data.days;
+        services = data.services;
+
+        for (const service of services) {
+          const el = document.createElement("option");
+          el.value = service.id;
+          el.textContent = `${service.name} — ${formatPriceCents(service.priceCents)}`;
+          serviceSelect.append(el);
+        }
+        renderDays();
+
+        initLoading.hidden = true;
+        app.hidden = false;
+      } catch {
+        initLoading.hidden = true;
+        initError.hidden = false;
+      }
+    })();
   }
 </script>
