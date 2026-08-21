@@ -48,7 +48,14 @@ export interface RadioContactFormField extends ContactFormFieldBase {
   options: ContactFormFieldOption[];
 }
 
-/** No `options` renders a single toggle; `options` renders a checkbox group. */
+/**
+ * No `options` renders a single toggle; `options` renders a checkbox group.
+ * `required` on a single toggle maps to the native `required` attribute
+ * (that one box must be checked). On a group it means "at least one of
+ * these must be checked" — HTML has no native attribute for that (unlike
+ * `required` on a radio group, which the browser already treats as "one of
+ * this group"), so it's enforced by the small inline script below instead.
+ */
 export interface CheckboxContactFormField extends ContactFormFieldBase {
   type: "checkbox";
   options?: ContactFormFieldOption[];
@@ -151,15 +158,25 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
           if (groupOptions) {
             const inputType = field.type === "radio" ? "radio" : "checkbox";
             const isRequired = field.required;
+            // Checkboxes in a group share one field name but each submits its own
+            // value — without `[]` a plain form-urlencoded/FormData POST (this
+            // block's only submission path; see file header) keeps just one of
+            // the checked values, silently dropping the rest. Radio groups don't
+            // need this: only one radio in the group is ever checked/submitted.
+            const groupName = inputType === "checkbox" ? `${field.name}[]` : field.name;
             return (
-              <fieldset class="block-contact__field block-contact__fieldset" data-span={isFullWidth ? "full" : undefined}>
+              <fieldset
+                class="block-contact__field block-contact__fieldset"
+                data-span={isFullWidth ? "full" : undefined}
+                data-checkbox-group-required={inputType === "checkbox" && isRequired ? "true" : undefined}
+              >
                 <legend>{field.label}</legend>
                 <div class="block-contact__option-group">
                   {groupOptions.map((option) => (
                     <label class="block-contact__option">
                       <input
                         type={inputType}
-                        name={field.name}
+                        name={groupName}
                         value={option.value}
                         required={inputType === "radio" ? isRequired : undefined}
                       />
@@ -223,6 +240,32 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
   </div>
   </Container>
 </section>
+
+<script>
+  /**
+   * Enforces "at least one checked" for a checkbox group marked required —
+   * HTML's `required` attribute means "this exact box" per checkbox, so it
+   * can't express group semantics the way it does for radio groups. This
+   * fills that gap with the native Constraint Validation API rather than
+   * custom submit-blocking JS: it sets/clears `setCustomValidity` on the
+   * group's first checkbox, so the browser's own validation UI (and
+   * `form.reportValidity()` on submit) picks it up like any other invalid
+   * field. Progressive enhancement only — a page without JS behaves exactly
+   * as it did before (no group-level validation), never worse.
+   */
+  document.querySelectorAll<HTMLFieldSetElement>("fieldset[data-checkbox-group-required]").forEach((fieldset) => {
+    const boxes = Array.from(fieldset.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
+    const [anchor] = boxes;
+    if (!anchor) return;
+
+    const validate = () => {
+      anchor.setCustomValidity(boxes.some((box) => box.checked) ? "" : "Select at least one option.");
+    };
+
+    boxes.forEach((box) => box.addEventListener("change", validate));
+    validate();
+  });
+</script>
 
 <style>
   .block-contact {

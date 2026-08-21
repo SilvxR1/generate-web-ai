@@ -7,8 +7,10 @@
  *
  * One item can be marked `featured` to occupy a larger cell in an
  * editorial, art-directed grid; the rest fill in around it. If no item is
- * marked, the first item is treated as featured. Built with CSS Grid's
- * `grid-auto-flow: dense` — no masonry library.
+ * marked, the first item is treated as featured. Built with plain CSS Grid
+ * column-spans in normal (not dense) flow — no masonry library; see the
+ * comment above `[data-wide]`/`[data-featured]` in the stylesheet below for
+ * why dense repacking was tried and rejected.
  */
 import { Badge, Container, Heading, Link, Media, Text } from "@generate-web-ai/ui";
 import type { BlockAction, BlockImage } from "../types";
@@ -201,7 +203,7 @@ const hasExplicitFeatured = items.some((item) => item.featured);
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: #ffffff;
+    color: var(--ui-color-bg, #ffffff);
     background-color: color-mix(in srgb, var(--ui-color-fg, #111827) 72%, transparent);
     border-radius: var(--ui-radius, 0.5rem);
   }

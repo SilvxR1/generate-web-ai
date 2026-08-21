@@ -39,22 +39,22 @@ const { variant = "neutral", as: Tag = "span", class: className } = Astro.props;
   }
 
   .ui-badge--primary {
-    background-color: color-mix(in srgb, var(--ui-color-primary, #2563eb) 15%, white);
+    background-color: color-mix(in srgb, var(--ui-color-primary, #2563eb) 15%, var(--ui-color-bg, #ffffff));
     color: var(--ui-color-primary, #2563eb);
   }
 
   .ui-badge--success {
-    background-color: color-mix(in srgb, var(--ui-color-success, #16a34a) 15%, white);
+    background-color: color-mix(in srgb, var(--ui-color-success, #16a34a) 15%, var(--ui-color-bg, #ffffff));
     color: var(--ui-color-success, #16a34a);
   }
 
   .ui-badge--warning {
-    background-color: color-mix(in srgb, var(--ui-color-warning, #d97706) 18%, white);
+    background-color: color-mix(in srgb, var(--ui-color-warning, #d97706) 18%, var(--ui-color-bg, #ffffff));
     color: var(--ui-color-warning, #d97706);
   }
 
   .ui-badge--danger {
-    background-color: color-mix(in srgb, var(--ui-color-danger, #dc2626) 15%, white);
+    background-color: color-mix(in srgb, var(--ui-color-danger, #dc2626) 15%, var(--ui-color-bg, #ffffff));
     color: var(--ui-color-danger, #dc2626);
   }
 </style>

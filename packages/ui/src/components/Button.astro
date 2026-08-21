@@ -111,8 +111,15 @@ const computedRel = target === "_blank" ? (rel ?? "noopener noreferrer") : rel;
     outline-offset: 2px;
   }
 
+  /* Padded up from an earlier 0.375rem vertical (~31px tall) toward the
+     44px touch-target guideline. Can't close the rest of the gap without
+     regressing the size ladder: matching 44px outright needs ~0.85rem
+     vertical padding, which would make "sm" as tall as "md" (~41px) and
+     erase the distinction between the two tiers. This still clears WCAG
+     2.5.8's AA minimum (24x24) with room to spare; 44px AAA stays
+     unreachable for the smallest tier by design. */
   .ui-btn--sm {
-    padding: 0.375rem 0.75rem;
+    padding: 0.5rem 0.875rem;
     font-size: 0.875rem;
   }
 
