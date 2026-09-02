@@ -1,0 +1,90 @@
+---
+/**
+ * Layout — the generic page shell: <head>/SEO wiring, theme application,
+ * and a minimal brand header around whatever page content is passed via
+ * <slot />. Mirrors the same role apps/clients/*'s own Layout.astro plays
+ * (see that docstring) — packages/renderer deliberately leaves theme
+ * application and page chrome to the consuming app; this is that piece
+ * for the generic, any-business build engine.
+ *
+ * Deliberately minimal compared to a hand-authored client's Layout: no
+ * navigation, no footer, no extra derived color roles — those were
+ * legitimate for one curated client but aren't principled generic
+ * defaults for an arbitrary AI-proposed business, so they're left out
+ * rather than guessed at. Only the five ThemeConfig color roles + fonts
+ * + radius get wired, straight from SiteConfig, no invention.
+ *
+ * Theme values are business-supplied, free-form strings (BrandColors
+ * explicitly isn't restricted to hex — see app/domain/business_config/
+ * brand.py on the backend). They're applied via Astro's `style` object
+ * prop (a normal, auto-escaped attribute), never `set:html`/`is:raw` —
+ * a raw `set:html` style block here would let a value containing
+ * `</style>` break out of the tag and inject real markup.
+ */
+import type { SiteConfig } from "@generate-web-ai/site-config";
+import "../styles/global.css";
+
+export interface Props {
+  siteConfig: SiteConfig;
+}
+
+const { siteConfig } = Astro.props;
+const { theme, seo, brand } = siteConfig;
+
+const themeStyle: Record<string, string> = {
+  "--ui-font-sans": theme.fonts.sans,
+  "--ui-color-fg": theme.colors.foreground,
+  "--ui-color-bg": theme.colors.background,
+  "--ui-color-border": theme.colors.secondary,
+  "--ui-color-primary": theme.colors.accent,
+  "--ui-radius": theme.radius.base,
+  "--ui-radius-lg": theme.radius.lg,
+};
+if (theme.fonts.display) {
+  themeStyle["--ui-font-display"] = theme.fonts.display;
+}
+---
+
+<html lang="en" style={themeStyle}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{seo.title}</title>
+    <meta name="description" content={seo.description} />
+  </head>
+  <body>
+    <header class="site-header">
+      <p class="site-header__brand">{brand.name}</p>
+      {brand.tagline && <p class="site-header__tagline">{brand.tagline}</p>}
+    </header>
+    <main>
+      <slot />
+    </main>
+  </body>
+</html>
+
+<style>
+  body {
+    margin: 0;
+    background-color: var(--ui-color-bg, #ffffff);
+    color: var(--ui-color-fg, #111827);
+    font-family: var(--ui-font-sans, system-ui, sans-serif);
+  }
+
+  .site-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--ui-color-border, #e5e7eb);
+  }
+
+  .site-header__brand {
+    margin: 0;
+    font-family: var(--ui-font-display, var(--ui-font-sans, system-ui, sans-serif));
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .site-header__tagline {
+    margin: 0.25rem 0 0;
+    opacity: 0.75;
+  }
+</style>

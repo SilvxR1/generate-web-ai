@@ -1,0 +1,853 @@
+{
+  "$defs": {
+    "AssetRef": {
+      "additionalProperties": false,
+      "description": "A referenced image (logo, brand asset). `url` is a plain string \u2014\nnot a strict URL type \u2014 because nothing generates or validates real\nasset URLs yet (no upload pipeline exists); over-constraining this\nbefore that exists would just make the schema harder to fill in for\nno real benefit. `alt` is required so nothing built from this is\ninaccessible by construction, matching AssetConfig's own rule in\npackages/site-config.",
+      "properties": {
+        "alt": {
+          "maxLength": 300,
+          "minLength": 1,
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "alt"
+      ],
+      "type": "object"
+    },
+    "AutomationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_acknowledgement": {
+          "default": false,
+          "type": "boolean"
+        },
+        "enabled_features": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "follow_up": {
+          "$ref": "#/$defs/FollowUpConfig"
+        },
+        "lead_capture": {
+          "default": false,
+          "type": "boolean"
+        },
+        "lead_notifications": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "BrandColors": {
+      "additionalProperties": false,
+      "description": "Mirrors ThemeColorConfig exactly. Deliberately not restricted to\nhex-only \u2014 Tailwind v4 (this repo's styling layer) accepts named\ncolors, rgb()/hsl()/oklch(), etc., and the TypeScript type this\nmirrors never restricted the format either.",
+      "properties": {
+        "accent": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "background": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "foreground": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "primary": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "secondary": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "primary",
+        "secondary",
+        "accent",
+        "background",
+        "foreground"
+      ],
+      "type": "object"
+    },
+    "BrandConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/AssetRef"
+          },
+          "type": "array"
+        },
+        "colors": {
+          "$ref": "#/$defs/BrandColors"
+        },
+        "logo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tagline": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "typography": {
+          "$ref": "#/$defs/BrandTypography"
+        },
+        "visual_style": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "colors",
+        "typography"
+      ],
+      "type": "object"
+    },
+    "BrandTypography": {
+      "additionalProperties": false,
+      "description": "Mirrors ThemeFontConfig: `sans` required, `display` optional\n(falls back to `sans` when omitted, same as the TypeScript side).",
+      "properties": {
+        "display": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sans": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "sans"
+      ],
+      "type": "object"
+    },
+    "BusinessHoursRule": {
+      "additionalProperties": false,
+      "description": "One opening-hours rule: a set of days sharing the same opening and\nclosing time. Mirrors packages/site-config's\nLocalBusinessOpeningHours shape, but `days` is a controlled\nvocabulary (Weekday) rather than free-text \u2014 this layer isn't\ntrusted hand-authored content the way that one is.",
+      "properties": {
+        "closes": {
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "type": "string"
+        },
+        "days": {
+          "items": {
+            "$ref": "#/$defs/Weekday"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "opens": {
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "days",
+        "opens",
+        "closes"
+      ],
+      "type": "object"
+    },
+    "BusinessProfile": {
+      "additionalProperties": false,
+      "description": "The core \"who is this business\" facts. Only name/slug/industry are\nrequired \u2014 everything else can be filled in incrementally (Section 3:\nnot every field has to be mandatory).",
+      "properties": {
+        "business_hours": {
+          "items": {
+            "$ref": "#/$defs/BusinessHoursRule"
+          },
+          "type": "array"
+        },
+        "contact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContactInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "industry": {
+          "$ref": "#/$defs/BusinessVertical"
+        },
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Location"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "service_area": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ServiceOffering"
+          },
+          "type": "array"
+        },
+        "slug": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "target_customers": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "name",
+        "slug",
+        "industry"
+      ],
+      "type": "object"
+    },
+    "BusinessVertical": {
+      "description": "Extensible on purpose (Section 4 of the master context: don't\nhardcode the product to the reformas vertical). New verticals are added\nhere as they're validated with real clients; OTHER is the escape hatch\nuntil then.",
+      "enum": [
+        "home_renovation",
+        "real_estate",
+        "clinic",
+        "agency",
+        "b2b_services",
+        "restaurant",
+        "ecommerce",
+        "hotel",
+        "other"
+      ],
+      "type": "string"
+    },
+    "CommunicationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "customer_notifications": {
+          "$ref": "#/$defs/NotificationPreferences"
+        },
+        "email_enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "internal_notifications": {
+          "$ref": "#/$defs/NotificationPreferences"
+        },
+        "phone_enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "whatsapp_enabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ContactInfo": {
+      "additionalProperties": false,
+      "description": "How customers reach the business. Every field optional \u2014 Section 4\nwarns against restrictions that would make real businesses (e.g. one\nwith only a phone, no email) unrepresentable.",
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PostalAddress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "email": {
+          "anyOf": [
+            {
+              "format": "email",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "phone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "website": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "whatsapp": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "FollowUpConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "delay": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delay_hours": {
+          "default": 24,
+          "exclusiveMinimum": 0,
+          "maximum": 720,
+          "type": "integer"
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "IntegrationPreferences": {
+      "additionalProperties": false,
+      "properties": {
+        "crm": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "email": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "internal_notifications": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "spreadsheets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "IntegrationProvider": {
+      "description": "MVP scope only (Section 9's stated priority order). Extend as later\nproviders are added \u2014 Outlook, Teams, Drive, Notion, Salesforce,\nWhatsApp, Telegram.",
+      "enum": [
+        "webhook",
+        "gmail",
+        "google_sheets",
+        "slack",
+        "hubspot"
+      ],
+      "type": "string"
+    },
+    "LeadManagementConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "acknowledgement": {
+          "default": true,
+          "type": "boolean"
+        },
+        "destination": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IntegrationProvider"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "follow_up": {
+          "default": false,
+          "type": "boolean"
+        },
+        "required_fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/LeadSource"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "LeadSource": {
+      "description": "Where a lead can come from \u2014 Section 8's stated initial set.",
+      "enum": [
+        "website_form",
+        "email",
+        "phone",
+        "whatsapp",
+        "manual",
+        "other"
+      ],
+      "type": "string"
+    },
+    "Location": {
+      "additionalProperties": false,
+      "description": "Coarse operating location for service-area context \u2014 not\nnecessarily a full mailing address (see ContactInfo.address for\nthat). Deliberately shallow per Section 3's instruction not to\nover-model geography.",
+      "properties": {
+        "city": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "country": {
+          "maxLength": 2,
+          "minLength": 2,
+          "type": "string"
+        },
+        "postal_code": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "region": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "city",
+        "country"
+      ],
+      "type": "object"
+    },
+    "NotificationPreferences": {
+      "additionalProperties": false,
+      "description": "Channel toggles only. Never: smtp_password, slack_token, api_key,\nor any other credential \u2014 those belong to Credential\n(app.db.models.credential), a different bounded context.",
+      "properties": {
+        "email": {
+          "default": false,
+          "type": "boolean"
+        },
+        "slack": {
+          "default": false,
+          "type": "boolean"
+        },
+        "whatsapp": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "PostalAddress": {
+      "additionalProperties": false,
+      "description": "Mirrors packages/site-config's LocalBusinessAddress field-for-field\n(streetAddress/addressLocality/addressRegion/postalCode/\naddressCountry) so this data stays compatible with that package's\nschema.org LocalBusiness JSON-LD shape if a future website generator\nneeds to emit it from BusinessConfig instead of hand-authored config.",
+      "properties": {
+        "country": {
+          "maxLength": 2,
+          "minLength": 2,
+          "type": "string"
+        },
+        "locality": {
+          "maxLength": 120,
+          "minLength": 1,
+          "type": "string"
+        },
+        "postal_code": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "region": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "street_address": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "street_address",
+        "locality",
+        "country"
+      ],
+      "type": "object"
+    },
+    "SEOPreferences": {
+      "additionalProperties": false,
+      "description": "Mirrors packages/site-config's SEOConfig (title/description/\nogImage) \u2014 the site-wide default a generator would carry over.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "og_image": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AssetRef"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "ServiceOffering": {
+      "additionalProperties": false,
+      "description": "A service the business offers, at the business-catalog level \u2014\nprice/category, not rendering props. Deliberately NOT the same type\nas packages/site-config's ServiceItemConfig (icon/image/action/\nfeatured, meant for a Services block's rendering), which sits one\nabstraction level lower: that's what a website generator would\neventually produce FROM a ServiceOffering, not a shape this layer\nshould hold directly.",
+      "properties": {
+        "category": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "type": "string"
+        },
+        "featured": {
+          "default": false,
+          "type": "boolean"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "price_from": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "price_unit": {
+          "anyOf": [
+            {
+              "maxLength": 50,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "short_description": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "description"
+      ],
+      "type": "object"
+    },
+    "WebsiteConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "seo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SEOPreferences"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "template_preference": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
+    "Weekday": {
+      "description": "Used by BusinessProfile's business_hours (app.domain.business_config)\n\u2014 a controlled vocabulary in place of packages/site-config's\nLocalBusinessOpeningHours.dayOfWeek, which is free-text on the\nTypeScript side (schema.org's DayOfWeek values) because that layer is\ntrusted, hand-authored content. This layer isn't.",
+      "enum": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday"
+      ],
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "automation": {
+      "$ref": "#/$defs/AutomationConfig"
+    },
+    "brand": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BrandConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "business_profile": {
+      "$ref": "#/$defs/BusinessProfile"
+    },
+    "communications": {
+      "$ref": "#/$defs/CommunicationConfig"
+    },
+    "integrations": {
+      "$ref": "#/$defs/IntegrationPreferences"
+    },
+    "lead_management": {
+      "$ref": "#/$defs/LeadManagementConfig"
+    },
+    "schema_version": {
+      "default": 1,
+      "type": "integer"
+    },
+    "website": {
+      "$ref": "#/$defs/WebsiteConfig"
+    }
+  },
+  "required": [
+    "business_profile"
+  ],
+  "type": "object"
+}

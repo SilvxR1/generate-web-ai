@@ -1,0 +1,187 @@
+{
+  "automation": {
+    "customer_acknowledgement": true,
+    "enabled_features": [],
+    "follow_up": {
+      "delay": "2d",
+      "delay_hours": 48,
+      "enabled": true
+    },
+    "lead_capture": true,
+    "lead_notifications": true
+  },
+  "brand": {
+    "assets": [],
+    "colors": {
+      "accent": "#f59e0b",
+      "background": "#ffffff",
+      "foreground": "#111827",
+      "primary": "#b45309",
+      "secondary": "#0f766e"
+    },
+    "logo": null,
+    "tagline": "Reformas con seguimiento profesional, de principio a fin.",
+    "typography": {
+      "display": "Fraunces, serif",
+      "sans": "Inter, system-ui, sans-serif"
+    },
+    "visual_style": "warm, mediterranean, editorial"
+  },
+  "business_profile": {
+    "business_hours": [
+      {
+        "closes": "18:00",
+        "days": [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday"
+        ],
+        "opens": "09:00"
+      }
+    ],
+    "contact": {
+      "address": {
+        "country": "ES",
+        "locality": "Valencia",
+        "postal_code": "46004",
+        "region": "Comunidad Valenciana",
+        "street_address": "Carrer de Colon 1"
+      },
+      "email": "info@reformacasavalencia.example",
+      "phone": "+34 960 00 00 00",
+      "website": "https://reformacasavalencia.example",
+      "whatsapp": "+34 600 00 00 00"
+    },
+    "description": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+    "industry": "home_renovation",
+    "location": {
+      "city": "Valencia",
+      "country": "ES",
+      "postal_code": "46001",
+      "region": "Comunidad Valenciana"
+    },
+    "name": "Reforma Casa Valencia",
+    "service_area": [
+      "Valencia",
+      "Benimaclet",
+      "Ruzafa",
+      "Patraix",
+      "Campanar",
+      "Pla del Real",
+      "Eixample"
+    ],
+    "services": [
+      {
+        "category": "Reformas",
+        "description": "Reforma completa de vivienda, de principio a fin.",
+        "featured": true,
+        "id": "reforma-integral",
+        "name": "Reforma integral",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      },
+      {
+        "category": "Interiorismo",
+        "description": "Diseno y reforma de cocinas a medida.",
+        "featured": false,
+        "id": "cocinas",
+        "name": "Cocinas",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      },
+      {
+        "category": "Interiorismo",
+        "description": "Renovacion completa de cuartos de bano.",
+        "featured": false,
+        "id": "banos",
+        "name": "Banos",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      },
+      {
+        "category": "Instalaciones",
+        "description": "Instalaciones electricas y de fontaneria.",
+        "featured": false,
+        "id": "electricidad-fontaneria",
+        "name": "Electricidad y fontaneria",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      },
+      {
+        "category": "Acabados",
+        "description": "Pintura interior y exterior.",
+        "featured": false,
+        "id": "pintura",
+        "name": "Pintura",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      },
+      {
+        "category": "Diseno",
+        "description": "Diseno de espacios y planificacion de obra.",
+        "featured": false,
+        "id": "diseno-planificacion",
+        "name": "Diseno y planificacion",
+        "price_from": null,
+        "price_unit": null,
+        "short_description": null
+      }
+    ],
+    "slug": "reforma-casa-valencia",
+    "target_customers": "Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional."
+  },
+  "communications": {
+    "customer_notifications": {
+      "email": true,
+      "slack": false,
+      "whatsapp": true
+    },
+    "email_enabled": true,
+    "internal_notifications": {
+      "email": true,
+      "slack": false,
+      "whatsapp": false
+    },
+    "phone_enabled": true,
+    "whatsapp_enabled": true
+  },
+  "integrations": {
+    "crm": null,
+    "email": "gmail",
+    "internal_notifications": null,
+    "spreadsheets": "google_sheets"
+  },
+  "lead_management": {
+    "acknowledgement": true,
+    "destination": "google_sheets",
+    "enabled": true,
+    "follow_up": true,
+    "required_fields": [
+      "name",
+      "phone",
+      "service"
+    ],
+    "sources": [
+      "website_form",
+      "phone",
+      "whatsapp"
+    ]
+  },
+  "schema_version": 1,
+  "website": {
+    "enabled": true,
+    "seo": {
+      "description": "Reformas integrales, cocinas y banos en Valencia con seguimiento profesional de principio a fin.",
+      "og_image": null,
+      "title": "Reforma Casa Valencia | Reformas integrales en Valencia"
+    },
+    "template_preference": null
+  }
+}

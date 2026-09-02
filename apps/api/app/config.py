@@ -1,0 +1,86 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    environment: str = "development"
+    service_name: str = "generate-web-ai-api"
+    version: str = "0.1.0"
+
+    # Postgres in every real deployment; sqlite is only the zero-config
+    # local-dev/test default (see docs/architecture.md's decision log on
+    # storage) — never assume sqlite-specific behavior outside tests.
+    database_url: str = "sqlite:///./dev.db"
+
+    # Fernet key backing app.security.encryption.CredentialCipher. No
+    # default on purpose: a missing key must fail loudly at startup, not
+    # silently fall back to something guessable. Unused until the API
+    # exposes any Credential-writing endpoint (out of scope so far).
+    credential_encryption_key: str | None = None
+
+    # The Studio dashboard's dev origin — the only cross-origin caller
+    # that exists yet (no public API surface, no third-party integration
+    # calls this service).
+    cors_origins: list[str] = ["http://localhost:5173"]
+
+    # N8nAutomationEngine (app/automation/n8n) — no defaults for base
+    # URL/API key: a missing value must fail loudly when the engine is
+    # actually used, not silently point at nothing.
+    n8n_base_url: str | None = None
+    n8n_api_key: str | None = None
+    # A credential *reference* n8n already has configured for outbound
+    # email (see app/automation/n8n/translator.py) — never a raw SMTP
+    # password. None means "email.send can't be translated yet".
+    n8n_email_credential_id: str | None = None
+
+    # Where this API itself is reachable from an n8n workflow, for the
+    # actions (lead.store, notification.send) that have no dedicated n8n
+    # node and instead call back into our own backend.
+    internal_api_base_url: str = "http://localhost:8000"
+
+    # AnthropicBusinessAnalyzer (app.analysis.claude) — no default: a
+    # missing key must fail loudly when the analyzer is actually used,
+    # not silently point at nothing. Never logged, never accepted from a
+    # request — this analyzer receives no credentials at all, its own or
+    # anyone else's.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-5"
+
+    # Shared secret n8n sends back to /internal/leads and
+    # /internal/notifications (see app.dependencies.verify_internal_automation_token)
+    # to prove the caller is our own n8n workflow, not the public
+    # internet — no default, so a missing value fails loudly instead of
+    # leaving these endpoints silently open.
+    internal_automation_token: str | None = None
+    # The n8n-side credential *reference* (an "HTTP Header Auth"
+    # credential n8n already has configured, carrying the same token
+    # value) that the translator attaches to lead.store/notification.send
+    # nodes — never the raw token itself.
+    n8n_internal_automation_credential_id: str | None = None
+
+    # CloudflarePagesPublisher (app.publishing.cloudflare) — no
+    # defaults, same shape as the n8n settings above: a missing value
+    # must fail loudly when publishing is actually attempted, not
+    # silently point at nothing. No workers.dev/pages.dev subdomain
+    # setting needed here — a Pages project's live URL
+    # (https://{project}.pages.dev) needs no account-level config, and
+    # custom domains are out of scope for this phase.
+    cloudflare_account_id: str | None = None
+    cloudflare_api_token: str | None = None
+
+    # SmtpNotificationSender (app.notifications.smtp) — the transport
+    # behind internal-notification email delivery. No defaults for
+    # host/from address: a server without them still starts up fine,
+    # delivery is just skipped as "not configured yet" (see
+    # app.dependencies.get_optional_notification_sender) rather than
+    # failing loudly, since not every business needs email notifications
+    # configured from day one. `smtp_password` is never logged.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from_address: str | None = None
+
+
+settings = Settings()

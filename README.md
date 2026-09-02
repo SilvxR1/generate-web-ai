@@ -36,6 +36,17 @@ client site that uses it benefits next deploy.
 
 ```
 apps/
+  api/                      backend control plane (FastAPI/SQLAlchemy/
+                            Alembic) — AI business analysis (Claude),
+                            website/workflow generation, n8n automation
+                            (activate/deactivate, real lead capture),
+                            Cloudflare Pages publishing, lead management.
+                            See apps/api/README.md.
+  studio/                   internal dashboard (Vite + React) for
+                            reviewing AI-proposed configs, previewing the
+                            generated website/workflow, activating
+                            automation, publishing, and tracking leads.
+                            Not client-facing — no auth, internal tool only.
   site-template/           starter app — the app-shell shape every new
                             client is derived from (routing, layout wiring)
   clients/
@@ -117,6 +128,18 @@ pnpm check           # typecheck/lint across all workspace packages/apps
 
 To work on a single app, use Turborepo filtering, e.g.
 `pnpm turbo run dev --filter=@generate-web-ai/reforma-casa-valencia`.
+
+`apps/api` is a separate Python project (`uv sync`, `uv run pytest`, see
+`apps/api/README.md`) — not part of the pnpm workspace.
+
+### Full stack via Docker Compose
+
+```bash
+docker compose up --build   # postgres + backend (:8000) + studio (:5173)
+```
+
+Dev-only (hot reload, bind mounts) — not a production deployment setup.
+See `docker-compose.yml`.
 
 ## Explicitly out of scope for now
 

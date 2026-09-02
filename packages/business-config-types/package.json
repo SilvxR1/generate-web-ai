@@ -1,0 +1,17 @@
+{
+  "name": "@generate-web-ai/business-config-types",
+  "private": true,
+  "version": "0.0.1",
+  "description": "TypeScript types for BusinessConfig, generated from apps/api's Pydantic model (Pydantic -> JSON Schema -> TS) — the single source of truth stays the Python model; this package is a build artifact, not a second hand-maintained schema.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "generate": "node scripts/generate-types.mjs",
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.0",
+    "typescript": "6.0.3"
+  }
+}

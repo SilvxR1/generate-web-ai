@@ -1,10 +1,30 @@
-// ReformaCasa Valencia — SiteConfig. This file is the single source of
-// truth for the client's brand, theme, and page content: PageRenderer
-// (from @generate-web-ai/renderer) turns `siteConfig.pages` into rendered
-// blocks, and Layout.astro applies `siteConfig.theme`/`siteConfig.brand` to
-// the page shell. Nothing about ReformaCasa Valencia is hardcoded into
-// markup outside this file and the app shell (Header/Footer/Layout).
-import type { AssetConfig, LocalBusinessConfig, SiteConfig } from "@generate-web-ai/site-config";
+// ReformaCasa Valencia — SiteConfig.
+//
+//   BusinessConfig (business.ts)  +  home_renovation preset (website-generator)
+//        ↓ generateSiteConfig()
+//   brand / theme / business (JSON-LD) / features / seo / services block
+//        +  client overrides below
+//        ↓
+//   siteConfig  →  PageRenderer  →  rendered site
+//
+// Split: brand, theme, the schema.org `business` facts, `features`, the
+// site-level `seo`, and the Services block all come straight from
+// generateSiteConfig(businessConfig) — nothing hand-duplicated. Every
+// other block below is an explicit override because it genuinely can't
+// be derived from BusinessConfig yet: real photography (no image field
+// exists on BusinessConfig), hand-written marketing copy, and the
+// gallery/testimonials/FAQ/process sections, which are demo content for
+// a fictitious client (see IMAGE-SOURCES.md) — content the generator
+// must never invent on its own, but that a human can write and disclose
+// as an override. The one deliberate content change from the previous,
+// fully hand-written version: the hero's "+10 años de experiencia" stat
+// and the matching bullet in "Por qué elegirnos" are removed — an
+// unverified years-of-experience claim is exactly what
+// generateSiteConfig() refuses to invent, and keeping it only in the
+// hand-written override would undercut that rule for no real reason.
+import type { AssetConfig, ServicesBlockConfig, SiteConfig } from "@generate-web-ai/site-config";
+import { generateSiteConfig } from "@generate-web-ai/website-generator";
+import { businessConfig } from "./business";
 
 import heroImg from "../assets/hero/hero-mediterranean-living-room.jpg";
 import servicioIntegralImg from "../assets/services/reforma-integral.jpg";
@@ -27,74 +47,32 @@ import eixampleImg from "../assets/projects/eixample-interior.jpg";
  * `image.src` — `@generate-web-ai/ui`'s `Media` component needs the whole
  * object (width/height/format) to generate a real responsive `srcset` via
  * `astro:assets`; a bare string loses that and falls back to an
- * unoptimized `<img>`.
+ * unoptimized `<img>`. Per-item service/project photography like this has
+ * no equivalent field on BusinessConfig yet (ServiceOffering deliberately
+ * excludes imagery — see apps/api's business_profile.py) — another reason
+ * the blocks using it below stay overrides rather than generated.
  */
 function asset(image: ImageMetadata, alt: string): AssetConfig {
   return { src: image, alt };
 }
 
-/**
- * Structured business/contact data. Every value here is FICTITIOUS demo
- * content (an invented Valencia address and a typical Spanish split
- * schedule) — see IMAGE-SOURCES.md for the same disclosure already made
- * about the gallery/testimonials content. This is the single source for
- * both the on-page contact details below and the schema.org `LocalBusiness`
- * JSON-LD emitted from `Layout.astro`.
- */
-const business: LocalBusinessConfig = {
-  telephone: "+34 960 00 00 00",
-  email: "info@reformacasavalencia.example",
-  address: {
-    streetAddress: "Carrer de Cadis, 15",
-    addressLocality: "Valencia",
-    addressRegion: "Valencia",
-    postalCode: "46006",
-    addressCountry: "ES",
-  },
-  openingHours: [
-    { dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], opens: "09:00", closes: "14:00" },
-    { dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"], opens: "16:00", closes: "19:00" },
-    { dayOfWeek: ["Saturday"], opens: "10:00", closes: "13:00" },
-  ],
-  priceRange: "€€",
-};
+const generated = generateSiteConfig(businessConfig);
 
-const PHONE_HREF = `tel:${business.telephone!.replace(/\s+/g, "")}`;
+const servicesBlock = generated.pages[0]?.blocks.find(
+  (block): block is ServicesBlockConfig => block.type === "services",
+);
+if (!servicesBlock) {
+  throw new Error("generateSiteConfig(businessConfig) did not produce a services block — check business.ts.");
+}
+
+const PHONE_HREF = `tel:${businessConfig.business_profile.contact!.phone!.replace(/\s+/g, "")}`;
 
 export const siteConfig: SiteConfig = {
-  brand: {
-    name: "ReformaCasa Valencia",
-    tagline: "Reformas integrales en Valencia",
-  },
-  theme: {
-    colors: {
-      primary: "#2A2420",
-      secondary: "#8C8377",
-      accent: "#A6572F",
-      background: "#F7F2EA",
-      foreground: "#2A2420",
-    },
-    fonts: {
-      sans: "'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-      display: "'Fraunces', Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif",
-    },
-    radius: {
-      base: "0.375rem",
-      lg: "0.625rem",
-    },
-  },
-  business,
-  features: {
-    contactForm: true,
-    chatbot: false,
-    booking: false,
-  },
-  seo: {
-    title: "ReformaCasa Valencia | Reformas integrales en Valencia",
-    description:
-      "Empresa de reformas en Valencia: reformas integrales, cocinas y baños con presupuesto sin compromiso. Solicita tu presupuesto hoy mismo.",
-    ogImage: asset(heroImg, "Salón mediterráneo con chimenea de piedra, suelo de madera y luz natural cálida"),
-  },
+  brand: generated.brand,
+  theme: generated.theme,
+  business: generated.business,
+  features: generated.features,
+  seo: generated.seo,
   pages: [
     {
       path: "/",
@@ -105,6 +83,7 @@ export const siteConfig: SiteConfig = {
         ogImage: asset(heroImg, "Salón mediterráneo con chimenea de piedra, suelo de madera y luz natural cálida"),
       },
       blocks: [
+        // --- override: real photo + hand-written marketing headline ---
         {
           type: "hero",
           id: "inicio",
@@ -115,9 +94,9 @@ export const siteConfig: SiteConfig = {
             primaryAction: { label: "Pedir presupuesto", href: "#contacto" },
             secondaryAction: { label: "Ver proyectos", href: "#proyectos", variant: "outline" },
             image: asset(heroImg, "Salón de estilo mediterráneo con chimenea de piedra, vigas de madera y luz natural cálida"),
-            stat: { value: "+10", label: "años de experiencia en Valencia" },
           },
         },
+        // --- override: value props a human vouches for, not automated claims ---
         {
           type: "features",
           id: "por-que-elegirnos",
@@ -126,10 +105,6 @@ export const siteConfig: SiteConfig = {
             heading: "Por qué elegir ReformaCasa Valencia",
             subheading: "Un equipo local que acompaña tu reforma de principio a fin.",
             items: [
-              {
-                title: "+10 años de experiencia",
-                description: "Más de una década reformando viviendas en Valencia y su área metropolitana.",
-              },
               {
                 title: "Presupuesto sin compromiso",
                 description: "Visitamos tu vivienda y te entregamos un presupuesto detallado, sin coste ni compromiso.",
@@ -153,56 +128,31 @@ export const siteConfig: SiteConfig = {
             ],
           },
         },
+        // --- generated: content from businessConfig.business_profile.services ---
         {
-          type: "services",
+          ...servicesBlock,
           id: "servicios",
           content: {
-            heading: "Nuestros servicios",
+            ...servicesBlock.content,
             subheading: "Reformas integrales y por especialidad, adaptadas a cada vivienda.",
-            items: [
-              {
-                title: "Reformas integrales",
-                description:
-                  "Proyectos llave en mano: planificación, ejecución y coordinación de todos los gremios para transformar tu vivienda de principio a fin.",
-                image: asset(servicioIntegralImg, "Interior cálido con maderas naturales y detalles en mármol tras una reforma integral"),
+            items: servicesBlock.content.items.map((item, index) => {
+              const images = [
+                servicioIntegralImg,
+                servicioCocinasImg,
+                servicioBanosImg,
+                servicioPinturaImg,
+                servicioInstalacionesImg,
+                servicioDisenoImg,
+              ];
+              return {
+                ...item,
+                image: asset(images[index]!, item.title),
                 action: { label: "Pedir presupuesto", href: "#contacto" },
-                featured: true,
-              },
-              {
-                title: "Cocinas",
-                description:
-                  "Cocinas funcionales y actuales, con distribución optimizada, mobiliario a medida e instalaciones adaptadas a tu día a día.",
-                image: asset(servicioCocinasImg, "Cocina moderna con mobiliario de madera curvo y encimera de mármol"),
-                action: { label: "Pedir presupuesto", href: "#contacto" },
-              },
-              {
-                title: "Baños",
-                description:
-                  "Baños con acabados de calidad y soluciones de accesibilidad, cuidando la impermeabilización y el detalle en cada metro cuadrado.",
-                image: asset(servicioBanosImg, "Baño moderno con lavabo de hormigón y espejo con arco"),
-                action: { label: "Pedir presupuesto", href: "#contacto" },
-              },
-              {
-                title: "Pintura",
-                description: "Pintura interior y exterior con materiales de calidad, protección de superficies y un acabado impecable.",
-                image: asset(servicioPinturaImg, "Muestras de color de pintura aplicadas sobre una pared antes de elegir el tono final"),
-                action: { label: "Pedir presupuesto", href: "#contacto" },
-              },
-              {
-                title: "Electricidad y fontanería",
-                description: "Instalaciones eléctricas y de fontanería nuevas o actualizadas, siempre conforme a normativa.",
-                image: asset(servicioInstalacionesImg, "Red de tuberías e instalaciones eléctricas y de fontanería"),
-                action: { label: "Pedir presupuesto", href: "#contacto" },
-              },
-              {
-                title: "Diseño y planificación",
-                description: "Asesoramiento en distribución, materiales y presupuesto antes de empezar, para que tomes decisiones con seguridad.",
-                image: asset(servicioDisenoImg, "Planos arquitectónicos extendidos sobre una mesa de trabajo"),
-                action: { label: "Pedir presupuesto", href: "#contacto" },
-              },
-            ],
+              };
+            }),
           },
         },
+        // --- override: not a BusinessConfig concept ---
         {
           type: "process",
           id: "proceso",
@@ -230,6 +180,7 @@ export const siteConfig: SiteConfig = {
             ],
           },
         },
+        // --- override: demo content, explicitly disclosed as fictitious below ---
         {
           type: "gallery",
           id: "proyectos",
@@ -289,6 +240,7 @@ export const siteConfig: SiteConfig = {
             ],
           },
         },
+        // --- override: demo content, explicitly disclosed as fictitious below ---
         {
           type: "testimonials",
           id: "opiniones",
@@ -321,6 +273,7 @@ export const siteConfig: SiteConfig = {
             ],
           },
         },
+        // --- override: client-specific Q&A ---
         {
           type: "faq",
           id: "preguntas-frecuentes",
@@ -357,6 +310,7 @@ export const siteConfig: SiteConfig = {
             ],
           },
         },
+        // --- override: richer copy + phone action than the generic preset CTA ---
         {
           type: "cta",
           content: {
@@ -367,6 +321,8 @@ export const siteConfig: SiteConfig = {
             variant: "emphasis",
           },
         },
+        // --- override: richer form (budget range, reform type, image upload) than
+        // generateSiteConfig's LeadManagementConfig.required_fields can express yet ---
         {
           type: "contact",
           id: "contacto",
@@ -374,8 +330,8 @@ export const siteConfig: SiteConfig = {
             heading: "Pide tu presupuesto sin compromiso",
             subheading: "Cuéntanos tu proyecto y te responderemos a la mayor brevedad.",
             details: [
-              { label: "Teléfono", value: business.telephone!, href: PHONE_HREF },
-              { label: "Email", value: business.email!, href: `mailto:${business.email}` },
+              { label: "Teléfono", value: businessConfig.business_profile.contact!.phone!, href: PHONE_HREF },
+              { label: "Email", value: businessConfig.business_profile.contact!.email!, href: `mailto:${businessConfig.business_profile.contact!.email}` },
               { label: "Zona de trabajo", value: "Valencia y área metropolitana" },
             ],
             form: {
@@ -445,7 +401,7 @@ export const NAV_LINKS = [
 export const HEADER_CTA = { label: "Pedir presupuesto", href: "#contacto" } as const;
 
 export const CONTACT_INFO = {
-  phoneDisplay: business.telephone!,
+  phoneDisplay: businessConfig.business_profile.contact!.phone!,
   phoneHref: PHONE_HREF,
-  email: business.email!,
+  email: businessConfig.business_profile.contact!.email!,
 };

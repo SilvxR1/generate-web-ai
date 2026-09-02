@@ -1,0 +1,56 @@
+# Development environment only — hot-reload dev servers with bind mounts,
+# not a production deployment (Cloudflare is the deploy target for the
+# Astro client sites; the FastAPI backend's production deploy target
+# isn't decided yet). No Redis here: nothing in the current scope queues
+# anything async yet (the AI layer and n8n translator that would need it
+# aren't built) — see the architecture's P0/P1 split. Add it when a real
+# queueing need shows up, not before.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: generate_web_ai
+      POSTGRES_USER: generate_web_ai
+      POSTGRES_PASSWORD: generate_web_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U generate_web_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./apps/api
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://generate_web_ai:generate_web_ai@postgres:5432/generate_web_ai
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-}
+      CORS_ORIGINS: '["http://localhost:5173"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/api:/app
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/studio/Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./apps/studio/src:/repo/apps/studio/src
+      - ./apps/studio/index.html:/repo/apps/studio/index.html
+
+volumes:
+  postgres_data:

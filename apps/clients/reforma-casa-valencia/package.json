@@ -11,9 +11,11 @@
     "check": "astro check"
   },
   "dependencies": {
+    "@generate-web-ai/business-config-types": "workspace:*",
     "@generate-web-ai/renderer": "workspace:*",
     "@generate-web-ai/site-config": "workspace:*",
     "@generate-web-ai/ui": "workspace:*",
+    "@generate-web-ai/website-generator": "workspace:*",
     "@tailwindcss/vite": "4.3.3",
     "astro": "7.2.3",
     "sharp": "^0.35.3",

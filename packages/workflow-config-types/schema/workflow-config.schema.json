@@ -1,0 +1,507 @@
+{
+  "$defs": {
+    "ActionNode": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ActionType"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "inputs": {
+          "discriminator": {
+            "mapping": {
+              "email.send": "#/$defs/EmailSendInputs",
+              "http.request": "#/$defs/HttpRequestInputs",
+              "lead.follow_up_email": "#/$defs/LeadFollowUpEmailInputs",
+              "lead.lookup": "#/$defs/LeadLookupInputs",
+              "lead.store": "#/$defs/LeadStoreInputs",
+              "notification.send": "#/$defs/NotificationSendInputs",
+              "wait": "#/$defs/WaitInputs"
+            },
+            "propertyName": "action"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LeadStoreInputs"
+            },
+            {
+              "$ref": "#/$defs/LeadLookupInputs"
+            },
+            {
+              "$ref": "#/$defs/LeadFollowUpEmailInputs"
+            },
+            {
+              "$ref": "#/$defs/EmailSendInputs"
+            },
+            {
+              "$ref": "#/$defs/NotificationSendInputs"
+            },
+            {
+              "$ref": "#/$defs/HttpRequestInputs"
+            },
+            {
+              "$ref": "#/$defs/WaitInputs"
+            }
+          ]
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "type": {
+          "const": "action",
+          "default": "action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "action",
+        "inputs"
+      ],
+      "type": "object"
+    },
+    "ActionType": {
+      "enum": [
+        "lead.store",
+        "lead.lookup",
+        "lead.follow_up_email",
+        "email.send",
+        "notification.send",
+        "http.request",
+        "wait"
+      ],
+      "type": "string"
+    },
+    "ConditionNode": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/NodeCondition"
+        },
+        "id": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "type": "string"
+        },
+        "outputs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "type": {
+          "const": "condition",
+          "default": "condition",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "condition"
+      ],
+      "type": "object"
+    },
+    "ConditionOperator": {
+      "enum": [
+        "equals",
+        "contains",
+        "exists"
+      ],
+      "type": "string"
+    },
+    "EmailRecipient": {
+      "description": "A role, never a literal address \u2014 the future AutomationEngine\nresolves this against the triggering event/business, not this\nconfig.",
+      "enum": [
+        "customer",
+        "business_owner"
+      ],
+      "type": "string"
+    },
+    "EmailSendInputs": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "email.send",
+          "default": "email.send",
+          "type": "string"
+        },
+        "subject": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "template": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/EmailRecipient"
+        }
+      },
+      "required": [
+        "to",
+        "template"
+      ],
+      "type": "object"
+    },
+    "ErrorHandlingConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_retries": {
+          "default": 0,
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "notify_on_failure": {
+          "default": false,
+          "type": "boolean"
+        },
+        "strategy": {
+          "$ref": "#/$defs/ErrorHandlingStrategy",
+          "default": "stop"
+        }
+      },
+      "type": "object"
+    },
+    "ErrorHandlingStrategy": {
+      "enum": [
+        "stop",
+        "continue",
+        "retry"
+      ],
+      "type": "string"
+    },
+    "HttpRequestInputs": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "http.request",
+          "default": "http.request",
+          "type": "string"
+        },
+        "body_template": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "method": {
+          "default": "POST",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ],
+          "type": "string"
+        },
+        "url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "type": "object"
+    },
+    "LeadFollowUpEmailInputs": {
+      "additionalProperties": false,
+      "description": "Sends a real, provider-neutral email *to the lead itself* \u2014 never\nrepresented as an InternalNotification (that model means \"the\nbusiness's own team was told about something\", a different concept\nthis action deliberately stays clear of). No recipient here: it's\nresolved server-side from the lead's own current row (see\napp.routers.internal_automation's follow-up-email endpoint), the\nsame \"runtime data, not config\" reasoning as LeadLookupInputs above.\n`template` mirrors NotificationSendInputs.template \u2014 a named id,\nunused by the translator today (content is a fixed, safe, business-\nname-based message for this MVP; no per-template dynamic generation\nyet), kept for the same forward-compatibility reason.",
+      "properties": {
+        "action": {
+          "const": "lead.follow_up_email",
+          "default": "lead.follow_up_email",
+          "type": "string"
+        },
+        "template": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "type": "object"
+    },
+    "LeadLookupInputs": {
+      "additionalProperties": false,
+      "description": "Fetches one lead's *current* state \u2014 the fresh read a follow-up\ncondition needs after a wait, as opposed to whatever data was known\nwhen the lead was first stored. Same minimal shape as\nLeadStoreInputs (no fields beyond the discriminator): which lead and\nwhich tenant/business is runtime data (the id lead.store returned,\nresolved by the future AutomationEngine/translator), never something\nthis config carries.",
+      "properties": {
+        "action": {
+          "const": "lead.lookup",
+          "default": "lead.lookup",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LeadStoreInputs": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "lead.store",
+          "default": "lead.store",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LeadSubmittedTrigger": {
+      "additionalProperties": false,
+      "description": "Fires on the website's `lead.submitted` DOM event (see\npackages/blocks/Contact.astro) \u2014 no config needed, it's an internal,\nalready-neutral signal.",
+      "properties": {
+        "type": {
+          "const": "lead.submitted",
+          "default": "lead.submitted",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "NodeCondition": {
+      "additionalProperties": false,
+      "description": "`field` is a dotted path into the triggering event's payload\n(e.g. \"lead.email\") \u2014 resolved by the future AutomationEngine, not\ninterpreted here.",
+      "properties": {
+        "field": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "operator": {
+          "$ref": "#/$defs/ConditionOperator"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "field",
+        "operator"
+      ],
+      "type": "object"
+    },
+    "NotificationSendInputs": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "notification.send",
+          "default": "notification.send",
+          "type": "string"
+        },
+        "template": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "type": "object"
+    },
+    "WaitInputs": {
+      "additionalProperties": false,
+      "description": "Pauses the workflow for a fixed duration before continuing \u2014\ne.g. the gap between \"notify the business\" and \"check whether the\nlead was contacted yet\" in a follow-up sequence. A plain delay only:\nno \"resume on webhook\"/\"resume at specific time\" mode, since nothing\nin this codebase needs those yet.",
+      "properties": {
+        "action": {
+          "const": "wait",
+          "default": "wait",
+          "type": "string"
+        },
+        "hours": {
+          "exclusiveMinimum": 0,
+          "maximum": 720,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hours"
+      ],
+      "type": "object"
+    },
+    "WebhookTrigger": {
+      "additionalProperties": false,
+      "properties": {
+        "method": {
+          "default": "POST",
+          "enum": [
+            "GET",
+            "POST"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "const": "webhook",
+          "default": "webhook",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "WorkflowConnection": {
+      "additionalProperties": false,
+      "description": "One edge in the workflow's node graph. `source` is either the\nliteral string \"trigger\" (the workflow's single entry point) or a\nnode id; `source_output` names which of that node's declared\n`outputs` this edge follows (a `condition` node has \"true\"/\"false\";\nmost `action` nodes just have \"done\"). Referential integrity\n(source/target actually exist, source_output actually exists on that\nnode) is enforced at the WorkflowConfig level, where the full node\nlist is known \u2014 see workflow.py.",
+      "properties": {
+        "source": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_output": {
+          "default": "done",
+          "maxLength": 50,
+          "minLength": 1,
+          "type": "string"
+        },
+        "target": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "connections": {
+      "items": {
+        "$ref": "#/$defs/WorkflowConnection"
+      },
+      "type": "array"
+    },
+    "error_handling": {
+      "$ref": "#/$defs/ErrorHandlingConfig"
+    },
+    "id": {
+      "maxLength": 100,
+      "minLength": 1,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 200,
+      "minLength": 1,
+      "type": "string"
+    },
+    "nodes": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "action": "#/$defs/ActionNode",
+            "condition": "#/$defs/ConditionNode"
+          },
+          "propertyName": "type"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ActionNode"
+          },
+          {
+            "$ref": "#/$defs/ConditionNode"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "required_capabilities": {
+      "description": "Always derived from `nodes`, never hand-supplied \u2014 there is no\nway for this to drift from what the workflow actually needs.",
+      "items": {
+        "type": "string"
+      },
+      "readOnly": true,
+      "type": "array"
+    },
+    "trigger": {
+      "discriminator": {
+        "mapping": {
+          "lead.submitted": "#/$defs/LeadSubmittedTrigger",
+          "webhook": "#/$defs/WebhookTrigger"
+        },
+        "propertyName": "type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LeadSubmittedTrigger"
+        },
+        {
+          "$ref": "#/$defs/WebhookTrigger"
+        }
+      ]
+    },
+    "version": {
+      "default": 1,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "trigger",
+    "required_capabilities"
+  ],
+  "type": "object"
+}

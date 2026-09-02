@@ -2,10 +2,15 @@
 /**
  * Contact — business contact details plus an optional native contact form,
  * composed as two panels on wide viewports (info + form) and stacked on
- * narrow ones. The form is presentational only: it renders accessible
- * fields and submits via standard HTML `action`/`method`, with no
- * client-side submission logic (wiring an endpoint is a site/app concern,
- * not this block's).
+ * narrow ones. The form renders accessible fields and submits via standard
+ * HTML `action`/`method` when one is configured — wiring a real endpoint
+ * stays a site/app concern, not this block's. When no `action` is set (no
+ * backend wired up yet), the script below prevents the pointless
+ * same-page reload and instead dispatches a neutral `lead.submitted`
+ * DOM CustomEvent carrying the submitted field values, so a future
+ * site/app-level integration (analytics, eventually a CRM/n8n bridge)
+ * has something to listen for without this block knowing anything about
+ * where leads should go.
  *
  * Fields flow two-up on desktop automatically by field *type* — textarea,
  * file, and grouped radio/checkbox fields span the full row; short
@@ -264,6 +269,26 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
 
     boxes.forEach((box) => box.addEventListener("change", validate));
     validate();
+  });
+
+  /**
+   * A form with no `action` configured has nowhere to submit to yet —
+   * letting the browser's default submission proceed would just reload
+   * the current page with the fields appended as query params. Instead,
+   * treat that specifically as "not wired to a backend yet" and emit a
+   * neutral `lead.submitted` event with the field data, for whatever
+   * site/app-level code (now or later) wants to act on it. A form that
+   * *does* have a real `action` is left entirely alone — it submits
+   * exactly as HTML already specifies.
+   */
+  document.querySelectorAll<HTMLFormElement>(".block-contact__form").forEach((form) => {
+    if (form.getAttribute("action")) return;
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const fields = Object.fromEntries(new FormData(form).entries());
+      form.dispatchEvent(new CustomEvent("lead.submitted", { detail: { fields }, bubbles: true }));
+    });
   });
 </script>
 

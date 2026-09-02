@@ -1,0 +1,25 @@
+{
+  "name": "@generate-web-ai/site-builder",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Build-time engine: renders an arbitrary SiteConfig (JSON, written by apps/api's publishing pipeline) through the real @generate-web-ai/renderer + @generate-web-ai/blocks + Tailwind pipeline — the same visual architecture apps/clients/* use, parameterized by data instead of hand-authored per client. Not a client site itself; not copied like apps/site-template.",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@generate-web-ai/renderer": "workspace:*",
+    "@generate-web-ai/site-config": "workspace:*",
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.2.3",
+    "tailwindcss": "4.3.3"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.10",
+    "@types/node": "^24.0.0",
+    "typescript": "6.0.3",
+    "wrangler": "4.125.0"
+  }
+}

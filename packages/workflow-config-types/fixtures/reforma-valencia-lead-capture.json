@@ -1,0 +1,180 @@
+{
+  "connections": [
+    {
+      "source": "trigger",
+      "source_output": "done",
+      "target": "store-lead"
+    },
+    {
+      "source": "store-lead",
+      "source_output": "done",
+      "target": "notify-internal"
+    },
+    {
+      "source": "notify-internal",
+      "source_output": "done",
+      "target": "wait-follow-up"
+    },
+    {
+      "source": "wait-follow-up",
+      "source_output": "done",
+      "target": "lookup-lead"
+    },
+    {
+      "source": "lookup-lead",
+      "source_output": "done",
+      "target": "check-lead-status"
+    },
+    {
+      "source": "check-lead-status",
+      "source_output": "true",
+      "target": "notify-follow-up"
+    },
+    {
+      "source": "check-lead-status",
+      "source_output": "true",
+      "target": "check-lead-has-email"
+    },
+    {
+      "source": "check-lead-has-email",
+      "source_output": "true",
+      "target": "send-lead-follow-up-email"
+    },
+    {
+      "source": "store-lead",
+      "source_output": "done",
+      "target": "acknowledge-customer"
+    }
+  ],
+  "error_handling": {
+    "max_retries": 0,
+    "notify_on_failure": false,
+    "strategy": "stop"
+  },
+  "id": "reforma-casa-valencia-lead-capture",
+  "name": "Reforma Casa Valencia \u2014 Lead capture",
+  "nodes": [
+    {
+      "action": "lead.store",
+      "id": "store-lead",
+      "inputs": {
+        "action": "lead.store"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "action": "notification.send",
+      "id": "notify-internal",
+      "inputs": {
+        "action": "notification.send",
+        "template": "lead_internal_notification"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "action": "wait",
+      "id": "wait-follow-up",
+      "inputs": {
+        "action": "wait",
+        "hours": 48
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "action": "lead.lookup",
+      "id": "lookup-lead",
+      "inputs": {
+        "action": "lead.lookup"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "condition": {
+        "field": "lead.status",
+        "operator": "equals",
+        "value": "new"
+      },
+      "id": "check-lead-status",
+      "outputs": [
+        "true",
+        "false"
+      ],
+      "type": "condition"
+    },
+    {
+      "action": "notification.send",
+      "id": "notify-follow-up",
+      "inputs": {
+        "action": "notification.send",
+        "template": "lead_follow_up"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "condition": {
+        "field": "lead.email",
+        "operator": "exists",
+        "value": null
+      },
+      "id": "check-lead-has-email",
+      "outputs": [
+        "true",
+        "false"
+      ],
+      "type": "condition"
+    },
+    {
+      "action": "lead.follow_up_email",
+      "id": "send-lead-follow-up-email",
+      "inputs": {
+        "action": "lead.follow_up_email",
+        "template": "lead_follow_up_email"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    },
+    {
+      "action": "email.send",
+      "id": "acknowledge-customer",
+      "inputs": {
+        "action": "email.send",
+        "subject": null,
+        "template": "lead_acknowledgement",
+        "to": "customer"
+      },
+      "outputs": [
+        "done"
+      ],
+      "type": "action"
+    }
+  ],
+  "required_capabilities": [
+    "email.send",
+    "lead.follow_up_email",
+    "lead.lookup",
+    "lead.store",
+    "notification.send",
+    "wait"
+  ],
+  "trigger": {
+    "type": "lead.submitted"
+  },
+  "version": 1
+}

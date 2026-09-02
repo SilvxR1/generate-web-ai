@@ -8,6 +8,19 @@ dist/
 *.log
 .DS_Store
 
+# Python (apps/api) — mirrors node_modules/dist above: local venv,
+# bytecode cache, and the zero-config sqlite dev DB, never shared config.
+.venv/
+__pycache__/
+*.pyc
+apps/api/dev.db
+
+# apps/api's app.publishing.build shells out to `astro build` here, once
+# per publish attempt, with a fresh temp SITE_CONFIG_PATH/--outDir under
+# this directory — cleaned up after each build, but ignored defensively
+# in case a crash leaves one behind.
+apps/site-builder/.tmp-builds/
+
 # Cloudflare/wrangler local dev state and secrets — machine-local, never
 # shared project config (analogous to node_modules/.astro above).
 .wrangler/
@@ -17,6 +30,14 @@ dist/
 # Claude Code local settings — machine/developer-specific (e.g. hook
 # manifests written by `npx impeccable install`), not shared project config.
 .claude/settings.local.json
+
+# /graphify skill output (codebase knowledge-graph analysis) — regenerated
+# on demand, not shared project config.
+graphify-out/
+
+# Ad hoc local working files (e.g. artifact source before publishing) —
+# never shared project content.
+/scratch/
 
 # impeccable-ignore-start
 # Ephemeral output, runtime state, and per-dev overrides.

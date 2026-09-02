@@ -1,0 +1,22 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "broken-image",
+        "value": "*",
+        "files": [
+          "packages/ui/src/components/Media.astro"
+        ],
+        "createdAt": "2026-08-21T09:59:27.870Z",
+        "reason": "Generic reusable Media component: <img src={src}> binds a dynamic prop always supplied by the caller (never literally empty), and lines 8/20 are doc-comment prose mentioning <img>, not markup."
+      },
+      {
+        "rule": "overused-font",
+        "value": "inter apps/clients/sacri-barber/src/styles/global.css",
+        "createdAt": "2026-08-21T10:27:51.510Z"
+      }
+    ]
+  }
+}
