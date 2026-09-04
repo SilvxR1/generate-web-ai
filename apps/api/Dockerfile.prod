@@ -1,0 +1,61 @@
+# Production image (Railway). Unlike apps/api/Dockerfile — a dev-only
+# image built with apps/api as its own build context, bind-mounted for
+# hot reload via docker-compose — this one must be built with the
+# *monorepo root* as build context: app.publishing.build.build_site
+# shells out to `pnpm exec astro build` in apps/site-builder at
+# *runtime*, once per website publish request, so the running container
+# needs that JS workspace on disk and a working Node/pnpm toolchain, not
+# just apps/api's own Python code. See app.publishing.build's
+# _find_repo_root for how the API locates apps/site-builder once it's
+# there, without assuming a fixed directory depth.
+#
+# Copies only what apps/site-builder actually needs to run `astro
+# build` — its own source plus the workspace packages it transitively
+# depends on (renderer -> blocks -> ui, site-config, and the shared
+# tsconfig in config every one of them extends) — the same "copy only
+# what this app's Dockerfile needs, not the whole monorepo" pattern
+# apps/studio/Dockerfile already uses for the Studio frontend.
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
+# Node.js + pnpm: only for the `astro build` subprocess
+# app.publishing.build invokes; nothing else in the API needs a JS
+# runtime at all. corepack (bundled with Node 24) resolves the exact
+# pnpm version from the root package.json's "packageManager" field, the
+# same mechanism apps/studio/Dockerfile relies on.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && corepack enable \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
+
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
+COPY apps/site-builder ./apps/site-builder
+COPY packages/config ./packages/config
+COPY packages/ui ./packages/ui
+COPY packages/blocks ./packages/blocks
+COPY packages/site-config ./packages/site-config
+COPY packages/renderer ./packages/renderer
+RUN pnpm install --frozen-lockfile --prod --filter "@generate-web-ai/site-builder..."
+
+# The Python API itself, alongside (not instead of) the JS workspace
+# above — needs the monorepo root above it on disk, unlike the dev
+# Dockerfile's apps/api-only context.
+COPY apps/api ./apps/api
+WORKDIR /repo/apps/api
+
+# `uv run` (used by docker-entrypoint.prod.sh) re-syncs the environment
+# against the *full* lockfile by default, including the dev dependency
+# group (pytest/ruff/mypy) — that would silently undo --no-dev below
+# and re-download ~30MB of tooling from the network on every container
+# start. These env vars make every `uv run` in this image behave like
+# the `uv sync` on the next line already did: frozen, no dev group.
+ENV UV_FROZEN=1 UV_NO_DEV=1
+RUN uv sync --frozen --no-dev
+
+RUN chmod +x docker-entrypoint.prod.sh
+
+EXPOSE 8000
+ENTRYPOINT ["./docker-entrypoint.prod.sh"]

@@ -23,8 +23,26 @@ from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact
 from app.schemas.site_config import SiteConfigPayload
 
-# apps/api/app/publishing/build.py -> apps/api/app -> apps/api -> apps -> <repo root>
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+def _find_repo_root(start: Path) -> Path:
+    """Walks up from `start` looking for pnpm-workspace.yaml — the one
+    file that only ever exists at the monorepo root — instead of a fixed
+    `parents[N]` index. A fixed index silently pointed at the wrong
+    directory (or raised IndexError) the moment this file's depth
+    relative to the repo root changed, which is exactly what happens
+    once this runs inside a container: e.g. Railway building with the
+    monorepo root as build context but an extra `WORKDIR` layer, or any
+    other layout that isn't this exact host checkout's directory depth.
+    """
+    for candidate in (start, *start.parents):
+        if (candidate / "pnpm-workspace.yaml").is_file():
+            return candidate
+    raise RuntimeError(
+        f"could not find the generate-web-ai monorepo root (no pnpm-workspace.yaml found above {start}) "
+        "— app.publishing.build needs a full monorepo checkout, not apps/api on its own."
+    )
+
+
+_REPO_ROOT = _find_repo_root(Path(__file__).resolve())
 SITE_BUILDER_DIR = _REPO_ROOT / "apps" / "site-builder"
 
 # `astro build`'s internal asset-move step uses a plain filesystem
