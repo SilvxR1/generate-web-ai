@@ -28,6 +28,7 @@ CONTEXT = N8nTranslationContext(
     internal_leads_url="http://localhost:8000/internal/leads",
     internal_notifications_url="http://localhost:8000/internal/notifications",
     email_credential_id="n8n-smtp-credential-id",
+    email_from_address="noreply@example.com",
     # Real usage always carries these (see
     # app.automation.n8n.engine.translation_context_from_settings) — and
     # the reforma-valencia fixture below now includes a lead.lookup
@@ -110,6 +111,7 @@ def test_internal_callback_body_enriches_the_resolved_fields_with_ownership():
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
         email_credential_id="n8n-smtp-credential-id",
+        email_from_address=CONTEXT.email_from_address,
         tenant_id="11111111-1111-1111-1111-111111111111",
         business_id="22222222-2222-2222-2222-222222222222",
     )
@@ -128,7 +130,66 @@ def test_translates_email_send_with_credential_reference_not_value():
     email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
 
     assert email_node["credentials"] == {"smtp": {"id": "n8n-smtp-credential-id"}}
-    assert email_node["parameters"]["toEmail"] == "={{ $json.customer }}"
+    # acknowledge-customer sits directly downstream of store-lead, whose
+    # translated httpRequest node returns our own /internal/leads response
+    # (LeadResponse) as $json verbatim — so "customer" must resolve to
+    # that response's actual `email` field, never a literal "customer"
+    # key nothing ever produces (see translator._EMAIL_RECIPIENT_FIELD).
+    assert email_node["parameters"]["toEmail"] == "={{ $json.email }}"
+
+
+def test_email_send_subject_and_body_are_never_undefined():
+    # Regression test: this node used to build `text` from
+    # `$json.templates.{template}`, a path nothing ever populates, so
+    # every acknowledgement email n8n actually sent had literal
+    # "undefined" text (and, before the toEmail fix above, no resolvable
+    # recipient either). Both must now be real, non-empty content
+    # resolved at translation time, not deferred to a nonexistent
+    # runtime field.
+    payload = translate_workflow(_lead_capture_workflow(), CONTEXT)
+    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
+
+    assert email_node["parameters"]["subject"]
+    assert "undefined" not in email_node["parameters"]["subject"]
+    assert email_node["parameters"]["text"]
+    assert "$json.templates" not in email_node["parameters"]["text"]
+    assert "undefined" not in email_node["parameters"]["text"]
+
+
+def test_email_send_node_always_carries_a_from_address():
+    # n8n refuses to *activate* an emailSend node without `fromEmail`
+    # ("Missing or invalid required parameters: fromEmail") — every
+    # translated email.send node must carry a literal, non-empty value
+    # for it, sourced from the context (ultimately
+    # settings.smtp_from_address), never left unset.
+    payload = translate_workflow(_lead_capture_workflow(), CONTEXT)
+    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
+
+    assert email_node["parameters"]["fromEmail"] == CONTEXT.email_from_address
+    assert email_node["parameters"]["fromEmail"]
+
+
+def test_email_send_rejected_without_configured_from_address():
+    workflow = WorkflowConfig(
+        id="needs-email",
+        name="Needs email",
+        trigger=LeadSubmittedTrigger(),
+        nodes=[
+            ActionNode(
+                id="ack", action=ActionType.EMAIL_SEND, inputs=EmailSendInputs(to=EmailRecipient.CUSTOMER, template="x")
+            )
+        ],
+        connections=[WorkflowConnection(source="trigger", target="ack")],
+    )
+    context_without_from_address = N8nTranslationContext(
+        internal_leads_url=CONTEXT.internal_leads_url,
+        internal_notifications_url=CONTEXT.internal_notifications_url,
+        email_credential_id=CONTEXT.email_credential_id,
+        email_from_address=None,
+    )
+
+    with pytest.raises(UnsupportedActionError, match="no from-address configured"):
+        translate_workflow(workflow, context_without_from_address)
 
 
 def test_translates_http_request_action_directly():

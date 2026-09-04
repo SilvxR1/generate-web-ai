@@ -25,7 +25,7 @@ from app.config import Settings
 from app.db.models.business import Business
 from app.db.models.tenant import Tenant
 from app.db.models.workflow import Workflow
-from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG
+from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG, AutomationConfig, FollowUpConfig
 from app.domain.enums import WorkflowStatus
 from app.repositories.workflow import WorkflowRepository
 
@@ -158,6 +158,121 @@ def test_repeated_activation_does_not_duplicate_or_call_n8n_again(session: Sessi
 
     rows = session.scalars(select(Workflow)).all()
     assert len(rows) == 1
+
+
+# --- full recommended automation reaches n8n intact --------------------------
+
+
+def test_activation_with_every_automation_flag_on_sends_every_node_to_n8n(session: Session, business: Business):
+    """Regression test for the report that a business created with every
+    recommended automation on ("lead_capture=true, lead_notifications=true,
+    customer_acknowledgement=true, follow_up.enabled=true,
+    follow_up.delay_hours=24") still activated an n8n workflow containing
+    only Trigger -> store-lead, so no notification/acknowledgement/
+    follow-up ever ran despite the execution showing green.
+
+    Tracing Studio draft -> buildCreatePayload -> persisted BusinessConfig
+    -> generate_lead_capture_workflow -> N8nAutomationEngine -> translator
+    -> n8n payload found no defect anywhere in that backend chain (every
+    step above the API boundary is exercised, end to end, right here) —
+    the persisted BusinessConfig this test builds is exactly the reported
+    scenario, and it reaches n8n with every node intact. This locks that
+    down so a future change to the generator, the translator, or the
+    activation service can't silently reintroduce a node-dropping
+    regression.
+    """
+    config = EXAMPLE_REFORMA_VALENCIA_CONFIG.model_copy(
+        update={
+            "automation": AutomationConfig(
+                lead_capture=True,
+                lead_notifications=True,
+                customer_acknowledgement=True,
+                follow_up=FollowUpConfig(enabled=True, delay_hours=24),
+            )
+        }
+    )
+
+    captured: dict[str, bytes] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/workflows":
+            captured["create_body"] = request.content
+            return httpx.Response(201, json={"id": "42", "name": "wf", "active": False})
+        return httpx.Response(200, json={"id": "42", "name": "wf", "active": True})
+
+    result = activate_lead_capture_automation(
+        session=session,
+        business_config=config,
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        settings=_settings(),
+        client=_client(handler),
+    )
+
+    assert result.status is WorkflowStatus.ACTIVE
+    assert set(result.required_capabilities) == {
+        "lead.store",
+        "lead.lookup",
+        "lead.follow_up_email",
+        "notification.send",
+        "email.send",
+        "wait",
+    }
+
+    payload = json.loads(captured["create_body"])
+    node_ids = {node["id"] for node in payload["nodes"]}
+    assert {
+        "store-lead",
+        "notify-internal",
+        "acknowledge-customer",
+        "wait-follow-up",
+        "lookup-lead",
+        "check-lead-status",
+        "send-lead-follow-up-email",
+    } <= node_ids
+
+    # The email node this phase's fromEmail fix targeted must still
+    # carry both required parameters — a from-address and a credential
+    # reference — or n8n will again refuse to activate it.
+    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
+    assert email_node["parameters"]["fromEmail"]
+    assert email_node["credentials"]["smtp"]["id"]
+
+
+def test_activation_sends_a_resolvable_acknowledgement_email_not_undefined_fields(
+    session: Session, business: Business
+):
+    """Regression test for the report that acknowledge-customer's
+    generated n8n node used `toEmail: {{ $json.customer }}` and
+    `text: {{ $json.templates.lead_acknowledgement }}` — the input item
+    store-lead actually hands it only ever has `email`/`name`/`phone`/
+    `message`/`status`, never `customer` or `templates`, so both
+    expressions always resolved to undefined and no real acknowledgement
+    email was ever sent. EXAMPLE_REFORMA_VALENCIA_CONFIG already has
+    customer_acknowledgement=True, so a normal activation exercises this
+    node exactly as production does — no config override needed.
+    """
+    captured: dict[str, bytes] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/v1/workflows":
+            captured["create_body"] = request.content
+            return httpx.Response(201, json={"id": "42", "name": "wf", "active": False})
+        return httpx.Response(200, json={"id": "42", "name": "wf", "active": True})
+
+    result = _activate(handler, session, business)
+    assert result.status is WorkflowStatus.ACTIVE
+
+    payload = json.loads(captured["create_body"])
+    email_node = next(n for n in payload["nodes"] if n["id"] == "acknowledge-customer")
+
+    assert email_node["type"] == "n8n-nodes-base.emailSend"
+    assert email_node["parameters"]["toEmail"] == "={{ $json.email }}"
+    assert email_node["parameters"]["subject"]
+    assert "undefined" not in email_node["parameters"]["subject"]
+    assert email_node["parameters"]["text"]
+    assert "$json.templates" not in email_node["parameters"]["text"]
+    assert "undefined" not in email_node["parameters"]["text"]
 
 
 # --- deactivate ---------------------------------------------------------------

@@ -17,6 +17,7 @@ CONTEXT = N8nTranslationContext(
     internal_leads_url="http://localhost:8000/internal/leads",
     internal_notifications_url="http://localhost:8000/internal/notifications",
     email_credential_id="n8n-smtp-credential-id",
+    email_from_address="noreply@example.com",
     # Required now: _workflow() below includes a lead.lookup node (the
     # reforma-valencia fixture has follow_up enabled), which the
     # translator refuses to translate without tenant/business scoping.
