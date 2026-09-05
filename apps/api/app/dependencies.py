@@ -13,6 +13,7 @@ from app.automation.n8n import N8nClient
 from app.config import settings
 from app.db.session import make_engine, make_session_factory
 from app.errors import AppError
+from app.notifications.resend import ResendNotificationSender
 from app.notifications.sender import NotificationSender
 from app.notifications.smtp import SmtpNotificationSender
 from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesPublisher
@@ -125,11 +126,26 @@ def get_optional_notification_sender() -> NotificationSender | None:
     raises for "not configured" — returns None instead. Website publish
     and automation activation are explicit, one-shot human actions with
     no valid "silently skip" outcome, so failing loudly there is right.
-    Every lead triggers notification.send, though, and not having SMTP
-    configured yet is a completely normal state for a business that
-    hasn't set up email notifications — app.notifications.service's
+    Every lead triggers notification.send, though, and not having a
+    provider configured yet is a completely normal state for a business
+    that hasn't set up email notifications — app.notifications.service's
     deliver_internal_notification treats None as "nothing to attempt",
-    the same as a business with no contact email, never as a failure."""
+    the same as a business with no contact email, never as a failure.
+
+    Provider selection: ResendNotificationSender (HTTPS — reachable from
+    serverless/edge deployment targets that block or don't reliably
+    support raw outbound SMTP) is preferred whenever RESEND_API_KEY/
+    RESEND_FROM_ADDRESS are configured. SmtpNotificationSender
+    (app.notifications.smtp) remains available purely as a local/dev
+    fallback for an operator without a Resend account yet — production
+    is expected to configure Resend. Never logs either provider's
+    credentials.
+    """
+    if settings.resend_api_key and settings.resend_from_address:
+        return ResendNotificationSender(
+            api_key=settings.resend_api_key,
+            from_address=settings.resend_from_address,
+        )
     if not settings.smtp_host or not settings.smtp_from_address:
         return None
     return SmtpNotificationSender(

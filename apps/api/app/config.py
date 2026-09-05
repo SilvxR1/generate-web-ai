@@ -82,5 +82,15 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_from_address: str | None = None
 
+    # ResendNotificationSender (app.notifications.resend) — the
+    # cloud-safe HTTP transport preferred over SMTP above whenever it's
+    # configured (see app.dependencies.get_optional_notification_sender):
+    # most serverless/edge deployment targets either block outbound SMTP
+    # or make it unreliable, while an HTTPS API call is not blocked.
+    # Same "no defaults, delivery is just skipped until configured" shape
+    # as the SMTP settings — `resend_api_key` is never logged.
+    resend_api_key: str | None = None
+    resend_from_address: str | None = None
+
 
 settings = Settings()
