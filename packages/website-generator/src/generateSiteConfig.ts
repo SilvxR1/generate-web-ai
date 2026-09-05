@@ -73,7 +73,7 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
       chatbot: false,
       booking: false,
     },
-    seo: buildSeo(profile, website, preset),
+    seo: buildSeo(profile, website),
     ...(business ? { business } : {}),
   };
 }

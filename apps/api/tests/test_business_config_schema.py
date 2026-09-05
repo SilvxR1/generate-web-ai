@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.domain.business_config import (
     EXAMPLE_REFORMA_VALENCIA_CONFIG,
+    AutomationConfig,
     BrandColors,
     BrandConfig,
     BrandTypography,
@@ -14,6 +15,7 @@ from app.domain.business_config import (
     BusinessHoursRule,
     BusinessProfile,
     ContactInfo,
+    LeadManagementConfig,
     Location,
     ServiceOffering,
 )
@@ -91,6 +93,74 @@ def test_contact_info_allows_all_fields_optional():
 def test_location_requires_two_letter_country_code():
     with pytest.raises(ValidationError):
         Location(city="Valencia", country="Spain")
+
+
+# --- website lead capture intent must be representable in lead_management --
+#
+# generate_lead_capture_workflow always wires its trigger to a website form
+# submission (LeadSubmittedTrigger -> LeadSource.WEBSITE_FORM, see
+# app.automation.n8n.translator), so automation.lead_capture=True with no
+# "website_form" in lead_management.sources would produce an active n8n
+# workflow the generated website has no way to ever trigger (see
+# packages/website-generator's buildContactBlock).
+
+
+def test_website_lead_capture_intent_adds_website_form_without_dropping_other_sources():
+    config = BusinessConfig(
+        business_profile=_minimal_profile(),
+        lead_management=LeadManagementConfig(enabled=True, sources=[LeadSource.EMAIL]),
+        automation=AutomationConfig(lead_capture=True),
+    )
+
+    assert config.lead_management.enabled is True
+    assert set(config.lead_management.sources) == {LeadSource.EMAIL, LeadSource.WEBSITE_FORM}
+    assert config.lead_management.required_fields == ["name", "email"]
+
+
+def test_website_lead_capture_intent_enables_lead_management_even_if_it_was_disabled():
+    config = BusinessConfig(
+        business_profile=_minimal_profile(),
+        lead_management=LeadManagementConfig(enabled=False, sources=[LeadSource.EMAIL]),
+        automation=AutomationConfig(lead_capture=True),
+    )
+
+    assert config.lead_management.enabled is True
+    assert LeadSource.WEBSITE_FORM in config.lead_management.sources
+    assert LeadSource.EMAIL in config.lead_management.sources
+
+
+def test_website_lead_capture_intent_preserves_explicit_required_fields():
+    config = BusinessConfig(
+        business_profile=_minimal_profile(),
+        lead_management=LeadManagementConfig(
+            enabled=True, sources=[LeadSource.EMAIL], required_fields=["name", "phone", "service"]
+        ),
+        automation=AutomationConfig(lead_capture=True),
+    )
+
+    assert config.lead_management.required_fields == ["name", "phone", "service"]
+
+
+def test_website_lead_capture_intent_is_a_noop_when_already_representable():
+    already_correct = LeadManagementConfig(enabled=True, sources=[LeadSource.WEBSITE_FORM, LeadSource.EMAIL])
+
+    config = BusinessConfig(
+        business_profile=_minimal_profile(),
+        lead_management=already_correct,
+        automation=AutomationConfig(lead_capture=True),
+    )
+
+    assert config.lead_management == already_correct
+
+
+def test_no_lead_capture_intent_leaves_lead_management_untouched():
+    config = BusinessConfig(
+        business_profile=_minimal_profile(),
+        lead_management=LeadManagementConfig(enabled=True, sources=[LeadSource.EMAIL]),
+    )
+
+    assert config.lead_management.sources == [LeadSource.EMAIL]
+    assert LeadSource.WEBSITE_FORM not in config.lead_management.sources
 
 
 def test_business_hours_rule_rejects_bad_time_format():

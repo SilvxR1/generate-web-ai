@@ -186,6 +186,17 @@ export function buildCreatePayload(draft: BusinessDraft): CreateBusinessPayload 
     (value) => value.trim().length > 0,
   );
 
+  // Lead-capture automation always generates a workflow triggered by the
+  // website's own contact form (see apps/api's BusinessConfig
+  // model_validator _sync_lead_management_with_website_lead_capture_intent,
+  // which normalizes this same invariant server-side as a backstop) — so
+  // "website_form" must be a source whenever that checkbox is on,
+  // whatever other sources (email, phone...) the operator also picked.
+  const leadSources: LeadSource[] =
+    draft.automation.leadCapture && !draft.leadSources.includes("website_form")
+      ? [...draft.leadSources, "website_form"]
+      : draft.leadSources;
+
   const seenServiceIds = new Set<string>();
   const services = draft.services
     .filter((service) => service.name.trim() && service.description.trim())
@@ -233,8 +244,8 @@ export function buildCreatePayload(draft: BusinessDraft): CreateBusinessPayload 
         : undefined,
     },
     lead_management: {
-      enabled: draft.leadSources.length > 0,
-      sources: draft.leadSources,
+      enabled: leadSources.length > 0,
+      sources: leadSources,
     },
     automation: {
       lead_capture: draft.automation.leadCapture,

@@ -216,6 +216,68 @@ describe("buildCreatePayload", () => {
     expect(payload.config?.automation?.follow_up).toEqual({ enabled: false, delay_hours: undefined });
   });
 
+  it("adds website_form when lead-capture automation is on, without dropping other chosen sources", () => {
+    // Reproduces the reported bug: an operator checks "enable lead
+    // capture automation" but only ticks "Email" as a lead source. That
+    // combination would otherwise post lead_management.sources: ["email"]
+    // alongside automation.lead_capture: true — an active n8n lead
+    // workflow (see apps/api's generate_lead_capture_workflow) with
+    // nothing on the generated website able to trigger it, since
+    // buildContactBlock only emits a contact form when "website_form" is
+    // among the sources.
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      leadSources: ["email" as const],
+      automation: {
+        leadCapture: true,
+        leadNotifications: false,
+        customerAcknowledgement: false,
+        followUpEnabled: false,
+        followUpDelayHours: 24,
+      },
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.lead_management?.sources).toEqual(["email", "website_form"]);
+    expect(payload.config?.lead_management?.enabled).toBe(true);
+  });
+
+  it("does not duplicate website_form when it was already among the chosen sources", () => {
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      leadSources: ["website_form" as const, "whatsapp" as const],
+      automation: {
+        leadCapture: true,
+        leadNotifications: false,
+        customerAcknowledgement: false,
+        followUpEnabled: false,
+        followUpDelayHours: 24,
+      },
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.lead_management?.sources).toEqual(["website_form", "whatsapp"]);
+  });
+
+  it("leaves lead sources untouched when lead-capture automation is off", () => {
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      leadSources: ["email" as const],
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.lead_management?.sources).toEqual(["email"]);
+  });
+
   it("enables the matching communication channel so a checked automation box actually delivers", () => {
     const draft = {
       ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),

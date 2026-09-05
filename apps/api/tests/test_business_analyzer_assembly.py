@@ -147,6 +147,29 @@ def test_automation_flags_are_applied_only_when_stated():
     assert automation.lead_notifications is False
 
 
+def test_website_lead_capture_intent_still_gets_website_form_when_analyzer_only_proposed_email():
+    """Reproduces the reported bug: an analyzed briefing that states an
+    email lead source and separately signals lead-capture automation
+    intent must not leave lead_management.sources as just ["email"] —
+    that combination would activate an n8n lead workflow
+    (automation.lead_capture) with no way for the generated website to
+    ever trigger it (the workflow's trigger always maps to
+    LeadSource.WEBSITE_FORM; see BusinessConfig's own model_validator,
+    which this end-to-end assembly path also exercises)."""
+    raw = BusinessAnalysisOutput(
+        business_name="Cafe del Mar",
+        lead_sources=[LeadSource.EMAIL],
+        automation_lead_capture=True,
+    )
+
+    result = assemble_result(raw)
+
+    assert result.proposed_config is not None
+    lead_management = result.proposed_config.lead_management
+    assert lead_management.enabled is True
+    assert set(lead_management.sources) == {LeadSource.EMAIL, LeadSource.WEBSITE_FORM}
+
+
 def test_communications_keep_business_config_defaults():
     """communication-channel preferences are no longer part of what the
     analyzer extracts (see BusinessAnalysisOutput's docstring) — the

@@ -19,7 +19,7 @@ BusinessConfig -> {WebsiteConfig, WorkflowConfig} split this is the
 first half of.
 """
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.business_config.automation import AutomationConfig
 from app.domain.business_config.brand import BrandConfig
@@ -28,6 +28,7 @@ from app.domain.business_config.communication import CommunicationConfig
 from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
 from app.domain.business_config.website import WebsiteConfig
+from app.domain.enums import LeadSource
 
 CURRENT_BUSINESS_CONFIG_SCHEMA_VERSION = 1
 
@@ -54,3 +55,44 @@ class BusinessConfig(BaseModel):
                 "see Section 12's deliberate scope limit)."
             )
         return value
+
+    @model_validator(mode="after")
+    def _sync_lead_management_with_website_lead_capture_intent(self) -> "BusinessConfig":
+        """`automation.lead_capture` is, in this codebase, always realized
+        as a workflow triggered by a website form submission
+        (app.domain.workflow_config.generator.generate_lead_capture_workflow
+        unconditionally builds a LeadSubmittedTrigger, which
+        app.automation.n8n.translator maps to LeadSource.WEBSITE_FORM) —
+        so any path that produces a BusinessConfig with lead-capture
+        automation enabled (the AI analyzer's proposal, a Studio-authored
+        config, a script) must also represent that intent in
+        lead_management, or the result is an active n8n workflow with no
+        way for the generated website to ever trigger it
+        (packages/website-generator's buildContactBlock only emits a
+        contact form when WEBSITE_FORM is among lead_management.sources).
+
+        This normalizes rather than rejects, since WEBSITE_FORM is a
+        derivable consequence of the stated automation intent, not a
+        genuine ambiguity requiring a human decision. It never drops an
+        existing, legitimately-configured source (email, phone,
+        whatsapp...) to make room for it, and only fills in
+        required_fields when the config left it empty — an explicit,
+        non-empty choice is always preserved.
+        """
+        if not self.automation.lead_capture:
+            return self
+
+        lead_management = self.lead_management
+        needs_website_form = LeadSource.WEBSITE_FORM not in lead_management.sources
+        needs_enabling = not lead_management.enabled
+        needs_required_fields = not lead_management.required_fields
+
+        if not (needs_website_form or needs_enabling or needs_required_fields):
+            return self
+
+        sources = [*lead_management.sources, LeadSource.WEBSITE_FORM] if needs_website_form else lead_management.sources
+        required_fields = lead_management.required_fields or ["name", "email"]
+        self.lead_management = lead_management.model_copy(
+            update={"enabled": True, "sources": sources, "required_fields": required_fields}
+        )
+        return self
