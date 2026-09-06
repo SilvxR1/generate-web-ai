@@ -73,7 +73,6 @@ def test_lead_capture_flow_end_to_end(client: TestClient, session, tenant: Tenan
     context = N8nTranslationContext(
         internal_leads_url=f"{settings.internal_api_base_url}/internal/leads",
         internal_notifications_url=f"{settings.internal_api_base_url}/internal/notifications",
-        email_credential_id=None,
         tenant_id=str(tenant.id),
         business_id=str(business.id),
     )
@@ -163,7 +162,6 @@ def test_lead_capture_flow_from_a_realistic_n8n_webhook_item_shape(
     context = N8nTranslationContext(
         internal_leads_url=f"{settings.internal_api_base_url}/internal/leads",
         internal_notifications_url=f"{settings.internal_api_base_url}/internal/notifications",
-        email_credential_id=None,
         tenant_id=str(tenant.id),
         business_id=str(business.id),
     )

@@ -1,4 +1,4 @@
-"""Two delivery functions sharing one NotificationSender (configured
+"""Three delivery functions sharing one NotificationSender (configured
 once per request, injected already-built — see
 app.dependencies.get_optional_notification_sender) but kept
 deliberately separate, never conflated:
@@ -13,13 +13,14 @@ deliberately separate, never conflated:
   a skip or failure leaves it exactly as ingest_notification set it
   (False), never touches the Lead this notification is about.
 
-* deliver_lead_follow_up_email: a Lead's own row -> the lead's own
-  email. Never represented as an InternalNotification (that model means
-  "the business's team was told", a different concept) and nothing is
-  persisted for it at all — see that function's own docstring.
+* deliver_lead_acknowledgement_email / deliver_lead_follow_up_email: a
+  Lead's own row -> the lead's own email. Never represented as an
+  InternalNotification (that model means "the business's team was
+  told", a different concept) and nothing is persisted for either —
+  see each function's own docstring for how their gating differs.
 
-Both never raise for a legitimate "nothing to deliver to (yet)" state
-— only for a real, configured provider call that itself failed.
+All three never raise for a legitimate "nothing to deliver to (yet)"
+state — only for a real, configured provider call that itself failed.
 """
 
 from app.db.models.internal_notification import InternalNotification
@@ -82,6 +83,83 @@ def deliver_internal_notification(
         ) from exc
 
     notification.delivered = True
+
+
+class LeadAcknowledgementEmailError(Exception):
+    """Same shape and role as NotificationDeliveryError/LeadFollowUpEmailError
+    above, kept as its own class for the same "textually separate
+    concepts" reasoning: a lead not getting acknowledged is distinct
+    from a lead not getting a follow-up, even though both are emails to
+    the lead itself."""
+
+    def __init__(self, message: str, *, code: str, status_code: int) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status_code = status_code
+
+
+def deliver_lead_acknowledgement_email(
+    *, lead: Lead, business_name: str, business_config: BusinessConfig | None, sender: NotificationSender | None
+) -> bool:
+    """A real email *to the lead itself*, sent right after it's stored —
+    the customer-facing counterpart to deliver_internal_notification,
+    replacing what used to be n8n's native emailSend node (a raw SMTP
+    connection Railway's n8n can't reliably open to Gmail). Routed
+    through this backend's own NotificationSender instead — Resend in
+    production (app.dependencies.get_optional_notification_sender) —
+    the same cloud-safe HTTPS path deliver_internal_notification and
+    deliver_lead_follow_up_email already use, never a second SMTP
+    configuration living only in n8n.
+
+    Deliberately never represented as an InternalNotification (that
+    model means "the business's own team was told", a different
+    concept). No lead-status check, unlike deliver_lead_follow_up_email:
+    this fires immediately off the just-stored lead, not after a wait
+    where the status could plausibly have moved on — acknowledging "we
+    got your message" stays correct regardless of what happens to the
+    lead afterwards.
+
+    Returns False (no error) for every legitimate "don't send" state:
+    no sender configured yet, no persisted business config, the
+    business hasn't opted into customer-facing email
+    (CommunicationConfig.customer_notifications.email — the same flag
+    deliver_lead_follow_up_email checks, since both are customer-facing
+    sends), or the lead has no email. Only a real send attempt against a
+    configured sender can raise LeadAcknowledgementEmailError.
+
+    Subject/body are fixed and business-name-based only for this MVP —
+    same "no template engine yet" scope as deliver_lead_follow_up_email,
+    and deliberately the same copy the retired n8n emailSend node used
+    to send.
+    """
+    if sender is None or business_config is None:
+        return False
+    if not business_config.communications.customer_notifications.email:
+        return False
+    if not lead.email:
+        return False
+
+    greeting = f"Hola {lead.name}," if lead.name else "Hola,"
+    try:
+        sender.send(
+            NotificationEmail(
+                to=lead.email,
+                subject="Hemos recibido tu mensaje",
+                body=(
+                    f"{greeting}\n\n"
+                    "Gracias por contactarnos. Hemos recibido tu mensaje y te responderemos en breve.\n\n"
+                    "Un saludo."
+                ),
+            )
+        )
+    except NotificationSenderError as exc:
+        raise LeadAcknowledgementEmailError(
+            f"Failed to deliver the lead acknowledgement email: {exc}",
+            code="lead_acknowledgement_email_failed",
+            status_code=502,
+        ) from exc
+
+    return True
 
 
 class LeadFollowUpEmailError(Exception):

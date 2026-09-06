@@ -29,10 +29,6 @@ class Settings(BaseSettings):
     # actually used, not silently point at nothing.
     n8n_base_url: str | None = None
     n8n_api_key: str | None = None
-    # A credential *reference* n8n already has configured for outbound
-    # email (see app/automation/n8n/translator.py) — never a raw SMTP
-    # password. None means "email.send can't be translated yet".
-    n8n_email_credential_id: str | None = None
 
     # Where this API itself is reachable from an n8n workflow, for the
     # actions (lead.store, notification.send) that have no dedicated n8n

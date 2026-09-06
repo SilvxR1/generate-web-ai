@@ -95,3 +95,23 @@ class LeadFollowUpEmailResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sent: bool
+
+
+class LeadAcknowledgementEmailRequest(BaseModel):
+    """Body for POST /internal/leads/{id}/acknowledgement-email — the
+    email.send action's real send (see app.automation.n8n.translator),
+    replacing what used to be n8n's own native emailSend/SMTP node. Same
+    shape and reasoning as LeadFollowUpEmailRequest above: no email or
+    content here, the recipient is re-derived server-side from the
+    lead's own row."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    tenant_id: uuid.UUID
+    business_id: uuid.UUID
+
+
+class LeadAcknowledgementEmailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sent: bool

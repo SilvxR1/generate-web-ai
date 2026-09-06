@@ -2,7 +2,7 @@
 against a mocked n8n API (httpx.MockTransport, same pattern as
 test_n8n_engine.py) and a real (sqlite, in-memory) session — success,
 persistence of the Workflow row, idempotent repeated activation,
-deactivate/reactivate, missing/unsupported capability configuration,
+deactivate/reactivate, unsupported capability configuration,
 automation not enabled, engine failure never marking anything active or
 mutating what was already persisted, tenant isolation, and that the n8n
 API key never appears in the result or in any request body."""
@@ -37,7 +37,6 @@ def _settings(**overrides: object) -> Settings:
         "internal_api_base_url": "http://localhost:8000",
         "n8n_base_url": "https://n8n.example.com",
         "n8n_api_key": API_KEY,
-        "n8n_email_credential_id": "n8n-smtp-credential-id",
     }
     defaults.update(overrides)
     return Settings(**defaults)  # type: ignore[arg-type]
@@ -231,24 +230,24 @@ def test_activation_with_every_automation_flag_on_sends_every_node_to_n8n(sessio
         "send-lead-follow-up-email",
     } <= node_ids
 
-    # The email node this phase's fromEmail fix targeted must still
-    # carry both required parameters — a from-address and a credential
-    # reference — or n8n will again refuse to activate it.
-    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
-    assert email_node["parameters"]["fromEmail"]
-    assert email_node["credentials"]["smtp"]["id"]
+    # acknowledge-customer must never be n8n's native emailSend/SMTP
+    # node — it's a plain HTTP callback into our own backend now (see
+    # app.automation.n8n.translator._lead_acknowledgement_email_node).
+    email_node = next(n for n in payload["nodes"] if n["id"] == "acknowledge-customer")
+    assert email_node["type"] == "n8n-nodes-base.httpRequest"
+    assert email_node["type"] != "n8n-nodes-base.emailSend"
 
 
-def test_activation_sends_a_resolvable_acknowledgement_email_not_undefined_fields(
+def test_activation_sends_the_acknowledgement_email_through_our_own_backend(
     session: Session, business: Business
 ):
-    """Regression test for the report that acknowledge-customer's
-    generated n8n node used `toEmail: {{ $json.customer }}` and
-    `text: {{ $json.templates.lead_acknowledgement }}` — the input item
-    store-lead actually hands it only ever has `email`/`name`/`phone`/
-    `message`/`status`, never `customer` or `templates`, so both
-    expressions always resolved to undefined and no real acknowledgement
-    email was ever sent. EXAMPLE_REFORMA_VALENCIA_CONFIG already has
+    """Regression test for the Railway/Gmail SMTP timeout: n8n's own
+    native emailSend node needed a raw SMTP credential and address, both
+    prone to failing outright on Railway. acknowledge-customer must now
+    be a POST to our own /internal/leads/{id}/acknowledgement-email —
+    which does the actual sending through this backend's own
+    NotificationSender (Resend in production), never n8n's SMTP.
+    EXAMPLE_REFORMA_VALENCIA_CONFIG already has
     customer_acknowledgement=True, so a normal activation exercises this
     node exactly as production does — no config override needed.
     """
@@ -266,13 +265,17 @@ def test_activation_sends_a_resolvable_acknowledgement_email_not_undefined_field
     payload = json.loads(captured["create_body"])
     email_node = next(n for n in payload["nodes"] if n["id"] == "acknowledge-customer")
 
-    assert email_node["type"] == "n8n-nodes-base.emailSend"
-    assert email_node["parameters"]["toEmail"] == "={{ $json.email }}"
-    assert email_node["parameters"]["subject"]
-    assert "undefined" not in email_node["parameters"]["subject"]
-    assert email_node["parameters"]["text"]
-    assert "$json.templates" not in email_node["parameters"]["text"]
-    assert "undefined" not in email_node["parameters"]["text"]
+    assert email_node["type"] == "n8n-nodes-base.httpRequest"
+    assert email_node["parameters"]["method"] == "POST"
+    assert email_node["parameters"]["url"].endswith("/{{ $json.id }}/acknowledgement-email")
+    # No secret, no recipient, no email content baked into the workflow
+    # payload — the endpoint re-derives the recipient itself and sends
+    # fixed, deterministic content.
+    body_str = (
+        email_node["parameters"]["jsonBody"].removeprefix("=").strip().removeprefix("{{").removesuffix("}}").strip()
+    )
+    body = json.loads(body_str)
+    assert set(body.keys()) == {"tenant_id", "business_id"}
 
 
 # --- deactivate ---------------------------------------------------------------
@@ -408,20 +411,6 @@ def test_automation_not_enabled_is_rejected_before_touching_n8n(session: Session
         )
 
     assert exc_info.value.code == "automation_not_enabled"
-    assert exc_info.value.status_code == 409
-
-
-# --- missing capability configuration ----------------------------------------
-
-
-def test_missing_email_credential_is_rejected_before_touching_n8n(session: Session, business: Business):
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("must not call n8n when a required capability isn't configured")
-
-    with pytest.raises(AutomationActivationError) as exc_info:
-        _activate(handler, session, business, n8n_email_credential_id=None)
-
-    assert exc_info.value.code == "missing_capability_configuration"
     assert exc_info.value.status_code == 409
 
 

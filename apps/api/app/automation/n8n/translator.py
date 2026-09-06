@@ -10,8 +10,8 @@ Mapping (see each _translate_* function's docstring for why):
   action   lead.store                -> n8n-nodes-base.httpRequest   (-> our own backend)
   action   lead.lookup               -> n8n-nodes-base.httpRequest   (-> our own backend, GET)
   action   lead.follow_up_email      -> n8n-nodes-base.httpRequest   (-> our own backend)
+  action   email.send                -> n8n-nodes-base.httpRequest   (-> our own backend; never emailSend/SMTP)
   action   notification.send         -> n8n-nodes-base.httpRequest   (-> our own backend)
-  action   email.send                -> n8n-nodes-base.emailSend     (credential by reference, fromEmail from settings.smtp_from_address, to/subject/text resolved from _EMAIL_RECIPIENT_FIELD/_EMAIL_TEMPLATES)
   action   wait                      -> n8n-nodes-base.wait
   node     condition                 -> n8n-nodes-base.if
 
@@ -52,45 +52,6 @@ _CONDITION_OPERATION: dict[ConditionOperator, str] = {
     ConditionOperator.EXISTS: "exists",
 }
 
-# email.send's `to` is a role (EmailRecipient), never a literal address —
-# this is what actually resolves that role against the *real* field name
-# on the input item. EMAIL_SEND always sits directly downstream of
-# store-lead (see generator.generate_lead_capture_workflow), whose
-# translated httpRequest node returns our own /internal/leads response
-# (LeadResponse) verbatim as $json — not the raw webhook body, and not
-# wrapped in `.body` — so "customer" resolves to the LeadResponse field
-# `email`, never a field literally named "customer" (which nothing ever
-# produces). BUSINESS_OWNER has no resolvable field yet — the business's
-# contact address lives on BusinessConfig, a translation-time constant
-# like email_from_address, not on the lead payload at all — so it's left
-# unmapped and rejected below rather than emitting another
-# never-populated expression.
-_EMAIL_RECIPIENT_FIELD: dict[EmailRecipient, str] = {
-    EmailRecipient.CUSTOMER: "email",
-}
-
-# email.send has no template engine (same "no template engine yet" scope
-# as app.notifications.service.deliver_lead_follow_up_email) — `template`
-# is just an id picking one of these fixed (default_subject, body
-# expression) pairs, resolved here at translation time. Previously this
-# built `$json.templates.{template}`, a path nothing ever populates (the
-# lead payload this node actually receives has no `templates` key), so
-# the node always sent literal "undefined" text. The body is an n8n
-# expression (JS under `{{ }}`) so it can still greet the lead by name
-# when store-lead's response has one, mirroring
-# deliver_lead_follow_up_email's own `f"Hola {lead.name}," if lead.name
-# else "Hola,"` greeting — n8n expressions don't have Python's inline
-# conditional, so the equivalent is written as a ternary against
-# `$json.name`.
-_EMAIL_TEMPLATES: dict[str, tuple[str, str]] = {
-    "lead_acknowledgement": (
-        "Hemos recibido tu mensaje",
-        "={{ `Hola${$json.name ? ' ' + $json.name : ''},\\n\\n"
-        "Gracias por contactarnos. Hemos recibido tu mensaje y te responderemos en breve.\\n\\n"
-        "Un saludo.` }}",
-    ),
-}
-
 _TRIGGER_NODE_NAME = "Trigger"
 _NODE_X_SPACING = 260
 
@@ -110,25 +71,17 @@ class N8nTranslationContext:
     working unchanged. When set (real usage, and this phase's new
     tests), the callback body is enriched with tenant/business
     ownership and an n8n credential authenticates the call — see
-    _internal_callback_node.
+    _internal_callback_node. email.send/lead.follow_up_email need
+    `tenant_id`/`business_id` specifically (not just optionally) since
+    both translate to a callback scoped to one lead — see each
+    action's own branch in _translate_action_node.
     """
 
     internal_leads_url: str
     internal_notifications_url: str
-    email_credential_id: str | None
     tenant_id: str | None = None
     business_id: str | None = None
     internal_automation_credential_id: str | None = None
-    # n8n's emailSend node refuses to *activate* without this — unlike
-    # the SMTP password (which lives only in the credential
-    # `email_credential_id` references), the from-address is itself a
-    # node parameter, so it has to be supplied here rather than implied
-    # by the credential. Sourced from the same SmtpNotificationSender
-    # configuration (settings.smtp_from_address) that already sends
-    # internal-notification email — see
-    # app.automation.n8n.engine.translation_context_from_settings —
-    # rather than a second, n8n-only address setting.
-    email_from_address: str | None = None
 
 
 def translate_workflow(workflow: WorkflowConfig, context: N8nTranslationContext) -> dict[str, Any]:
@@ -212,18 +165,16 @@ def _translate_action_node(
 
     if node.action is ActionType.EMAIL_SEND:
         assert isinstance(node.inputs, EmailSendInputs)
-        if not context.email_credential_id:
+        if node.inputs.to is not EmailRecipient.CUSTOMER:
             raise UnsupportedActionError(
-                f"node {node.id!r}: email.send has no n8n SMTP credential configured "
-                "(N8N_EMAIL_CREDENTIAL_ID) — cannot translate this action yet."
+                f"node {node.id!r}: email.send has no resolvable recipient field for to={node.inputs.to!r} yet"
             )
-        if not context.email_from_address:
+        if not context.tenant_id or not context.business_id:
             raise UnsupportedActionError(
-                f"node {node.id!r}: email.send has no from-address configured "
-                "(SMTP_FROM_ADDRESS) — n8n's emailSend node refuses to activate "
-                "without one — cannot translate this action yet."
+                f"node {node.id!r}: email.send needs tenant_id/business_id on the translation "
+                "context to scope the request — cannot translate without them."
             )
-        return _email_send_node(node.id, x_position, node.inputs, context.email_credential_id, context.email_from_address)
+        return _lead_acknowledgement_email_node(node.id, x_position, context)
 
     if node.action is ActionType.WAIT:
         assert isinstance(node.inputs, WaitInputs)
@@ -428,49 +379,48 @@ def _lead_follow_up_email_node(node_id: str, x_position: int, context: N8nTransl
     return node
 
 
-def _email_send_node(
-    node_id: str, x_position: int, inputs: EmailSendInputs, credential_id: str, from_address: str
-) -> dict[str, Any]:
-    """`to` is a role (customer/business_owner), resolved here — at
-    translation time, not execution time — against the real field name
-    on whatever this node's input item actually is (see
-    _EMAIL_RECIPIENT_FIELD). `credentials` references an SMTP credential
-    n8n already has *by id* — the raw SMTP password never passes through
-    this translator or the generated JSON, satisfying "credentials
-    referenced by identifier, not value". `fromEmail` is the one address
-    this node does need as a literal parameter (n8n requires it to
-    activate the node at all) — it comes from the caller-supplied
-    `from_address`, itself sourced from the existing
-    settings.smtp_from_address, never hardcoded here. `subject`/`text`
-    come from _EMAIL_TEMPLATES, keyed by `inputs.template` — see that
-    dict's own docstring for why (no template engine, so this is where
-    the actual copy lives, same as `to` isn't the literal recipient)."""
-    if inputs.to not in _EMAIL_RECIPIENT_FIELD:
-        raise UnsupportedActionError(
-            f"node {node_id!r}: email.send has no resolvable recipient field for to={inputs.to!r} yet"
-        )
-    if inputs.template not in _EMAIL_TEMPLATES:
-        raise UnsupportedActionError(f"node {node_id!r}: email.send has no content for template {inputs.template!r} yet")
+def _lead_acknowledgement_email_node(node_id: str, x_position: int, context: N8nTranslationContext) -> dict[str, Any]:
+    """email.send (customer acknowledgement) has no native n8n node
+    anymore — n8n's own emailSend node needed a raw SMTP credential,
+    which is exactly the connection Railway's n8n can't reliably open to
+    Gmail (timeouts). A POST to our own
+    /internal/leads/{id}/acknowledgement-email
+    (app.routers.internal_automation.send_lead_acknowledgement_email),
+    same shape as _lead_follow_up_email_node above: this backend does
+    the actual sending through its own NotificationSender — Resend over
+    HTTPS in production, never a second SMTP configuration living only
+    in n8n.
 
-    default_subject, body_expr = _EMAIL_TEMPLATES[inputs.template]
-    return {
+    ACKNOWLEDGE_CUSTOMER_NODE_ID sits directly downstream of store-lead
+    (see generator.generate_lead_capture_workflow), whose translated
+    httpRequest node returns our own /internal/leads response
+    (LeadResponse) verbatim as $json — so the lead id is read from
+    `$json.id`, the same field _lead_follow_up_email_node reads (just
+    one hop closer to store-lead here, with no wait/lookup in between).
+    The request body carries only tenant_id/business_id, known at
+    translation time; the recipient and the acknowledgement copy are
+    deliberately not sent at all — the endpoint re-derives the
+    recipient from the lead's own row and sends fixed, deterministic
+    content, never something this payload could influence.
+    """
+    body = json.dumps({"tenant_id": context.tenant_id, "business_id": context.business_id})
+    node: dict[str, Any] = {
         "id": node_id,
         "name": node_id,
-        "type": "n8n-nodes-base.emailSend",
-        "typeVersion": 2,
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
         "position": [x_position, 0],
         "parameters": {
-            # n8n expression syntax is `={{ ... }}` (literal, not an
-            # f-string escaping accident) — {{{{/}}}} in the f-string
-            # source is what actually produces the doubled braces.
-            "fromEmail": from_address,
-            "toEmail": f"={{{{ $json.{_EMAIL_RECIPIENT_FIELD[inputs.to]} }}}}",
-            "subject": inputs.subject or default_subject,
-            "emailFormat": "text",
-            "text": body_expr,
+            "url": "=" + context.internal_leads_url + "/{{ $json.id }}/acknowledgement-email",
+            "method": "POST",
+            "sendBody": True,
+            "contentType": "json",
+            "specifyBody": "json",
+            "jsonBody": f"={{{{ {body} }}}}",
         },
-        "credentials": {"smtp": {"id": credential_id}},
     }
+    _attach_internal_auth(node, context)
+    return node
 
 
 def _wait_node(node_id: str, x_position: int, inputs: WaitInputs) -> dict[str, Any]:

@@ -1,8 +1,11 @@
-"""POST /internal/leads and POST /internal/notifications
-(app.routers.internal_automation): lead persisted, wrong tenant/business
-rejected, missing/invalid token rejected, notification handled, and the
-token never leaks into logs — the API-level test bullets for the
-execution-layer phase."""
+"""POST /internal/leads, GET /internal/leads/{id}, POST
+/internal/leads/{id}/follow-up-email, POST
+/internal/leads/{id}/acknowledgement-email, and POST
+/internal/notifications (app.routers.internal_automation): lead
+persisted, wrong tenant/business rejected, missing/invalid token
+rejected, notification handled, follow-up/acknowledgement email sent
+through a fake NotificationSender, and the token never leaks into
+logs."""
 
 import logging
 import uuid
@@ -445,6 +448,206 @@ def test_follow_up_email_requires_a_valid_token(client: TestClient, tenant: Tena
 
     response = client.post(
         f"/internal/leads/{lead_id}/follow-up-email",
+        json={"tenant_id": str(tenant.id), "business_id": str(business.id)},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "invalid_internal_automation_token"
+
+
+# --- lead acknowledgement email (POST /internal/leads/{id}/acknowledgement-email) --
+
+
+def _send_acknowledgement_email(client: TestClient, lead_id, tenant: Tenant, business: Business):
+    return client.post(
+        f"/internal/leads/{lead_id}/acknowledgement-email",
+        json={"tenant_id": str(tenant.id), "business_id": str(business.id)},
+        headers={"X-Internal-Automation-Token": TOKEN},
+    )
+
+
+def test_acknowledgement_email_sent_when_customer_notifications_enabled(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": True}
+    assert len(notification_sender.sent) == 1
+    sent = notification_sender.sent[0]
+    assert sent.to == "ana@example.com"  # the lead's own email, never the business's
+    assert sent.subject
+    assert sent.body
+
+
+def test_acknowledgement_email_never_creates_an_internal_notification_row(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert session.query(InternalNotification).filter_by(business_id=business.id).count() == 0
+
+
+def test_acknowledgement_email_skipped_when_lead_has_no_email(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads",
+        json=_lead_payload(tenant, business, email=None),
+        headers={"X-Internal-Automation-Token": TOKEN},
+    ).json()["id"]
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": False}
+    assert notification_sender.sent == []
+
+
+def test_acknowledgement_email_sent_even_when_lead_is_no_longer_new(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    # Unlike follow-up-email, acknowledgement isn't gated on the lead
+    # still being NEW — it fires immediately off the just-stored lead,
+    # so whatever happens to the lead afterwards doesn't change whether
+    # "we got your message" was already true.
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+    stored_lead = session.get(Lead, uuid.UUID(lead_id))
+    stored_lead.status = "contacted"
+    session.flush()
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": True}
+    assert len(notification_sender.sent) == 1
+
+
+def test_acknowledgement_email_skipped_when_customer_notifications_disabled(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    # business.config stays None (the shared fixture's default) — no
+    # opt-in to customer-facing email, so nothing should be attempted
+    # even though the lead is new and has a real email.
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": False}
+    assert notification_sender.sent == []
+
+
+def test_acknowledgement_email_skipped_when_no_sender_configured(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    # No notification_sender fixture requested — conftest.py's autouse
+    # _no_real_notification_sender_by_default fixture already makes
+    # get_optional_notification_sender() -> None the default for every
+    # test, regardless of what this environment's own .env has
+    # configured.
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": False}
+
+
+def test_acknowledgement_email_provider_failure_returns_502_and_fails_the_branch(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    failing_sender = _FakeNotificationSender(fail=True)
+    app.dependency_overrides[get_optional_notification_sender] = lambda: failing_sender
+    try:
+        lead_id = client.post(
+            "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+        ).json()["id"]
+
+        response = _send_acknowledgement_email(client, lead_id, tenant, business)
+
+        assert response.status_code == 502
+        assert response.json()["error"]["code"] == "lead_acknowledgement_email_failed"
+    finally:
+        app.dependency_overrides.pop(get_optional_notification_sender, None)
+
+
+def test_acknowledgement_email_for_unknown_lead_is_404(client: TestClient, tenant: Tenant, business: Business):
+    response = _send_acknowledgement_email(client, uuid.uuid4(), tenant, business)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "lead_not_found"
+
+
+def test_acknowledgement_email_rejects_wrong_tenant(
+    client: TestClient, session, tenant: Tenant, business: Business, other_tenant: Tenant
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = _send_acknowledgement_email(client, lead_id, other_tenant, business)
+
+    assert response.status_code == 404
+
+
+def test_acknowledgement_email_rejects_a_lead_from_a_different_business(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+    other_business = Business(
+        tenant_id=tenant.id,
+        name="Otra Empresa",
+        slug="otra-empresa",
+        vertical=business.vertical,
+        raw_description="Otra empresa completamente distinta, sin relacion con la primera.",
+        status=business.status,
+    )
+    session.add(other_business)
+    session.flush()
+
+    response = _send_acknowledgement_email(client, lead_id, tenant, other_business)
+
+    assert response.status_code == 404
+
+
+def test_acknowledgement_email_requires_a_valid_token(client: TestClient, tenant: Tenant, business: Business):
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = client.post(
+        f"/internal/leads/{lead_id}/acknowledgement-email",
         json={"tenant_id": str(tenant.id), "business_id": str(business.id)},
     )
 

@@ -16,11 +16,11 @@ from app.domain.workflow_config import generate_lead_capture_workflow
 CONTEXT = N8nTranslationContext(
     internal_leads_url="http://localhost:8000/internal/leads",
     internal_notifications_url="http://localhost:8000/internal/notifications",
-    email_credential_id="n8n-smtp-credential-id",
-    email_from_address="noreply@example.com",
-    # Required now: _workflow() below includes a lead.lookup node (the
-    # reforma-valencia fixture has follow_up enabled), which the
-    # translator refuses to translate without tenant/business scoping.
+    # Required now: _workflow() below includes lead.lookup and
+    # email.send/lead.follow_up_email nodes (the reforma-valencia
+    # fixture has follow_up and customer_acknowledgement enabled), all
+    # of which the translator refuses to translate without tenant/
+    # business scoping.
     tenant_id="11111111-1111-1111-1111-111111111111",
     business_id="22222222-2222-2222-2222-222222222222",
 )

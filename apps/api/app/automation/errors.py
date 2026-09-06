@@ -13,6 +13,7 @@ class UnsupportedNodeError(AutomationEngineError):
 class UnsupportedActionError(AutomationEngineError):
     """A node's action is in WorkflowConfig's closed catalog but can't
     actually be translated right now — typically missing configuration
-    (e.g. no N8N_EMAIL_CREDENTIAL_ID for an email.send node). Raised
-    instead of emitting a workflow that would silently fail at
-    execution time."""
+    (e.g. no tenant_id/business_id on the translation context for an
+    email.send/lead.follow_up_email/lead.lookup node, which all need it
+    to scope their callback into our own backend). Raised instead of
+    emitting a workflow that would silently fail at execution time."""

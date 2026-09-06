@@ -37,7 +37,6 @@ def _n8n_settings(**overrides: object) -> Settings:
         "internal_api_base_url": "http://localhost:8000",
         "n8n_base_url": N8N_BASE_URL,
         "n8n_api_key": "n8n-api-key",
-        "n8n_email_credential_id": "n8n-smtp-credential-id",
     }
     defaults.update(overrides)
     return Settings(**defaults)  # type: ignore[arg-type]

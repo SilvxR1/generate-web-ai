@@ -27,12 +27,11 @@ from app.domain.workflow_config import (
 CONTEXT = N8nTranslationContext(
     internal_leads_url="http://localhost:8000/internal/leads",
     internal_notifications_url="http://localhost:8000/internal/notifications",
-    email_credential_id="n8n-smtp-credential-id",
-    email_from_address="noreply@example.com",
     # Real usage always carries these (see
     # app.automation.n8n.engine.translation_context_from_settings) — and
     # the reforma-valencia fixture below now includes a lead.lookup
-    # node, which needs them to translate at all.
+    # node plus email.send/lead.follow_up_email nodes, all of which need
+    # them to translate at all.
     tenant_id="11111111-1111-1111-1111-111111111111",
     business_id="22222222-2222-2222-2222-222222222222",
 )
@@ -77,7 +76,6 @@ def test_internal_callback_body_prefers_the_webhook_bodys_nested_fields():
     unenriched_context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
     )
     workflow = WorkflowConfig(
         id="lead-capture",
@@ -110,8 +108,6 @@ def test_internal_callback_body_enriches_the_resolved_fields_with_ownership():
     context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id="n8n-smtp-credential-id",
-        email_from_address=CONTEXT.email_from_address,
         tenant_id="11111111-1111-1111-1111-111111111111",
         business_id="22222222-2222-2222-2222-222222222222",
     )
@@ -125,71 +121,108 @@ def test_internal_callback_body_enriches_the_resolved_fields_with_ownership():
     assert '"source": "website_form"' in body_expr
 
 
-def test_translates_email_send_with_credential_reference_not_value():
+def test_email_send_translates_to_post_request_never_native_email_send():
+    # Regression coverage for the SMTP-timeout fix: acknowledge-customer
+    # used to be n8n's own native emailSend node, holding a raw SMTP
+    # credential Railway's n8n can't reliably use against Gmail. It must
+    # now be a plain httpRequest node calling back into our own backend,
+    # same as lead.follow_up_email.
     payload = translate_workflow(_lead_capture_workflow(), CONTEXT)
-    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
+    email_node = next(n for n in payload["nodes"] if n["id"] == "acknowledge-customer")
 
-    assert email_node["credentials"] == {"smtp": {"id": "n8n-smtp-credential-id"}}
+    assert email_node["type"] == "n8n-nodes-base.httpRequest"
+    assert email_node["type"] != "n8n-nodes-base.emailSend"
+    assert email_node["parameters"]["method"] == "POST"
     # acknowledge-customer sits directly downstream of store-lead, whose
-    # translated httpRequest node returns our own /internal/leads response
-    # (LeadResponse) as $json verbatim — so "customer" must resolve to
-    # that response's actual `email` field, never a literal "customer"
-    # key nothing ever produces (see translator._EMAIL_RECIPIENT_FIELD).
-    assert email_node["parameters"]["toEmail"] == "={{ $json.email }}"
+    # translated httpRequest node returns our own /internal/leads
+    # response (LeadResponse) as $json verbatim, so the lead id is read
+    # from `$json.id` — resolved at execution time, never a literal id
+    # baked in at translation time.
+    expected_url = "=http://localhost:8000/internal/leads/{{ $json.id }}/acknowledgement-email"
+    assert email_node["parameters"]["url"] == expected_url
+    body_str = (
+        email_node["parameters"]["jsonBody"].removeprefix("=").strip().removeprefix("{{").removesuffix("}}").strip()
+    )
+    body = json.loads(body_str)
+    assert body == {"tenant_id": CONTEXT.tenant_id, "business_id": CONTEXT.business_id}
+    # No recipient, no email content in the payload — the endpoint
+    # re-derives the recipient and sends fixed, deterministic content.
+    assert set(body.keys()) == {"tenant_id", "business_id"}
 
 
-def test_email_send_subject_and_body_are_never_undefined():
-    # Regression test: this node used to build `text` from
-    # `$json.templates.{template}`, a path nothing ever populates, so
-    # every acknowledgement email n8n actually sent had literal
-    # "undefined" text (and, before the toEmail fix above, no resolvable
-    # recipient either). Both must now be real, non-empty content
-    # resolved at translation time, not deferred to a nonexistent
-    # runtime field.
-    payload = translate_workflow(_lead_capture_workflow(), CONTEXT)
-    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
-
-    assert email_node["parameters"]["subject"]
-    assert "undefined" not in email_node["parameters"]["subject"]
-    assert email_node["parameters"]["text"]
-    assert "$json.templates" not in email_node["parameters"]["text"]
-    assert "undefined" not in email_node["parameters"]["text"]
-
-
-def test_email_send_node_always_carries_a_from_address():
-    # n8n refuses to *activate* an emailSend node without `fromEmail`
-    # ("Missing or invalid required parameters: fromEmail") — every
-    # translated email.send node must carry a literal, non-empty value
-    # for it, sourced from the context (ultimately
-    # settings.smtp_from_address), never left unset.
-    payload = translate_workflow(_lead_capture_workflow(), CONTEXT)
-    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
-
-    assert email_node["parameters"]["fromEmail"] == CONTEXT.email_from_address
-    assert email_node["parameters"]["fromEmail"]
-
-
-def test_email_send_rejected_without_configured_from_address():
+def test_email_send_attaches_the_same_internal_credential_as_other_callbacks():
+    context = N8nTranslationContext(
+        internal_leads_url=CONTEXT.internal_leads_url,
+        internal_notifications_url=CONTEXT.internal_notifications_url,
+        tenant_id=CONTEXT.tenant_id,
+        business_id=CONTEXT.business_id,
+        internal_automation_credential_id="n8n-internal-auth-credential-id",
+    )
     workflow = WorkflowConfig(
         id="needs-email",
         name="Needs email",
         trigger=LeadSubmittedTrigger(),
         nodes=[
             ActionNode(
-                id="ack", action=ActionType.EMAIL_SEND, inputs=EmailSendInputs(to=EmailRecipient.CUSTOMER, template="x")
+                id="ack",
+                action=ActionType.EMAIL_SEND,
+                inputs=EmailSendInputs(to=EmailRecipient.CUSTOMER, template="lead_acknowledgement"),
             )
         ],
         connections=[WorkflowConnection(source="trigger", target="ack")],
     )
-    context_without_from_address = N8nTranslationContext(
+
+    payload = translate_workflow(workflow, context)
+    node = next(n for n in payload["nodes"] if n["id"] == "ack")
+
+    assert node["parameters"]["authentication"] == "genericCredentialType"
+    assert node["credentials"] == {"httpHeaderAuth": {"id": "n8n-internal-auth-credential-id"}}
+
+
+def test_email_send_rejected_without_tenant_and_business_on_context():
+    unscoped_context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
-        email_from_address=None,
+    )
+    workflow = WorkflowConfig(
+        id="needs-email",
+        name="Needs email",
+        trigger=LeadSubmittedTrigger(),
+        nodes=[
+            ActionNode(
+                id="ack",
+                action=ActionType.EMAIL_SEND,
+                inputs=EmailSendInputs(to=EmailRecipient.CUSTOMER, template="lead_acknowledgement"),
+            )
+        ],
+        connections=[WorkflowConnection(source="trigger", target="ack")],
     )
 
-    with pytest.raises(UnsupportedActionError, match="no from-address configured"):
-        translate_workflow(workflow, context_without_from_address)
+    with pytest.raises(UnsupportedActionError, match="email.send needs tenant_id/business_id"):
+        translate_workflow(workflow, unscoped_context)
+
+
+def test_email_send_rejected_for_a_recipient_role_with_no_resolvable_endpoint():
+    # BUSINESS_OWNER has no lead-scoped acknowledgement endpoint to call
+    # (that's the business's own contact address, a different concept —
+    # see app.notifications.service.deliver_internal_notification) — so
+    # it's rejected rather than silently pointed at the customer one.
+    workflow = WorkflowConfig(
+        id="needs-email",
+        name="Needs email",
+        trigger=LeadSubmittedTrigger(),
+        nodes=[
+            ActionNode(
+                id="ack",
+                action=ActionType.EMAIL_SEND,
+                inputs=EmailSendInputs(to=EmailRecipient.BUSINESS_OWNER, template="x"),
+            )
+        ],
+        connections=[WorkflowConnection(source="trigger", target="ack")],
+    )
+
+    with pytest.raises(UnsupportedActionError, match="no resolvable recipient field"):
+        translate_workflow(workflow, CONTEXT)
 
 
 def test_translates_http_request_action_directly():
@@ -387,7 +420,6 @@ def test_lead_lookup_attaches_the_same_internal_credential_as_other_callbacks():
     context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
         tenant_id=CONTEXT.tenant_id,
         business_id=CONTEXT.business_id,
         internal_automation_credential_id="n8n-internal-auth-credential-id",
@@ -411,7 +443,6 @@ def test_lead_lookup_rejected_without_tenant_and_business_on_context():
     unscoped_context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
     )
     workflow = WorkflowConfig(
         id="has-lookup",
@@ -461,7 +492,6 @@ def test_lead_follow_up_email_attaches_the_same_internal_credential_as_other_cal
     context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
         tenant_id=CONTEXT.tenant_id,
         business_id=CONTEXT.business_id,
         internal_automation_credential_id="n8n-internal-auth-credential-id",
@@ -491,7 +521,6 @@ def test_lead_follow_up_email_rejected_without_tenant_and_business_on_context():
     unscoped_context = N8nTranslationContext(
         internal_leads_url=CONTEXT.internal_leads_url,
         internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=CONTEXT.email_credential_id,
     )
     workflow = WorkflowConfig(
         id="has-follow-up-email",
@@ -532,28 +561,6 @@ def test_condition_exists_operator_translates_without_a_right_value():
     assert "rightValue" not in condition
 
 
-def test_email_send_rejected_without_configured_credential():
-    workflow = WorkflowConfig(
-        id="needs-email",
-        name="Needs email",
-        trigger=LeadSubmittedTrigger(),
-        nodes=[
-            ActionNode(
-                id="ack", action=ActionType.EMAIL_SEND, inputs=EmailSendInputs(to=EmailRecipient.CUSTOMER, template="x")
-            )
-        ],
-        connections=[WorkflowConnection(source="trigger", target="ack")],
-    )
-    context_without_credential = N8nTranslationContext(
-        internal_leads_url=CONTEXT.internal_leads_url,
-        internal_notifications_url=CONTEXT.internal_notifications_url,
-        email_credential_id=None,
-    )
-
-    with pytest.raises(UnsupportedActionError, match="no n8n SMTP credential configured"):
-        translate_workflow(workflow, context_without_credential)
-
-
 # --- no secrets in the generated payload ------------------------------------
 
 
@@ -563,7 +570,3 @@ def test_no_secret_shaped_content_in_translated_payload():
 
     for forbidden in ("password", "smtp_password", "api_key=", "authorization", "-----begin"):
         assert forbidden not in serialized
-
-    # The only credential-shaped thing present is a reference by id.
-    email_node = next(n for n in payload["nodes"] if n["type"] == "n8n-nodes-base.emailSend")
-    assert email_node["credentials"]["smtp"] == {"id": CONTEXT.email_credential_id}

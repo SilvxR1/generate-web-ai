@@ -1,10 +1,11 @@
 """POST /businesses/{id}/automation/activate, .../deactivate, and
 GET .../automation (app.routers.businesses): the HTTP boundary around
 activate/deactivate_lead_capture_automation and get_automation_state —
-missing n8n configuration, missing capability configuration, automation
-not enabled, engine failure, repeated activation not duplicating,
-deactivate/reactivate, reload returning persisted state, tenant
-isolation, and that the n8n API key never appears in any response body.
+missing n8n configuration, unsupported capability configuration,
+automation not enabled, engine failure, repeated activation not
+duplicating, deactivate/reactivate, reload returning persisted state,
+tenant isolation, and that the n8n API key never appears in any
+response body.
 """
 
 import uuid
@@ -39,7 +40,6 @@ def client(session):
 def _n8n_configured(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "n8n_base_url", "https://n8n.example.com")
     monkeypatch.setattr(settings, "n8n_api_key", API_KEY)
-    monkeypatch.setattr(settings, "n8n_email_credential_id", "n8n-smtp-credential-id")
 
 
 @pytest.fixture(autouse=True)
@@ -119,23 +119,6 @@ def test_missing_n8n_config_is_rejected(client: TestClient, tenant: Tenant, monk
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "n8n_not_configured"
-
-
-def test_missing_capability_configuration_is_rejected(
-    client: TestClient, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
-):
-    monkeypatch.setattr(settings, "n8n_email_credential_id", None)
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise AssertionError("must not call n8n when a required capability isn't configured")
-
-    _mock_n8n(handler)
-    business = _create_business(client, tenant.id)
-
-    response = _activate(client, business["id"], tenant.id)
-
-    assert response.status_code == 409
-    assert response.json()["error"]["code"] == "missing_capability_configuration"
 
 
 def test_automation_not_enabled_is_rejected(client: TestClient, tenant: Tenant):

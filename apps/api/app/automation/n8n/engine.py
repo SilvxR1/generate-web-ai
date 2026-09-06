@@ -32,8 +32,6 @@ def translation_context_from_settings(
     return N8nTranslationContext(
         internal_leads_url=f"{base}/internal/leads",
         internal_notifications_url=f"{base}/internal/notifications",
-        email_credential_id=settings.n8n_email_credential_id,
-        email_from_address=settings.smtp_from_address,
         tenant_id=tenant_id,
         business_id=business_id,
         internal_automation_credential_id=settings.n8n_internal_automation_credential_id,

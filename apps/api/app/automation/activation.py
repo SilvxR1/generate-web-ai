@@ -75,21 +75,19 @@ def _to_state_result(workflow: Workflow) -> AutomationStateResult:
     )
 
 
-def _validate_activatable(workflow: WorkflowConfig, settings: Settings) -> None:
+def _validate_activatable(workflow: WorkflowConfig) -> None:
+    # email.send used to also need an n8n SMTP credential check here;
+    # it now translates to a callback into our own backend instead (see
+    # app.automation.n8n.translator), the same "not configured yet is a
+    # send-time no-op, not an activation-time hard failure" shape
+    # lead.follow_up_email/notification.send already had — so no
+    # per-capability configuration check is needed here anymore.
     unsupported = sorted(set(workflow.required_capabilities) - _SUPPORTED_CAPABILITIES)
     if unsupported:
         raise AutomationActivationError(
             f"This workflow needs capabilities the automation engine doesn't support yet: {', '.join(unsupported)}.",
             code="unsupported_capability",
             status_code=422,
-        )
-
-    if "email.send" in workflow.required_capabilities and not settings.n8n_email_credential_id:
-        raise AutomationActivationError(
-            "This workflow needs email.send, but no n8n SMTP credential is configured "
-            "(N8N_EMAIL_CREDENTIAL_ID) — cannot activate until that's set up.",
-            code="missing_capability_configuration",
-            status_code=409,
         )
 
 
@@ -128,7 +126,7 @@ def activate_lead_capture_automation(
         )
 
     workflow_config = generate_lead_capture_workflow(business_config)
-    _validate_activatable(workflow_config, settings)
+    _validate_activatable(workflow_config)
 
     repo = WorkflowRepository(session)
     existing = repo.get_for_business(tenant_id, business_id)
