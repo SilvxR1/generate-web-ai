@@ -20,6 +20,10 @@ import { ApiError, NetworkError } from "../../lib/api";
  * - "publish_failed": publishing the website didn't succeed — missing
  *   hosting-provider configuration, or the provider call itself
  *   failing. Never shown as "Published" when this fires.
+ * - "delete_failed": deleting a business didn't succeed — the backend
+ *   couldn't safely deactivate its active remote automation first, or
+ *   the delete call itself failed. Never shown as removed from the
+ *   dashboard when this fires.
  */
 export type ErrorCategory =
   | "ai_unavailable"
@@ -27,7 +31,8 @@ export type ErrorCategory =
   | "invalid_proposal"
   | "api_failure"
   | "activation_failed"
-  | "publish_failed";
+  | "publish_failed"
+  | "delete_failed";
 
 export interface CategorizedError {
   category: ErrorCategory;
@@ -177,6 +182,31 @@ export function categorizePublishError(error: unknown): CategorizedError {
     };
   }
   return { category: "publish_failed", title: "Unexpected error", message: toMessage(error) };
+}
+
+const DELETE_ERROR_TITLES: Record<string, string> = {
+  business_not_found: "Business not found",
+  n8n_not_configured: "Can't safely delete — automation isn't set up on this server",
+  automation_deactivation_failed: "Can't safely delete — deactivating automation failed",
+};
+
+/** Never returns anything implying success — every branch here means
+ * deletion did NOT happen (see DELETE /businesses/{id}'s own docstring,
+ * apps/api's app.routers.businesses, for why a business with an active
+ * remote automation is refused rather than silently orphaning it). */
+export function categorizeDeleteError(error: unknown): CategorizedError {
+  if (error instanceof NetworkError) {
+    return { ...NETWORK_ERROR, category: "delete_failed" };
+  }
+  if (error instanceof ApiError) {
+    return {
+      category: "delete_failed",
+      title: DELETE_ERROR_TITLES[error.code] ?? "Could not delete this business",
+      message: error.message,
+      technicalDetail: `${error.code} (${error.status})`,
+    };
+  }
+  return { category: "delete_failed", title: "Unexpected error", message: toMessage(error) };
 }
 
 function genericApiFailure(error: ApiError, title: string): CategorizedError {

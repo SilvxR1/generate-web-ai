@@ -198,7 +198,7 @@ button:disabled {
 
 .business-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   border: 1px solid light-dark(#e2e2e2, #333);
@@ -233,8 +233,39 @@ button:disabled {
   font-weight: 600;
 }
 
+.business-card__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
 .business-card__open {
   flex-shrink: 0;
+}
+
+.business-card__delete-confirm {
+  max-width: 18rem;
+  text-align: right;
+}
+
+.business-card__delete-confirm .banner__title,
+.business-card__delete-confirm .activation-confirm__warning {
+  margin: 0 0 0.4rem;
+}
+
+/* Destructive action styling — visually distinct from the default
+ * button so a delete/confirm-delete is never mistaken for a routine
+ * action like "Open" or "Cancel". */
+.button--danger {
+  border-color: light-dark(#c9564f, #a34944);
+  background: light-dark(#fbeceb, #3a2222);
+  color: light-dark(#8a2f2a, #f2b8b3);
+}
+
+.button--danger:hover:not(:disabled) {
+  background: light-dark(#f6d9d7, #4a2a2a);
 }
 
 .json-preview {

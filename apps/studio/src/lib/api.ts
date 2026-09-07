@@ -38,7 +38,12 @@ interface ErrorBody {
   error?: { code?: string; message?: string; details?: unknown };
 }
 
-async function requestJson<T>(path: string, init: RequestInit, tenantId: string): Promise<T> {
+/** Shared fetch + error handling for every request below — resolves to
+ * the raw, successful Response so callers can decide how (or whether)
+ * to parse a body: requestJson parses one, requestVoid doesn't (for
+ * endpoints like DELETE that return 204 No Content, where calling
+ * response.json() would throw on the empty body). */
+async function sendRequest(path: string, init: RequestInit, tenantId: string): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
@@ -68,7 +73,16 @@ async function requestJson<T>(path: string, init: RequestInit, tenantId: string)
     });
   }
 
+  return response;
+}
+
+async function requestJson<T>(path: string, init: RequestInit, tenantId: string): Promise<T> {
+  const response = await sendRequest(path, init, tenantId);
   return (await response.json()) as T;
+}
+
+async function requestVoid(path: string, init: RequestInit, tenantId: string): Promise<void> {
+  await sendRequest(path, init, tenantId);
 }
 
 export interface AnalyzeBusinessResponse {
@@ -128,6 +142,19 @@ export function updateBusiness(
  * management UI). */
 export function getBusiness(businessId: string, tenantId: string): Promise<CreatedBusiness> {
   return requestJson<CreatedBusiness>(`/businesses/${businessId}`, { method: "GET" }, tenantId);
+}
+
+/** Permanently deletes a business and everything the backend cascades
+ * off it (website, automation, leads, ...) — see DELETE
+ * /businesses/{id}'s own docstring (apps/api's app.routers.businesses)
+ * for exactly what that includes and the deliberate scope limits
+ * around remote n8n/Cloudflare cleanup. Resolves to nothing on success
+ * (the backend returns 204 No Content); rejects with ApiError/
+ * NetworkError on failure, same as every other call here — deletion
+ * never happens just because this promise was awaited without a
+ * try/catch around it. */
+export function deleteBusiness(businessId: string, tenantId: string): Promise<void> {
+  return requestVoid(`/businesses/${businessId}`, { method: "DELETE" }, tenantId);
 }
 
 // --- Business dashboard listing -----------------------------------------

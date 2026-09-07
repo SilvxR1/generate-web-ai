@@ -103,6 +103,21 @@ def get_n8n_client() -> N8nClient:
     return N8nClient(settings.n8n_base_url, settings.n8n_api_key)
 
 
+def get_optional_n8n_client() -> N8nClient | None:
+    """Like get_n8n_client above, but returns None instead of raising
+    when n8n isn't configured — for routes where n8n is only needed
+    *conditionally*. DELETE /businesses/{id} (app.routers.businesses) is
+    the one caller: it only needs n8n at all when the business being
+    deleted happens to have an active automation to deactivate first: a
+    business with no automation, or with automation that was never
+    activated, must still be deletable on a server that has never
+    configured n8n. A route that unconditionally requires n8n (activate/
+    deactivate themselves) should keep using get_n8n_client instead."""
+    if not settings.n8n_base_url or not settings.n8n_api_key:
+        return None
+    return N8nClient(settings.n8n_base_url, settings.n8n_api_key)
+
+
 def get_website_publisher() -> WebsitePublisher:
     """Built fresh per request, same shape as get_n8n_client above: a
     server without CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN configured

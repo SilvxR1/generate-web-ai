@@ -171,3 +171,140 @@ describe("Home dashboard", () => {
     expect(await screen.findByText("No businesses yet for this tenant.")).toBeInTheDocument();
   });
 });
+
+function noContentResponse(): Response {
+  return new Response(null, { status: 204 });
+}
+
+describe("Home dashboard delete action", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  async function loadOneBusiness(user: ReturnType<typeof userEvent.setup>) {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+  }
+
+  it("clicking Delete shows a confirmation step naming the business, without calling the API yet", async () => {
+    const user = userEvent.setup();
+    const callsBeforeDelete = 1; // just the initial list load
+    await loadOneBusiness(user);
+
+    expect(screen.getByText('Delete "Reforma Pepe"?')).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm delete" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(callsBeforeDelete);
+  });
+
+  it("the Delete and Confirm delete buttons use distinct destructive styling", async () => {
+    const user = userEvent.setup();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    expect(screen.getByRole("button", { name: "Delete" })).toHaveClass("button--danger");
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.getByRole("button", { name: "Confirm delete" })).toHaveClass("button--danger");
+  });
+
+  it("Cancel dismisses the confirmation without calling the delete API", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByText('Delete "Reforma Pepe"?')).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1); // still just the initial list load
+  });
+
+  it("Confirm delete calls DELETE /businesses/{id} with the tenant header and removes the card without a full reload", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+    fetchMock.mockResolvedValueOnce(noContentResponse());
+
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+    await waitFor(() => expect(screen.queryByText("Reforma Pepe")).not.toBeInTheDocument());
+    expect(await screen.findByText("No businesses yet for this tenant.")).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // initial list load + the delete — never a third re-fetch
+    const [deleteUrl, deleteInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(deleteUrl).toContain("/businesses/biz-reforma-pepe");
+    expect(deleteInit.method).toBe("DELETE");
+    const headers = deleteInit.headers as Record<string, string>;
+    expect(headers["X-Tenant-Id"]).toBe(TENANT_ID);
+  });
+
+  it("disables Cancel and Confirm delete, and shows Deleting…, while the request is in flight", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+    let resolveDelete!: (value: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (resolveDelete = resolve)));
+
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+    const deletingButton = await screen.findByRole("button", { name: "Deleting…" });
+    expect(deletingButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+
+    resolveDelete(noContentResponse());
+    await waitFor(() => expect(screen.queryByText("Reforma Pepe")).not.toBeInTheDocument());
+  });
+
+  it("a failed delete shows a friendly error, offers a retry, and keeps the business in the list", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(502, {
+        error: { code: "automation_deactivation_failed", message: "Deactivating this automation failed." },
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+    expect(await screen.findByText("Can't safely delete — deactivating automation failed")).toBeInTheDocument();
+    expect(screen.getByText("Deactivating this automation failed.")).toBeInTheDocument();
+    // Never removed — the business is still shown, delete did NOT happen.
+    expect(screen.getByText("Reforma Pepe")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("Try again after a failed delete retries the same DELETE call", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(502, { error: { code: "automation_deactivation_failed", message: "Deactivating failed." } }),
+    );
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await screen.findByRole("button", { name: "Try again" });
+
+    fetchMock.mockResolvedValueOnce(noContentResponse());
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => expect(screen.queryByText("Reforma Pepe")).not.toBeInTheDocument());
+    const deleteCalls = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit)?.method === "DELETE");
+    expect(deleteCalls).toHaveLength(2);
+  });
+
+  it("a network failure while deleting shows the same friendly 'can't reach the server' message", async () => {
+    const user = userEvent.setup();
+    await loadOneBusiness(user);
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+    await user.click(screen.getByRole("button", { name: "Confirm delete" }));
+
+    expect(await screen.findByText("Can't reach the server")).toBeInTheDocument();
+    expect(screen.getByText("Reforma Pepe")).toBeInTheDocument();
+  });
+});

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { categorizeBusinessFetchError, type CategorizedError } from "../features/business-analysis/errors";
 import { BusinessList } from "../features/business-list/BusinessList";
-import { listBusinessSummaries, type BusinessSummary } from "../lib/api";
+import { deleteBusiness, listBusinessSummaries, type BusinessSummary } from "../lib/api";
 import type { TenantOutletContext } from "../layout/AppShell";
 
 type ListState =
@@ -31,6 +31,19 @@ export function Home() {
     };
   }, [tenantId, reloadToken]);
 
+  // Deletes on the backend first, then — only on success — drops the
+  // business from this local list, so the dashboard updates without a
+  // full reload. A rejected promise here changes nothing in `state`;
+  // BusinessCard (features/business-list) shows the failure itself.
+  async function handleDelete(businessId: string) {
+    await deleteBusiness(businessId, tenantId);
+    setState((prev) =>
+      prev.kind === "loaded"
+        ? { kind: "loaded", businesses: prev.businesses.filter((business) => business.id !== businessId) }
+        : prev,
+    );
+  }
+
   return (
     <section>
       <h1>AI Business Automation Studio</h1>
@@ -58,7 +71,7 @@ export function Home() {
       )}
 
       {tenantId && state.kind === "loaded" && state.businesses.length > 0 && (
-        <BusinessList businesses={state.businesses} />
+        <BusinessList businesses={state.businesses} onDelete={handleDelete} />
       )}
 
       <p>

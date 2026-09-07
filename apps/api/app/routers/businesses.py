@@ -21,6 +21,7 @@ from app.dependencies import (
     get_business_analyzer,
     get_current_tenant_id,
     get_n8n_client,
+    get_optional_n8n_client,
     get_session,
     get_website_publisher,
 )
@@ -469,7 +470,64 @@ def delete_business(
     business_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
+    n8n_client: N8nClient | None = Depends(get_optional_n8n_client),
 ) -> None:
+    """Deletes a business and every row that hangs off it. Business's
+    own docstring (app.db.models.business) documents the six
+    `cascade="all, delete-orphan"` relationships — website, workflows,
+    integrations (and, through those, their credentials), executions,
+    leads, internal_notifications — that SQLAlchemy removes on its own
+    once the Business row itself is deleted; nothing here has to do
+    that cleanup by hand.
+
+    The one thing cascade delete can't do: an *active* remote n8n
+    workflow keeps running even after its local Workflow row
+    disappears, since n8n has no idea the business behind it was ever
+    deleted. So if this business's persisted automation is currently
+    ACTIVE, this deactivates it on the remote engine first — the same
+    deactivate_lead_capture_automation the dedicated deactivate route
+    uses — turning it off rather than deleting the remote n8n workflow
+    object itself, because N8nClient/N8nAutomationEngine
+    (app.automation.n8n) expose create/update/activate/deactivate but
+    no `delete_workflow`; actually removing the remote object is
+    deferred cleanup until that capability exists. A business with no
+    automation, or automation that was never activated, deletes fine on
+    a server that has never configured n8n at all (n8n is fetched via
+    get_optional_n8n_client, not the hard-requiring get_n8n_client) —
+    but if this business *does* have an active automation and n8n isn't
+    configured, or the deactivate call itself fails, the whole delete
+    fails (never leaving an active remote automation behind with no
+    local record of it anymore) and nothing is deleted.
+
+    Cloudflare Pages deployment/project cleanup is likewise deferred:
+    CloudflarePagesClient/CloudflarePagesPublisher
+    (app.publishing.cloudflare) expose only publish + get_status, no
+    delete/unpublish method, so there's no safe existing abstraction to
+    call here. The Website row (deploy_url, provider_deployment_id) is
+    still removed from this database by the cascade above; the actual
+    Cloudflare Pages deployment, if this business was ever published,
+    is left running until a delete/unpublish capability is added.
+    """
+    workflow_row = WorkflowRepository(session).get_for_business(tenant_id, business_id)
+    if workflow_row is not None and workflow_row.status == WorkflowStatus.ACTIVE and workflow_row.n8n_workflow_id:
+        if n8n_client is None:
+            raise AppError(
+                "This business has an active automation and n8n is not configured on this server — "
+                "deactivate it manually, or configure n8n, before deleting this business.",
+                code="n8n_not_configured",
+                status_code=503,
+            )
+        try:
+            deactivate_lead_capture_automation(
+                session=session,
+                tenant_id=tenant_id,
+                business_id=business_id,
+                settings=settings,
+                client=n8n_client,
+            )
+        except AutomationActivationError as exc:
+            raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
     try:
         BusinessService(session).delete(tenant_id, business_id)
     except BusinessNotFoundError as exc:
