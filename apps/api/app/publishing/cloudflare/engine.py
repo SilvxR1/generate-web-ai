@@ -104,6 +104,18 @@ class CloudflarePagesPublisher(WebsitePublisher):
             live=project.get("latest_deployment") is not None,
         )
 
+    def unpublish(self, deployment_id: str) -> None:
+        """Deletes the whole Cloudflare Pages project `deployment_id`
+        names (see client.py's delete_project docstring for why "whole
+        project" rather than "just this deployment") — the site's
+        pages.dev URL genuinely stops resolving. Idempotent via
+        CloudflarePagesClient.delete_project: calling this twice, or
+        calling it for a project that was never actually created, never
+        raises."""
+        project_name, _, _cf_deployment_id = deployment_id.partition(_DEPLOYMENT_ID_SEPARATOR)
+        project_name = _validate_project_name(project_name)
+        self._client.delete_project(project_name)
+
     def _wrangler_deploy(self, project_name: str, artifact_dir: Path) -> str:
         # Inheriting the full parent environment (HOME, PATH, npm's own
         # cache/config vars, ...) is deliberate — the two Cloudflare

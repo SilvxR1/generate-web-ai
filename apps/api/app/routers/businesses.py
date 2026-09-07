@@ -35,6 +35,7 @@ from app.publishing.service import (
     WebsiteStateResult,
     get_website_state,
     publish_website,
+    unpublish_website,
 )
 from app.repositories.lead import LeadRepository
 from app.repositories.website import WebsiteRepository
@@ -372,6 +373,32 @@ def publish_business_website(
             publisher=publisher,
             n8n_base_url=settings.n8n_base_url,
         )
+    except WebsitePublishError as exc:
+        raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.post("/{business_id}/website/deactivate", response_model=WebsiteStateResult)
+def deactivate_business_website(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    publisher: WebsitePublisher = Depends(get_website_publisher),
+) -> WebsiteStateResult:
+    """The counterpart to .../website/publish: takes a currently-live
+    site down for real (see app.publishing.service.unpublish_website
+    and WebsitePublisher.unpublish's own docstrings) — never just a
+    local status flip. Deleting the whole Cloudflare Pages project this
+    business's site lives in, not merely marking a database row, so the
+    site's public URL genuinely stops resolving once this succeeds.
+
+    A business that was never published (or whose website is already
+    INACTIVE/DRAFT/FAILED) is handled the same idempotent way
+    unpublish_website documents — see that function.
+    """
+    _ensure_business_exists(session, tenant_id, business_id)
+
+    try:
+        return unpublish_website(session=session, tenant_id=tenant_id, business_id=business_id, publisher=publisher)
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 

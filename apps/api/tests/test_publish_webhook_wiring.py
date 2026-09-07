@@ -122,6 +122,9 @@ class _FakePublisher(WebsitePublisher):
     def get_status(self, deployment_id: str) -> PublishedSite:
         raise NotImplementedError
 
+    def unpublish(self, deployment_id: str) -> None:
+        raise NotImplementedError
+
 
 def _publish(
     session: Session,

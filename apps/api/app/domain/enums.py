@@ -43,6 +43,12 @@ class WebsiteStatus(StrEnum):
     BUILDING = "building"
     LIVE = "live"
     FAILED = "failed"
+    # Was LIVE, deliberately taken offline via POST .../website/deactivate
+    # (app.publishing.service.unpublish_website) — distinct from DRAFT
+    # ("never published") and FAILED ("last publish attempt failed").
+    # Mirrors WorkflowStatus.INACTIVE's same "was active, now turned off"
+    # shape.
+    INACTIVE = "inactive"
 
 
 class WorkflowStatus(StrEnum):

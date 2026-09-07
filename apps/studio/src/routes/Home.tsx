@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import { Link, useOutletContext } from "react-router-dom";
 import { categorizeBusinessFetchError, type CategorizedError } from "../features/business-analysis/errors";
 import { BusinessList } from "../features/business-list/BusinessList";
-import { deleteBusiness, listBusinessSummaries, type BusinessSummary } from "../lib/api";
+import {
+  deactivateAutomation,
+  deactivateWebsite,
+  deleteBusiness,
+  listBusinessSummaries,
+  type BusinessSummary,
+} from "../lib/api";
 import type { TenantOutletContext } from "../layout/AppShell";
 
 type ListState =
@@ -44,6 +50,45 @@ export function Home() {
     );
   }
 
+  // Deactivates on the backend first, then — only on success — patches
+  // just this business's website/automation field in the local list
+  // (never removed, unlike delete), so the card reflects the new
+  // persisted state without a full reload. A rejected promise leaves
+  // `state` untouched; BusinessCard shows the failure itself.
+  async function handleDeactivateWebsite(businessId: string) {
+    const updated = await deactivateWebsite(businessId, tenantId);
+    setState((prev) =>
+      prev.kind === "loaded"
+        ? {
+            kind: "loaded",
+            businesses: prev.businesses.map((business) =>
+              business.id === businessId
+                ? { ...business, website: { status: updated.status, live_url: updated.live_url } }
+                : business,
+            ),
+          }
+        : prev,
+    );
+    return updated;
+  }
+
+  async function handleDeactivateAutomation(businessId: string) {
+    const updated = await deactivateAutomation(businessId, tenantId);
+    setState((prev) =>
+      prev.kind === "loaded"
+        ? {
+            kind: "loaded",
+            businesses: prev.businesses.map((business) =>
+              business.id === businessId
+                ? { ...business, automation: { status: updated.status, active: updated.active } }
+                : business,
+            ),
+          }
+        : prev,
+    );
+    return updated;
+  }
+
   return (
     <section>
       <h1>AI Business Automation Studio</h1>
@@ -71,7 +116,12 @@ export function Home() {
       )}
 
       {tenantId && state.kind === "loaded" && state.businesses.length > 0 && (
-        <BusinessList businesses={state.businesses} onDelete={handleDelete} />
+        <BusinessList
+          businesses={state.businesses}
+          onDelete={handleDelete}
+          onDeactivateWebsite={handleDeactivateWebsite}
+          onDeactivateAutomation={handleDeactivateAutomation}
+        />
       )}
 
       <p>

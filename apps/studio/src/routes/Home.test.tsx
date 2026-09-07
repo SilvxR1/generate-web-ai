@@ -308,3 +308,167 @@ describe("Home dashboard delete action", () => {
     expect(screen.getByText("Reforma Pepe")).toBeInTheDocument();
   });
 });
+
+describe("Home dashboard deactivate actions", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows Deactivate website only when the website is live, and Deactivate automation only when automation is active", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, [businessSummary({ website: { status: "draft", live_url: null }, automation: null })]),
+    );
+    renderPage();
+
+    await screen.findByText("Reforma Pepe");
+    expect(screen.queryByRole("button", { name: "Deactivate website" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deactivate automation" })).not.toBeInTheDocument();
+  });
+
+  it("shows both buttons when the website is live and automation is active", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    renderPage();
+
+    await screen.findByText("Reforma Pepe");
+    expect(screen.getByRole("button", { name: "Deactivate website" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deactivate automation" })).toBeInTheDocument();
+  });
+
+  it("Deactivate website calls POST .../website/deactivate and updates the card without a full reload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: "inactive",
+        live_url: null,
+        deployment_id: null,
+        deployed_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-28T00:00:00Z",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Deactivate website" }));
+
+    await waitFor(() => expect(screen.getByText("Deactivated")).toBeInTheDocument());
+    // Gone once deactivated — republishing (elsewhere) is the only way back.
+    expect(screen.queryByRole("button", { name: "Deactivate website" })).not.toBeInTheDocument();
+    // Automation untouched by this action.
+    expect(screen.getByRole("button", { name: "Deactivate automation" })).toBeInTheDocument();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2); // initial list load + the deactivate — never a third re-fetch
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toContain("/businesses/biz-reforma-pepe/website/deactivate");
+    expect(init.method).toBe("POST");
+    const headers = init.headers as Record<string, string>;
+    expect(headers["X-Tenant-Id"]).toBe(TENANT_ID);
+  });
+
+  it("disables Deactivate website and shows Deactivating… while the request is in flight", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    let resolveDeactivate!: (value: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => (resolveDeactivate = resolve)));
+
+    await user.click(screen.getByRole("button", { name: "Deactivate website" }));
+
+    const busyButton = await screen.findByRole("button", { name: "Deactivating…" });
+    expect(busyButton).toBeDisabled();
+
+    resolveDeactivate(
+      jsonResponse(200, {
+        status: "inactive",
+        live_url: null,
+        deployment_id: null,
+        deployed_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-28T00:00:00Z",
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Deactivated")).toBeInTheDocument());
+  });
+
+  it("a failed website deactivation shows a friendly error and leaves the card showing Live", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(502, {
+        error: { code: "website_unpublish_failed", message: "Deactivating this website failed: boom." },
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Deactivate website" }));
+
+    expect(await screen.findByText("Deactivating this website failed")).toBeInTheDocument();
+    expect(screen.getByText("Deactivating this website failed: boom.")).toBeInTheDocument();
+    // Never removed or relabeled — the deactivation did NOT happen.
+    expect(screen.getByText("Live")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deactivate website" })).toBeInTheDocument();
+  });
+
+  it("Deactivate automation calls POST .../automation/deactivate and updates the card without a full reload", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        workflow_id: "reforma-pepe-lead-capture",
+        remote_id: "42",
+        name: "Reforma Pepe — Lead capture",
+        status: "inactive",
+        active: false,
+        version: 1,
+        required_capabilities: ["lead.store"],
+        activated_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-28T00:00:00Z",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Deactivate automation" }));
+
+    await waitFor(() => expect(screen.getByText("Inactive")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "Deactivate automation" })).not.toBeInTheDocument();
+    // Website untouched by this action.
+    expect(screen.getByRole("button", { name: "Deactivate website" })).toBeInTheDocument();
+
+    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(url).toContain("/businesses/biz-reforma-pepe/automation/deactivate");
+    expect(init.method).toBe("POST");
+  });
+
+  it("a failed automation deactivation shows a friendly error and leaves the card showing Active", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [businessSummary()]));
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByText("Reforma Pepe");
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(502, {
+        error: { code: "automation_deactivation_failed", message: "Deactivating this automation failed." },
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Deactivate automation" }));
+
+    expect(await screen.findByText("Deactivation failed")).toBeInTheDocument();
+    expect(screen.getByText("Deactivating this automation failed.")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Deactivate automation" })).toBeInTheDocument();
+  });
+});

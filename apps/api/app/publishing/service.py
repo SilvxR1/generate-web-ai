@@ -166,6 +166,51 @@ def publish_website(
     return _to_state_result(website)
 
 
+def unpublish_website(
+    *, session: Session, tenant_id: UUID, business_id: UUID, publisher: WebsitePublisher
+) -> WebsiteStateResult:
+    """The counterpart to publish_website: takes a *currently live* site
+    down for real via `publisher.unpublish` (never just a local status
+    flip — see WebsitePublisher.unpublish's own docstring), then marks
+    it INACTIVE and clears `deploy_url`/`provider_deployment_id` — once
+    the site is actually gone, persisting a stale live URL would be
+    exactly the kind of "simulated success" this codebase's read
+    endpoints elsewhere are careful never to produce.
+
+    Same idempotent shape as deactivate_lead_capture_automation
+    (app.automation.activation): nothing persisted at all -> raises (a
+    website that was never published has nothing to unpublish); already
+    INACTIVE/DRAFT/FAILED -> no-op, returns the current state unchanged
+    without calling the provider again. Only a currently-LIVE website
+    reaches the provider call.
+    """
+    website = WebsiteRepository(session).get_by_business(tenant_id, business_id)
+    if website is None:
+        raise WebsitePublishError(
+            "This business has never been published — nothing to deactivate.",
+            code="website_not_published",
+            status_code=404,
+        )
+
+    if website.status is not WebsiteStatus.LIVE:
+        return _to_state_result(website)
+
+    try:
+        publisher.unpublish(website.provider_deployment_id or "")
+    except WebsitePublisherError as exc:
+        raise WebsitePublishError(
+            f"Deactivating this website failed: {exc}",
+            code="website_unpublish_failed",
+            status_code=502,
+        ) from exc
+
+    website.status = WebsiteStatus.INACTIVE
+    website.deploy_url = None
+    website.provider_deployment_id = None
+
+    return _to_state_result(website)
+
+
 def get_website_state(*, session: Session, tenant_id: UUID, business_id: UUID) -> WebsiteStateResult | None:
     """Read-only, provider-neutral, never touches the hosting provider.
     Returns None (not an error) when this business has never been

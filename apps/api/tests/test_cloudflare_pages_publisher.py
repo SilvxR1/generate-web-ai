@@ -232,3 +232,63 @@ def test_get_status_reports_not_live_when_project_has_no_deployment():
     result = publisher.get_status("site-1::dep-1")
 
     assert result.live is False
+
+
+# --- unpublish ----------------------------------------------------------
+
+
+def test_unpublish_deletes_the_project(monkeypatch: pytest.MonkeyPatch):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json={"success": True, "result": {"name": "site-1"}, "errors": []})
+        if request.method == "DELETE":
+            return httpx.Response(200, json={"success": True, "result": {"id": "site-1"}, "errors": []})
+        raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
+
+    publisher = _publisher(handler)
+
+    publisher.unpublish("site-1::dep-1")
+
+    assert [r.method for r in requests] == ["GET", "DELETE"]
+    assert requests[1].url.path == "/client/v4/accounts/acct-1/pages/projects/site-1"
+
+
+def test_unpublish_is_idempotent_when_the_project_no_longer_exists(monkeypatch: pytest.MonkeyPatch):
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(404, json={"success": False, "errors": [{"message": "not found"}]})
+        raise AssertionError("must not attempt to delete a project that doesn't exist")
+
+    publisher = _publisher(handler)
+
+    publisher.unpublish("site-1::dep-1")  # must not raise
+
+    assert [r.method for r in requests] == ["GET"]
+
+
+def test_unpublish_rejects_an_invalid_deployment_id_before_any_request():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not call Cloudflare with an invalid project name")
+
+    publisher = _publisher(handler)
+
+    with pytest.raises(WebsitePublisherError):
+        publisher.unpublish("Not Valid!::dep-1")
+
+
+def test_unpublish_propagates_a_deletion_http_error():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(200, json={"success": True, "result": {"name": "site-1"}, "errors": []})
+        return httpx.Response(500, text="internal server error")
+
+    publisher = _publisher(handler)
+
+    with pytest.raises(CloudflareApiError):
+        publisher.unpublish("site-1::dep-1")

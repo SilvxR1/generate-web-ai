@@ -58,6 +58,19 @@ class CloudflarePagesClient:
     def get_project(self, project_name: str) -> dict[str, Any]:
         return self._request("GET", f"/accounts/{self._account_id}/pages/projects/{project_name}")
 
+    def delete_project(self, project_name: str) -> None:
+        """Idempotent counterpart to ensure_project above, same
+        check-first shape: if the project doesn't exist (already
+        deleted, or never existed), this is a no-op rather than a
+        spurious 404 CloudflareApiError — a caller retrying an
+        unpublish after a partial failure must be able to call this
+        again safely. Deletes the whole Pages project, every deployment
+        included; Cloudflare's Pages API has no narrower "delete just
+        the latest deployment but keep the project" operation."""
+        if not self._project_exists(project_name):
+            return
+        self._request("DELETE", f"/accounts/{self._account_id}/pages/projects/{project_name}")
+
     def _project_exists(self, project_name: str) -> bool:
         response = self._client.get(
             f"/accounts/{self._account_id}/pages/projects/{project_name}", headers=self._auth_headers

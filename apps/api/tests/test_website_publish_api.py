@@ -10,6 +10,7 @@ error-code mapping, tenant isolation), not build fidelity (see
 test_site_builder_integration.py) or Cloudflare's wire protocol (see
 test_cloudflare_pages_publisher.py)."""
 
+import json
 import uuid
 
 import httpx
@@ -108,16 +109,36 @@ def _mock_cloudflare(handler) -> None:
     )
 
 
-def _successful_cloudflare_handler():
+def _successful_cloudflare_handler(deleted: list[str] | None = None):
     """A fresh, stateful handler per call: the project doesn't exist yet
     (first GET, before wrangler runs) but does by the time publish()
-    checks status afterward (second GET)."""
+    checks status afterward (second GET) — and every GET after that, so
+    a test that publishes and then deactivates the same handler
+    instance sees the project as existing right up until DELETE
+    actually removes it. `deleted`, if given, records every project
+    name this handler received a successful DELETE for."""
     get_calls = {"n": 0}
+    deleted_projects: set[str] = set()
 
     def handler(request: httpx.Request) -> httpx.Response:
+        project_name = request.url.path.rsplit("/", 1)[-1]
         if request.method == "POST" and request.url.path.endswith("/pages/projects"):
+            # A republish after a deactivate recreates the project under
+            # the same name (ensure_project's own idempotent create) —
+            # forget it was ever "deleted" so the next GET reports it
+            # existing again, same as a real recreated Cloudflare project.
+            created_name = json.loads(request.content or b"{}").get("name")
+            if created_name:
+                deleted_projects.discard(created_name)
             return httpx.Response(200, json={"success": True, "result": {"name": "site"}, "errors": []})
+        if request.method == "DELETE":
+            deleted_projects.add(project_name)
+            if deleted is not None:
+                deleted.append(project_name)
+            return httpx.Response(200, json={"success": True, "result": {"id": project_name}, "errors": []})
         if request.method == "GET":
+            if project_name in deleted_projects:
+                return httpx.Response(404, json={"success": False, "errors": [{"message": "not found"}]})
             get_calls["n"] += 1
             if get_calls["n"] == 1:
                 return httpx.Response(404, json={"success": False, "errors": [{"message": "not found"}]})
@@ -156,6 +177,10 @@ def _publish(client: TestClient, business_id: str, tenant_id: uuid.UUID, site_co
 
 def _get_website(client: TestClient, business_id: str, tenant_id: uuid.UUID):
     return client.get(f"/businesses/{business_id}/website", headers={"X-Tenant-Id": str(tenant_id)})
+
+
+def _deactivate_website(client: TestClient, business_id: str, tenant_id: uuid.UUID):
+    return client.post(f"/businesses/{business_id}/website/deactivate", headers={"X-Tenant-Id": str(tenant_id)})
 
 
 def test_publish_success_returns_a_provider_neutral_result_with_a_live_url(client: TestClient, tenant: Tenant):
@@ -325,3 +350,142 @@ def test_publish_without_n8n_configured_succeeds_and_leaves_the_contact_form_wit
     assert response.json()["status"] == "live"
     built_contact = next(b for p in captured[0]["pages"] for b in p["blocks"] if b["type"] == "contact")
     assert "action" not in built_contact["content"]["form"]
+
+
+# --- deactivate (unpublish) -------------------------------------------------
+
+
+def test_deactivate_success_takes_the_site_offline_and_clears_the_live_url(client: TestClient, tenant: Tenant):
+    deleted: list[str] = []
+    _mock_cloudflare(_successful_cloudflare_handler(deleted))
+    business = _create_business(client, tenant.id)
+    published = _publish(client, business["id"], tenant.id)
+    assert published.status_code == 200, published.text
+
+    response = _deactivate_website(client, business["id"], tenant.id)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "inactive"
+    assert body["live_url"] is None
+    assert deleted == [f"site-{business['id'].replace('-', '')}"]
+    assert API_TOKEN not in response.text
+
+    reloaded = _get_website(client, business["id"], tenant.id)
+    assert reloaded.json()["status"] == "inactive"
+    assert reloaded.json()["live_url"] is None
+
+
+def test_deactivate_without_any_prior_publish_is_rejected(client: TestClient, tenant: Tenant):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+
+    response = _deactivate_website(client, business["id"], tenant.id)
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "website_not_published"
+
+
+def test_deactivate_missing_cloudflare_config_is_rejected(
+    client: TestClient, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+    _publish(client, business["id"], tenant.id)
+
+    # _mock_cloudflare registers a dependency_override for
+    # get_website_publisher that ignores settings entirely — pop it so
+    # this exercises the *real* get_website_publisher wiring against
+    # the now-unconfigured settings, the same "no override registered"
+    # pattern test_missing_cloudflare_config_is_rejected uses above.
+    app.dependency_overrides.pop(get_website_publisher, None)
+    monkeypatch.setattr(settings, "cloudflare_account_id", None)
+    monkeypatch.setattr(settings, "cloudflare_api_token", None)
+
+    response = _deactivate_website(client, business["id"], tenant.id)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "website_publisher_not_configured"
+
+
+def test_deactivate_failure_is_reported_and_reload_still_shows_live(client: TestClient, tenant: Tenant):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+    published = _publish(client, business["id"], tenant.id)
+    assert published.status_code == 200, published.text
+
+    def failing_handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "result": {"name": "site", "latest_deployment": {"id": "dep-1"}},
+                    "errors": [],
+                },
+            )
+        return httpx.Response(500, text="internal server error")
+
+    _mock_cloudflare(failing_handler)
+
+    response = _deactivate_website(client, business["id"], tenant.id)
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "website_unpublish_failed"
+
+    state = _get_website(client, business["id"], tenant.id)
+    assert state.json()["status"] == "live"
+    assert state.json()["live_url"] == published.json()["live_url"]
+
+
+def test_deactivate_never_leaks_across_tenants(client: TestClient, tenant: Tenant, other_tenant: Tenant):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, other_tenant.id)
+    _publish(client, business["id"], other_tenant.id)
+
+    response = _deactivate_website(client, business["id"], tenant.id)
+
+    assert response.status_code == 404
+
+
+def test_deactivate_requires_a_tenant_header(client: TestClient, tenant: Tenant):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+    _publish(client, business["id"], tenant.id)
+
+    response = client.post(f"/businesses/{business['id']}/website/deactivate")
+
+    assert response.status_code == 422
+
+
+def test_deactivate_is_idempotent_and_never_recalls_the_provider_when_already_inactive(
+    client: TestClient, tenant: Tenant
+):
+    deleted: list[str] = []
+    _mock_cloudflare(_successful_cloudflare_handler(deleted))
+    business = _create_business(client, tenant.id)
+    _publish(client, business["id"], tenant.id)
+    first = _deactivate_website(client, business["id"], tenant.id)
+    assert first.status_code == 200, first.text
+    deleted.clear()
+
+    second = _deactivate_website(client, business["id"], tenant.id)
+
+    assert second.status_code == 200, second.text
+    assert second.json()["status"] == "inactive"
+    assert deleted == []
+
+
+def test_republish_after_deactivate_brings_the_site_back_live(client: TestClient, tenant: Tenant):
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+    _publish(client, business["id"], tenant.id)
+    deactivated = _deactivate_website(client, business["id"], tenant.id)
+    assert deactivated.status_code == 200, deactivated.text
+    assert deactivated.json()["status"] == "inactive"
+
+    republished = _publish(client, business["id"], tenant.id)
+
+    assert republished.status_code == 200, republished.text
+    assert republished.json()["status"] == "live"
+    assert republished.json()["live_url"] is not None

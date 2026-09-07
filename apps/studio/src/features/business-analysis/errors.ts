@@ -184,6 +184,31 @@ export function categorizePublishError(error: unknown): CategorizedError {
   return { category: "publish_failed", title: "Unexpected error", message: toMessage(error) };
 }
 
+const WEBSITE_DEACTIVATE_ERROR_TITLES: Record<string, string> = {
+  website_publisher_not_configured: "Publishing isn't set up on this server",
+  website_not_published: "Nothing to deactivate",
+  website_unpublish_failed: "Deactivating this website failed",
+};
+
+/** Never returns anything implying success — every branch here means
+ * the website was NOT taken offline (see DELETE .../website/deactivate's
+ * own docstring, apps/api's app.routers.businesses: this calls the real
+ * hosting provider, never a local-only status flip). */
+export function categorizeWebsiteDeactivateError(error: unknown): CategorizedError {
+  if (error instanceof NetworkError) {
+    return { ...NETWORK_ERROR, category: "publish_failed" };
+  }
+  if (error instanceof ApiError) {
+    return {
+      category: "publish_failed",
+      title: WEBSITE_DEACTIVATE_ERROR_TITLES[error.code] ?? "Could not deactivate this website",
+      message: error.message,
+      technicalDetail: `${error.code} (${error.status})`,
+    };
+  }
+  return { category: "publish_failed", title: "Unexpected error", message: toMessage(error) };
+}
+
 const DELETE_ERROR_TITLES: Record<string, string> = {
   business_not_found: "Business not found",
   n8n_not_configured: "Can't safely delete — automation isn't set up on this server",

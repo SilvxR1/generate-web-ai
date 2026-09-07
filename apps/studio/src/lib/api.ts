@@ -267,7 +267,7 @@ export function deactivateAutomation(businessId: string, tenantId: string): Prom
 // anything. Every response here is provider-neutral: no hosting
 // provider payload, no credential, ever.
 
-export type WebsiteStatus = "draft" | "building" | "live" | "failed";
+export type WebsiteStatus = "draft" | "building" | "live" | "failed" | "inactive";
 
 export interface WebsiteState {
   status: WebsiteStatus;
@@ -287,6 +287,17 @@ export function publishWebsite(businessId: string, tenantId: string, siteConfig:
     { method: "POST", body: JSON.stringify(siteConfig) },
     tenantId,
   );
+}
+
+/** Deactivate (POST .../website/deactivate) is publish's counterpart —
+ * takes a *currently live* site down for real on the hosting provider
+ * (never just a local status flip; see the backend's
+ * app.publishing.service.unpublish_website docstring), then reports
+ * `status: "inactive"` with `live_url: null`. Republishing afterward
+ * (publishWebsite) brings the same business's site back live under the
+ * same URL. */
+export function deactivateWebsite(businessId: string, tenantId: string): Promise<WebsiteState> {
+  return requestJson<WebsiteState>(`/businesses/${businessId}/website/deactivate`, { method: "POST" }, tenantId);
 }
 
 // --- Leads --------------------------------------------------------------

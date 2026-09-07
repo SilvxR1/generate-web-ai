@@ -56,3 +56,14 @@ class WebsitePublisher(ABC):
 
     @abstractmethod
     def get_status(self, deployment_id: str) -> PublishedSite: ...
+
+    @abstractmethod
+    def unpublish(self, deployment_id: str) -> None:
+        """Takes the deployed site down for real — the counterpart to
+        `publish`, not a local-only status flip. Implementations should
+        make this idempotent: unpublishing something already offline
+        (or never published) must not raise. `deployment_id` is the same
+        opaque identifier `publish`/`get_status` use — never touches
+        this codebase's own persisted Website row, that's the caller's
+        job (see app.publishing.service.unpublish_website)."""
+        ...

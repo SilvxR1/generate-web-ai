@@ -1,9 +1,11 @@
-"""publish_website/get_website_state (app.publishing.service) against a
-fake WebsitePublisher and a real (sqlite, in-memory) session: first
-publish persists, publish failure leaves the previous live state
-unchanged (never marks anything Published), reload/get returns the
-persisted state, tenant isolation, and that nothing about the fake
-provider's "credential" ever appears in the result.
+"""publish_website/unpublish_website/get_website_state
+(app.publishing.service) against a fake WebsitePublisher and a real
+(sqlite, in-memory) session: first publish persists, publish failure
+leaves the previous live state unchanged (never marks anything
+Published), unpublish takes a live site down for real and never just
+flips a local flag, reload/get returns the persisted state, tenant
+isolation, and that nothing about the fake provider's "credential" ever
+appears in the result.
 
 app.publishing.build.build_site is monkeypatched to a fake, instant
 build here — these tests are about the persistence/orchestration
@@ -21,7 +23,12 @@ from app.db.models.tenant import Tenant
 from app.domain.enums import WebsiteStatus
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
-from app.publishing.service import WebsitePublishError, get_website_state, publish_website
+from app.publishing.service import (
+    WebsitePublishError,
+    get_website_state,
+    publish_website,
+    unpublish_website,
+)
 from app.schemas.site_config import SiteConfigPayload
 
 _SITE_CONFIG = {
@@ -62,9 +69,11 @@ class FakePublisher(WebsitePublisher):
     role a hand-rolled fake plays alongside the httpx-mocked
     CloudflarePagesPublisher tests (see test_cloudflare_pages_publisher.py)."""
 
-    def __init__(self, *, fail: bool = False) -> None:
+    def __init__(self, *, fail: bool = False, fail_unpublish: bool = False) -> None:
         self.fail = fail
+        self.fail_unpublish = fail_unpublish
         self.publish_calls: list[tuple[str, WebsiteArtifact]] = []
+        self.unpublish_calls: list[str] = []
         # Stands in for a real publisher's held API credential — never
         # touched by publish()/get_status(), just present to prove
         # nothing about it can leak into a WebsiteStateResult.
@@ -75,6 +84,11 @@ class FakePublisher(WebsitePublisher):
         if self.fail:
             raise WebsitePublisherError("provider rejected the deploy")
         return PublishedSite(deployment_id=site_id, url=f"https://{site_id}.example.pages.dev", live=True)
+
+    def unpublish(self, deployment_id: str) -> None:
+        self.unpublish_calls.append(deployment_id)
+        if self.fail_unpublish:
+            raise WebsitePublisherError("provider rejected the unpublish")
 
     def get_status(self, deployment_id: str) -> PublishedSite:
         return PublishedSite(deployment_id=deployment_id, url=f"https://{deployment_id}.example.pages.dev", live=True)
@@ -207,6 +221,91 @@ def test_get_website_state_returns_none_before_any_publish(session: Session, bus
     assert get_website_state(session=session, tenant_id=business.tenant_id, business_id=business.id) is None
 
 
+# --- unpublish --------------------------------------------------------------
+
+
+def test_unpublish_takes_a_live_site_down_and_clears_the_live_url(session: Session, business: Business):
+    published = _publish(session, business, FakePublisher())
+    publisher = FakePublisher()
+
+    result = unpublish_website(
+        session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=publisher
+    )
+
+    assert result.status is WebsiteStatus.INACTIVE
+    assert result.live_url is None
+    assert publisher.unpublish_calls == [f"site-{business.id.hex}"]
+
+    reloaded = get_website_state(session=session, tenant_id=business.tenant_id, business_id=business.id)
+    assert reloaded is not None
+    assert reloaded.status is WebsiteStatus.INACTIVE
+    assert reloaded.live_url is None
+    assert published.live_url is not None  # sanity: it really was live before this
+
+
+def test_unpublish_calls_the_real_provider_not_just_a_local_flag_flip(session: Session, business: Business):
+    _publish(session, business, FakePublisher())
+    publisher = FakePublisher()
+
+    unpublish_website(session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=publisher)
+
+    assert len(publisher.unpublish_calls) == 1
+
+
+def test_unpublish_without_any_prior_publish_is_rejected(session: Session, business: Business):
+    with pytest.raises(WebsitePublishError) as exc_info:
+        unpublish_website(
+            session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=FakePublisher()
+        )
+
+    assert exc_info.value.code == "website_not_published"
+
+
+def test_unpublish_is_idempotent_when_already_inactive(session: Session, business: Business):
+    publisher = FakePublisher()
+    _publish(session, business, FakePublisher())
+    unpublish_website(session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=publisher)
+    publisher.unpublish_calls.clear()
+
+    result = unpublish_website(
+        session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=publisher
+    )
+
+    assert result.status is WebsiteStatus.INACTIVE
+    # Already inactive — must not call the provider again.
+    assert publisher.unpublish_calls == []
+
+
+def test_unpublish_provider_failure_leaves_the_site_reported_live(session: Session, business: Business):
+    live = _publish(session, business, FakePublisher())
+
+    with pytest.raises(WebsitePublishError) as exc_info:
+        unpublish_website(
+            session=session,
+            tenant_id=business.tenant_id,
+            business_id=business.id,
+            publisher=FakePublisher(fail_unpublish=True),
+        )
+
+    assert exc_info.value.code == "website_unpublish_failed"
+    state = get_website_state(session=session, tenant_id=business.tenant_id, business_id=business.id)
+    assert state is not None
+    assert state.status is WebsiteStatus.LIVE
+    assert state.live_url == live.live_url
+
+
+def test_unpublish_never_leaks_the_provider_secret(session: Session, business: Business):
+    _publish(session, business, FakePublisher())
+
+    result = unpublish_website(
+        session=session, tenant_id=business.tenant_id, business_id=business.id, publisher=FakePublisher()
+    )
+
+    dumped = json.dumps(result.model_dump(mode="json"))
+    assert SECRET not in dumped
+    assert SECRET not in repr(result)
+
+
 # --- tenant isolation -------------------------------------------------------
 
 
@@ -218,3 +317,17 @@ def test_tenant_isolation_website_not_visible_to_another_tenant(
     state = get_website_state(session=session, tenant_id=other_tenant.id, business_id=business.id)
 
     assert state is None
+
+
+def test_unpublish_never_leaks_across_tenants(session: Session, business: Business, other_tenant: Tenant):
+    _publish(session, business, FakePublisher())
+
+    with pytest.raises(WebsitePublishError) as exc_info:
+        unpublish_website(
+            session=session, tenant_id=other_tenant.id, business_id=business.id, publisher=FakePublisher()
+        )
+
+    assert exc_info.value.code == "website_not_published"
+    still_live = get_website_state(session=session, tenant_id=business.tenant_id, business_id=business.id)
+    assert still_live is not None
+    assert still_live.status is WebsiteStatus.LIVE
