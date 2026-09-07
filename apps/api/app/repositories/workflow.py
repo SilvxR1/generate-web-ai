@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -22,3 +23,19 @@ class WorkflowRepository(TenantScopedRepository[Workflow]):
             .order_by(Workflow.created_at)
         )
         return self.session.scalars(stmt).first()
+
+    def list_for_businesses(self, tenant_id: UUID, business_ids: Sequence[UUID]) -> list[Workflow]:
+        """Batch counterpart to `get_for_business`: every Workflow row
+        for a set of businesses in one query, still ordered by creation
+        so a caller picking the first match per `business_id` (see GET
+        /business-summaries in app.routers.businesses) gets the same
+        "the" workflow `get_for_business` would — without one query per
+        business."""
+        if not business_ids:
+            return []
+        stmt = (
+            select(Workflow)
+            .where(Workflow.tenant_id == tenant_id, Workflow.business_id.in_(business_ids))
+            .order_by(Workflow.created_at)
+        )
+        return list(self.session.scalars(stmt).all())

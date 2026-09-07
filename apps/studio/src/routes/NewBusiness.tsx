@@ -1,25 +1,65 @@
-import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { BriefingForm } from "../features/business-analysis/BriefingForm";
 import { ErrorBanner } from "../features/business-analysis/ErrorBanner";
 import { buildCreatePayload, buildDraftFromAnalysis, validateDraft, type BusinessDraft } from "../features/business-analysis/draft";
-import { categorizeAnalyzeError, categorizeSaveError, type CategorizedError } from "../features/business-analysis/errors";
+import {
+  categorizeAnalyzeError,
+  categorizeBusinessFetchError,
+  categorizeSaveError,
+  type CategorizedError,
+} from "../features/business-analysis/errors";
 import { ProposalReview } from "../features/business-analysis/ProposalReview";
 import { PreviewStep } from "../features/business-preview/PreviewStep";
-import { analyzeBusiness, createBusiness, updateBusiness, type AnalyzeBusinessResponse, type CreatedBusiness } from "../lib/api";
+import {
+  analyzeBusiness,
+  createBusiness,
+  getBusiness,
+  updateBusiness,
+  type AnalyzeBusinessResponse,
+  type CreatedBusiness,
+} from "../lib/api";
 import type { TenantOutletContext } from "../layout/AppShell";
 
 type Step =
+  | { kind: "loading-existing" }
+  | { kind: "load-error"; error: CategorizedError }
   | { kind: "briefing"; isAnalyzing: boolean }
   | { kind: "reviewing"; analysis: AnalyzeBusinessResponse; draft: BusinessDraft; editingBusiness: CreatedBusiness | null }
   | { kind: "preview"; business: CreatedBusiness };
 
 export function NewBusiness() {
   const { tenantId } = useOutletContext<TenantOutletContext>();
-  const [step, setStep] = useState<Step>({ kind: "briefing", isAnalyzing: false });
+  const { businessId } = useParams<{ businessId?: string }>();
+  const navigate = useNavigate();
+  const [step, setStep] = useState<Step>(() =>
+    businessId ? { kind: "loading-existing" } : { kind: "briefing", isAnalyzing: false },
+  );
   const [analyzeError, setAnalyzeError] = useState<CategorizedError | null>(null);
   const [saveError, setSaveError] = useState<CategorizedError | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Reopening an existing business (Studio's dashboard "Open" action):
+  // loads it fresh from the backend — the same GET /businesses/{id} the
+  // rest of the app already uses — and feeds it straight into
+  // PreviewStep, the one place a business's persisted state is shown.
+  // No separate, dashboard-only management UI and no re-derivation of
+  // BusinessConfig here.
+  useEffect(() => {
+    if (!businessId || !tenantId) return;
+    let cancelled = false;
+    setStep({ kind: "loading-existing" });
+    getBusiness(businessId, tenantId)
+      .then((business) => {
+        if (!cancelled) setStep({ kind: "preview", business });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setStep({ kind: "load-error", error: categorizeBusinessFetchError(error) });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [businessId, tenantId]);
 
   async function handleAnalyze(briefing: string) {
     setAnalyzeError(null);
@@ -60,15 +100,28 @@ export function NewBusiness() {
   if (!tenantId) {
     return (
       <section>
-        <h1>New Business</h1>
-        <p className="banner banner--warning">Set a Tenant ID above before creating a business.</p>
+        <h1>{businessId ? "Business" : "New Business"}</h1>
+        <p className="banner banner--warning">
+          Set a Tenant ID above before {businessId ? "opening this business" : "creating a business"}.
+        </p>
       </section>
     );
   }
 
   return (
     <section>
-      <h1>New Business</h1>
+      <h1>{businessId ? "Business" : "New Business"}</h1>
+
+      {step.kind === "loading-existing" && <p className="field-hint">Loading business…</p>}
+
+      {step.kind === "load-error" && (
+        <>
+          <ErrorBanner error={step.error} />
+          <p>
+            <Link to="/">← Back to businesses</Link>
+          </p>
+        </>
+      )}
 
       {step.kind === "briefing" && (
         <>
@@ -117,7 +170,9 @@ export function NewBusiness() {
               editingBusiness: step.business,
             });
           }}
-          onCreateAnother={() => setStep({ kind: "briefing", isAnalyzing: false })}
+          onCreateAnother={() =>
+            businessId ? navigate("/businesses/new") : setStep({ kind: "briefing", isAnalyzing: false })
+          }
         />
       )}
     </section>

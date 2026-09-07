@@ -122,6 +122,65 @@ export function updateBusiness(
   );
 }
 
+/** Reopens an existing business — the same shape POST /businesses
+ * returns, so the result can feed straight into PreviewStep exactly as
+ * a freshly-created business does (no second, dashboard-only
+ * management UI). */
+export function getBusiness(businessId: string, tenantId: string): Promise<CreatedBusiness> {
+  return requestJson<CreatedBusiness>(`/businesses/${businessId}`, { method: "GET" }, tenantId);
+}
+
+// --- Business dashboard listing -----------------------------------------
+//
+// GET /business-summaries (app.routers.businesses) is Studio's home
+// screen: every business this tenant owns, plus a lightweight,
+// batch-loaded snapshot of each one's *persisted* website/automation
+// state — deliberately not the full BusinessConfig (see
+// BusinessSummary's own docstring on the backend), so this dashboard
+// never duplicates BusinessConfig state or infers website/automation
+// status from it. Lives on its own /business-summaries path rather
+// than nested under /businesses (e.g. /businesses/summary) — the
+// latter used to collide with GET /businesses/{businessId} and get
+// misrouted as a business lookup with businessId="summary".
+
+export interface BusinessLocationSummary {
+  city: string;
+  region: string | null;
+  country: string;
+  postal_code: string | null;
+}
+
+export interface BusinessWebsiteSummary {
+  status: WebsiteStatus;
+  live_url: string | null;
+}
+
+export interface BusinessAutomationSummary {
+  status: AutomationStatus;
+  active: boolean;
+}
+
+export interface BusinessSummary {
+  id: string;
+  name: string;
+  slug: string;
+  vertical: BusinessVertical;
+  status: "draft" | "active" | "paused";
+  location: BusinessLocationSummary | null;
+  created_at: string;
+  updated_at: string;
+  /** Null exactly when GET .../website has never been called for real
+   * yet, i.e. this business has never been published. */
+  website: BusinessWebsiteSummary | null;
+  /** Null exactly when GET .../automation has never been called for
+   * real yet, i.e. this business has never had automation activated. */
+  automation: BusinessAutomationSummary | null;
+}
+
+export function listBusinessSummaries(tenantId: string): Promise<BusinessSummary[]> {
+  return requestJson<BusinessSummary[]>("/business-summaries", { method: "GET" }, tenantId);
+}
+
 // --- Workflow preview --------------------------------------------------
 //
 // WorkflowConfig itself comes from @generate-web-ai/workflow-config-types

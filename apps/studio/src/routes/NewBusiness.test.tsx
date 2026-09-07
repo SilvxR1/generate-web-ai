@@ -21,6 +21,26 @@ function renderPage() {
       <Routes>
         <Route element={<StubShell />}>
           <Route path="businesses/new" element={<NewBusiness />} />
+          <Route path="businesses/:businessId" element={<NewBusiness />} />
+          <Route index element={<p>Dashboard home</p>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function renderReopenPage(businessId: string) {
+  function StubShell() {
+    return <Outlet context={{ tenantId: TENANT_ID } satisfies TenantOutletContext} />;
+  }
+
+  return render(
+    <MemoryRouter initialEntries={[`/businesses/${businessId}`]}>
+      <Routes>
+        <Route element={<StubShell />}>
+          <Route path="businesses/new" element={<NewBusiness />} />
+          <Route path="businesses/:businessId" element={<NewBusiness />} />
+          <Route index element={<p>Dashboard home</p>} />
         </Route>
       </Routes>
     </MemoryRouter>,
@@ -1080,5 +1100,127 @@ describe("NewBusiness preview step", () => {
     await user.click(await screen.findByRole("button", { name: "Create business" }));
 
     expect(await screen.findByText(/Could not load leads/)).toBeInTheDocument();
+  });
+});
+
+describe("NewBusiness reopening an existing business (Studio dashboard's Open action)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function reformaBusinessResponse() {
+    return jsonResponse(200, {
+      id: "biz-reforma-pepe",
+      name: exampleReformaValenciaConfig.business_profile.name,
+      slug: exampleReformaValenciaConfig.business_profile.slug,
+      status: "active",
+      raw_description: "Empresa de reformas integrales en Valencia.",
+      config: exampleReformaValenciaConfig,
+    });
+  }
+
+  it("shows a loading state while the business is being fetched", () => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {})); // never resolves during this test
+    renderReopenPage("biz-reforma-pepe");
+
+    expect(screen.getByText("Loading business…")).toBeInTheDocument();
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/businesses/biz-reforma-pepe");
+  });
+
+  it("loads the business straight into the existing PreviewStep flow — no separate management UI, no manual UUID entry", async () => {
+    fetchMock.mockResolvedValueOnce(reformaBusinessResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, REFORMA_WORKFLOW_PREVIEW));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+
+    renderReopenPage("biz-reforma-pepe");
+
+    expect(
+      await screen.findByText(new RegExp(`Business "${exampleReformaValenciaConfig.business_profile.name}" created`)),
+    ).toBeInTheDocument();
+    // Same PreviewStep affordances a freshly-created business gets —
+    // publish/activate/leads are all reachable from here, once their
+    // own (mocked) persisted-state reads have resolved.
+    expect(await screen.findByRole("button", { name: "Publish website" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Activate automation" })).toBeInTheDocument();
+    // Never called POST /businesses or PUT /businesses/{id} just to view it.
+    expect(
+      fetchMock.mock.calls.every(([, init]) => (init as RequestInit | undefined)?.method !== "POST"),
+    ).toBe(true);
+    expect(
+      fetchMock.mock.calls.every(([, init]) => (init as RequestInit | undefined)?.method !== "PUT"),
+    ).toBe(true);
+  });
+
+  it("a business that doesn't exist for this tenant shows a friendly error and a way back, not a crash", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(404, { error: { code: "business_not_found", message: "Business not found." } }),
+    );
+
+    renderReopenPage("unknown-business-id");
+
+    expect(await screen.findByText("Could not load this business")).toBeInTheDocument();
+    expect(screen.getByText("Business not found.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "← Back to businesses" })).toHaveAttribute("href", "/");
+  });
+
+  it("reopened business's automation/website reflect the backend's persisted state, not BusinessConfig", async () => {
+    fetchMock.mockResolvedValueOnce(reformaBusinessResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, REFORMA_WORKFLOW_PREVIEW));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        workflow_id: "reforma-casa-valencia-lead-capture",
+        remote_id: "42",
+        name: REFORMA_WORKFLOW_PREVIEW.name,
+        status: "active",
+        active: true,
+        version: 1,
+        required_capabilities: REFORMA_WORKFLOW_PREVIEW.required_capabilities,
+        activated_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-27T00:00:00Z",
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: "live",
+        live_url: "https://site-reforma-pepe.workers.dev/",
+        deployment_id: "site-biz-reforma-pepe",
+        deployed_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-27T00:00:00Z",
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, []));
+
+    renderReopenPage("biz-reforma-pepe");
+
+    expect(await screen.findByText(/Active/)).toBeInTheDocument();
+    expect(screen.getByText(/Published/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open live website" })).toHaveAttribute(
+      "href",
+      "https://site-reforma-pepe.workers.dev/",
+    );
+  });
+
+  it("the existing New Business flow at /businesses/new is unaffected — no reopen fetch fires there", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { proposed_config: null, missing_information: [], questions: [] }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByText("Loading business…")).not.toBeInTheDocument();
+    await analyze(user);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/businesses/analyze");
   });
 });

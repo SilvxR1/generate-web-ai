@@ -10,6 +10,7 @@ export function App() {
       <Route element={<AppShell />}>
         <Route index element={<Home />} />
         <Route path="businesses/new" element={<NewBusiness />} />
+        <Route path="businesses/:businessId" element={<NewBusiness />} />
         <Route path="status" element={<Status />} />
       </Route>
     </Routes>

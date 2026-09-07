@@ -3,8 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.domain.business_config import SLUG_PATTERN, BusinessConfig
-from app.domain.enums import BusinessStatus, BusinessVertical
+from app.domain.business_config import SLUG_PATTERN, BusinessConfig, Location
+from app.domain.enums import BusinessStatus, BusinessVertical, WebsiteStatus, WorkflowStatus
 
 
 class BusinessBase(BaseModel):
@@ -83,3 +83,52 @@ class AutomationRecommendationResponse(BaseModel):
     customer_acknowledgement: bool
     follow_up_enabled: bool
     follow_up_delay_hours: int
+
+
+class BusinessWebsiteSummary(BaseModel):
+    """The sliver of a business's *persisted* website deployment state
+    (app.publishing.service.WebsiteStateResult) that Studio's dashboard
+    card needs — status and a live link, nothing provider-specific."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: WebsiteStatus
+    live_url: str | None
+
+
+class BusinessAutomationSummary(BaseModel):
+    """The sliver of a business's *persisted* automation state
+    (app.automation.activation.AutomationStateResult) that Studio's
+    dashboard card needs — status and whether it's currently active."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: WorkflowStatus
+    active: bool
+
+
+class BusinessSummary(BaseModel):
+    """Response shape for GET /business-summaries — Studio's dashboard
+    listing. Deliberately excludes `config` (the full BusinessConfig):
+    the dashboard only needs to list and reopen a business, not render
+    or duplicate its configuration (PreviewStep still loads the full
+    business via GET /{business_id} itself when a business is opened).
+    `location` is the one piece of `config.business_profile` worth
+    surfacing here — extracted server-side rather than shipping the
+    whole config just for one optional field. `website`/`automation`
+    are null exactly when GET .../website / GET .../automation would
+    also return null: no deployment or activation has happened yet.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: uuid.UUID
+    name: str
+    slug: str
+    vertical: BusinessVertical
+    status: BusinessStatus
+    location: Location | None
+    created_at: datetime
+    updated_at: datetime
+    website: BusinessWebsiteSummary | None
+    automation: BusinessAutomationSummary | None

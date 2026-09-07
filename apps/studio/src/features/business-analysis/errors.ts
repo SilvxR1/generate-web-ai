@@ -115,6 +115,20 @@ export function categorizeWorkflowPreviewError(error: unknown): CategorizedError
   return { category: "api_failure", title: "Unexpected error", message: toMessage(error) };
 }
 
+/** Used for both the dashboard's GET /business-summaries listing and
+ * reopening a single business (GET /businesses/{id}) — plain reads with
+ * no special-cased failure codes of their own, same shape as
+ * categorizeWorkflowPreviewError above. */
+export function categorizeBusinessFetchError(error: unknown): CategorizedError {
+  if (error instanceof NetworkError) {
+    return NETWORK_ERROR;
+  }
+  if (error instanceof ApiError) {
+    return genericApiFailure(error, "Could not load this business");
+  }
+  return { category: "api_failure", title: "Unexpected error", message: toMessage(error) };
+}
+
 const ACTIVATION_ERROR_TITLES: Record<string, string> = {
   n8n_not_configured: "Automation isn't set up on this server",
   missing_capability_configuration: "Missing required configuration",

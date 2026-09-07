@@ -16,6 +16,7 @@ from app.automation.n8n import N8nClient
 from app.config import settings
 from app.db.models.business import Business
 from app.db.models.lead import Lead
+from app.db.models.workflow import Workflow
 from app.dependencies import (
     get_business_analyzer,
     get_current_tenant_id,
@@ -23,8 +24,8 @@ from app.dependencies import (
     get_session,
     get_website_publisher,
 )
-from app.domain.business_config import BusinessConfig
-from app.domain.enums import BusinessVertical
+from app.domain.business_config import BusinessConfig, Location
+from app.domain.enums import BusinessVertical, WorkflowStatus
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
 from app.publishing.publisher import WebsitePublisher
@@ -35,13 +36,33 @@ from app.publishing.service import (
     publish_website,
 )
 from app.repositories.lead import LeadRepository
-from app.schemas.business import AutomationRecommendationResponse, BusinessRead, BusinessWriteRequest
+from app.repositories.website import WebsiteRepository
+from app.repositories.workflow import WorkflowRepository
+from app.schemas.business import (
+    AutomationRecommendationResponse,
+    BusinessAutomationSummary,
+    BusinessRead,
+    BusinessSummary,
+    BusinessWebsiteSummary,
+    BusinessWriteRequest,
+)
 from app.schemas.business_analysis import BusinessAnalysisRequest
 from app.schemas.lead import LeadRead, LeadStatusUpdateRequest
 from app.schemas.site_config import SiteConfigPayload
 from app.services.business_service import BusinessNotFoundError, BusinessService, SlugConflictError
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
+
+# A separate router, deliberately NOT nested under /businesses. This
+# endpoint used to live at GET /businesses/summary, which FastAPI
+# matched to GET /businesses/{business_id} instead (business_id="summary"
+# fails UUID parsing -> 422) regardless of which route was declared
+# first in this file: a literal segment competing with a path parameter
+# at the same position isn't resolved by declaration order the way two
+# literal paths are. Giving this endpoint its own, structurally disjoint
+# prefix removes the collision entirely instead of relying on route
+# ordering to avoid it. See list_businesses_summary below.
+business_summaries_router = APIRouter(prefix="/business-summaries", tags=["businesses"])
 
 
 def _not_found() -> AppError:
@@ -136,6 +157,72 @@ def get_automation_recommendation(
         follow_up_enabled=template.follow_up_enabled,
         follow_up_delay_hours=template.follow_up_delay_hours,
     )
+
+
+@business_summaries_router.get("", response_model=list[BusinessSummary])
+def list_businesses_summary(
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> list[BusinessSummary]:
+    """Studio's dashboard listing: every business this tenant owns, plus
+    a lightweight snapshot of each one's *persisted* website/automation
+    state — the same source of truth GET .../website and GET
+    .../automation each read for a single business, batch-loaded here
+    (one query for every business's Website row, one for every
+    business's Workflow row) so opening the dashboard never fires an
+    N+1 request per business.
+
+    Lives on its own /business-summaries prefix (business_summaries_router
+    above) rather than /businesses/summary — see that router's own
+    comment for why nesting this under /businesses collided with GET
+    /businesses/{business_id}.
+
+    Deliberately excludes `config` (the full BusinessConfig) — see
+    BusinessSummary's own docstring for why.
+    """
+    businesses = BusinessService(session).list(tenant_id)
+    business_ids = [business.id for business in businesses]
+
+    websites_by_business = {
+        website.business_id: website
+        for website in WebsiteRepository(session).list_for_businesses(tenant_id, business_ids)
+    }
+    workflows_by_business: dict[UUID, Workflow] = {}
+    for candidate_workflow in WorkflowRepository(session).list_for_businesses(tenant_id, business_ids):
+        workflows_by_business.setdefault(candidate_workflow.business_id, candidate_workflow)
+
+    summaries: list[BusinessSummary] = []
+    for business in businesses:
+        location = None
+        if business.config:
+            location_data = business.config.get("business_profile", {}).get("location")
+            if location_data:
+                location = Location.model_validate(location_data)
+
+        website = websites_by_business.get(business.id)
+        workflow = workflows_by_business.get(business.id)
+
+        summaries.append(
+            BusinessSummary(
+                id=business.id,
+                name=business.name,
+                slug=business.slug,
+                vertical=business.vertical,
+                status=business.status,
+                location=location,
+                created_at=business.created_at,
+                updated_at=business.updated_at,
+                website=BusinessWebsiteSummary(status=website.status, live_url=website.deploy_url)
+                if website is not None
+                else None,
+                automation=(
+                    BusinessAutomationSummary(status=workflow.status, active=workflow.status == WorkflowStatus.ACTIVE)
+                    if workflow is not None
+                    else None
+                ),
+            )
+        )
+    return summaries
 
 
 @router.get("/{business_id}", response_model=BusinessRead)

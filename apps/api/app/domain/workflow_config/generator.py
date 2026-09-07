@@ -71,19 +71,18 @@ def generate_lead_capture_workflow(business_config: BusinessConfig) -> WorkflowC
 
     LEAD_FOLLOW_UP_EMAIL is deliberately its own action, not a reuse of
     EMAIL_SEND: EMAIL_SEND's `to` is a role (customer/business_owner)
-    resolved by n8n's own native SMTP credential — separate SMTP
-    configuration from this backend's own NotificationSender, and not a
-    fit for "the fresh literal address lead.lookup just returned".
-    Reusing it here would mean either duplicating SMTP setup in n8n on
-    top of the backend's, or changing EMAIL_SEND's translation for
-    every existing caller (customer_acknowledgement below) — out of
-    scope for this feature. See app.automation.n8n.translator and
+    resolved by the translator against whatever field the input item
+    actually carries — a fit for "the LeadResponse store-lead just
+    returned" (customer_acknowledgement below), but not for "the fresh
+    literal address lead.lookup just returned" after a wait, which is a
+    different translation-time shape entirely. See
+    app.automation.n8n.translator and
     app.notifications.service.deliver_lead_follow_up_email for how this
-    action actually sends, through the same SmtpNotificationSender
-    infrastructure internal notifications already use — never
-    represented as an InternalNotification row, which means something
-    different (the business's own team was told), not "the lead was
-    emailed".
+    action actually sends, through the same NotificationSender
+    infrastructure internal notifications and customer_acknowledgement
+    already use — never represented as an InternalNotification row,
+    which means something different (the business's own team was
+    told), not "the lead was emailed".
 
     Requires `automation.lead_capture` — raises rather than silently
     producing an empty workflow if that intent isn't actually enabled.
