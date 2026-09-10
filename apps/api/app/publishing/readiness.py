@@ -18,10 +18,11 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.domain.enums import DomainStatus, WebsiteStatus
+from app.domain.enums import AssetKind, DomainStatus, WebsiteStatus
 from app.publishing.domains import get_custom_domain_state
 from app.publishing.service import get_website_state
 from app.repositories.business import BusinessRepository
+from app.repositories.business_asset import BusinessAssetRepository
 from app.schemas.readiness import ProductionReadinessCheck, ProductionReadinessReport
 
 
@@ -93,8 +94,75 @@ def get_production_readiness(*, session: Session, tenant_id: UUID, business_id: 
         )
     )
 
+    checks.append(_brand_assets_check(session=session, tenant_id=tenant_id, business_id=business_id))
+    checks.append(_contact_channels_check(business.config if business is not None else None))
+
     has_blocking_issues = any(not check.ready and check.blocking for check in checks)
     return ProductionReadinessReport(checks=checks, has_blocking_issues=has_blocking_issues)
+
+
+def _brand_assets_check(*, session: Session, tenant_id: UUID, business_id: UUID) -> ProductionReadinessCheck:
+    """Informational only (LR-06) — a business can publish with no real
+    photos/logo (the generator falls back to text, never a fabricated
+    image), but the operator should see that plainly rather than
+    discover it after publishing. Reuses BusinessAssetRepository, the
+    same real, persisted data app.domain.creative.brief already reads —
+    never a second source of truth for what assets exist."""
+    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
+    has_logo = any(asset.kind is AssetKind.LOGO for asset in assets)
+    has_photos = any(asset.kind is AssetKind.IMAGE for asset in assets)
+
+    if has_logo and has_photos:
+        detail = "This business has a logo and photos on file."
+    elif has_logo:
+        detail = (
+            "This business has a logo but no photos yet — the generated site will use text/layout only where "
+            "photos would help."
+        )
+    elif has_photos:
+        detail = "This business has photos but no logo yet — the generated site will show its name as text instead."
+    else:
+        detail = (
+            "No logo or photos uploaded yet — the generated site will use text/layout only, never a fabricated "
+            "image."
+        )
+
+    return ProductionReadinessCheck(
+        id="brand_assets", label="Brand assets", ready=has_logo and has_photos, blocking=False, detail=detail
+    )
+
+
+def _contact_channels_check(business_config: dict | None) -> ProductionReadinessCheck:
+    """Informational only (LR-06) — whether this business's generated
+    site can actually capture/receive a lead through *some* real
+    channel: the website lead form, WhatsApp, or a configured email
+    provider. Reads only real, already-validated BusinessConfig/server
+    settings — never claims a channel is active because support for it
+    merely exists in this codebase."""
+    config = business_config or {}
+    lead_management = config.get("lead_management") or {}
+    has_lead_form = bool(lead_management.get("enabled")) and "website_form" in (lead_management.get("sources") or [])
+
+    whatsapp = config.get("whatsapp") or {}
+    has_whatsapp = bool(whatsapp.get("enabled")) and bool(whatsapp.get("phone_number"))
+
+    has_email_provider = bool(settings.resend_api_key or settings.smtp_host)
+
+    channels = [label for label, active in (("lead form", has_lead_form), ("WhatsApp", has_whatsapp)) if active]
+    ready = has_lead_form or has_whatsapp
+    if ready:
+        detail = f"This business can receive leads via: {', '.join(channels)}."
+        if has_email_provider:
+            detail += " Lead notifications can be emailed (an email provider is configured on this server)."
+    else:
+        detail = (
+            "No lead-capture channel is configured yet (no website lead form, no WhatsApp) — visitors will have no "
+            "way to contact this business through the site."
+        )
+
+    return ProductionReadinessCheck(
+        id="contact_channels", label="Contact channels", ready=ready, blocking=False, detail=detail
+    )
 
 
 def _hosting_provider_check() -> ProductionReadinessCheck:

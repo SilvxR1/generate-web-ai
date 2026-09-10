@@ -20,6 +20,7 @@ import {
   publishWebsiteDraft,
   updateCreativeConfig,
   uploadBusinessAsset,
+  uploadBusinessAssetsBatch,
   type BusinessAsset,
   type BusinessReview,
   type CreatedBusiness,
@@ -132,6 +133,15 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
             },
           )
         }
+        onUploadBatch={(files, category) =>
+          uploadBusinessAssetsBatch(businessId, files, { kind: "image", category }, tenantId).then((results) => {
+            const created = results.filter((result) => result.success && result.asset).map((result) => result.asset!);
+            if (created.length > 0) {
+              setAssets((prev) => ({ ...prev, data: [...created, ...(prev.data ?? [])] }));
+            }
+            return results;
+          })
+        }
         onAdd={(payload) =>
           createBusinessAsset(businessId, payload, tenantId).then((created) => {
             setAssets((prev) => ({ ...prev, data: [created, ...(prev.data ?? [])] }));
@@ -189,25 +199,41 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
             // no content of its own (see app.creative.internal's
             // docstring on the backend) — the actual SiteConfig is
             // computed here, exactly the same generateSiteConfig() call
-            // PreviewStep's own live preview already uses, then persisted
-            // as a safe draft (Phase 7/8). A future successful Higgsfield
+            // PreviewStep's own live preview already uses (including
+            // this business's real assets, LR-05), then persisted as a
+            // safe draft (Phase 7/8). A future successful Higgsfield
             // generation would carry its own output instead; this
             // auto-draft step only applies to Internal's website results.
-            if (
-              generation.status === "completed" &&
-              generation.provider === "internal" &&
-              generation.generation_type === "website" &&
-              business.config
-            ) {
-              setAutoDraftError(null);
-              const siteConfig = generateSiteConfig(business.config);
-              createWebsiteDraft(businessId, siteConfig, generation.id, tenantId)
-                .then((draft) => {
-                  setDrafts((prev) => ({ ...prev, data: [draft, ...(prev.data ?? [])] }));
-                })
-                .catch((caught: unknown) => {
+            //
+            // Both branches below are reachable failure states a
+            // previous version of this code silently swallowed (LR-03):
+            // no `business.config` yet (generation succeeded before the
+            // business proposal was ever completed) and a synchronous
+            // generateSiteConfig() throw (a malformed/incomplete
+            // config) — both used to leave the generation showing
+            // "Completed" with no explanation for why no preview ever
+            // appeared. Both now surface through the same
+            // `autoDraftError` banner the network-failure case already used.
+            if (generation.status === "completed" && generation.provider === "internal" && generation.generation_type === "website") {
+              if (!business.config) {
+                setAutoDraftError(
+                  "This business has no completed proposal yet — finish the business proposal before generating a website.",
+                );
+              } else {
+                setAutoDraftError(null);
+                try {
+                  const siteConfig = generateSiteConfig(business.config, assets.data ?? []);
+                  createWebsiteDraft(businessId, siteConfig, generation.id, tenantId)
+                    .then((draft) => {
+                      setDrafts((prev) => ({ ...prev, data: [draft, ...(prev.data ?? [])] }));
+                    })
+                    .catch((caught: unknown) => {
+                      setAutoDraftError(friendlyErrorMessage(caught, "Could not build a preview from this generation."));
+                    });
+                } catch (caught) {
                   setAutoDraftError(friendlyErrorMessage(caught, "Could not build a preview from this generation."));
-                });
+                }
+              }
             }
 
             return generation;

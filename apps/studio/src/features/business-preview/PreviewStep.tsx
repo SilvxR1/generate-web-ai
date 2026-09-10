@@ -18,11 +18,13 @@ import {
   getWebsiteState,
   getWebsiteVersions,
   getWorkflowPreview,
+  listBusinessAssets,
   publishWebsite,
   refreshCustomDomain,
   rollbackToWebsiteVersion,
   updateLeadStatus,
   type AutomationState,
+  type BusinessAsset,
   type BusinessMetrics,
   type CreatedBusiness,
   type CustomDomainState,
@@ -100,6 +102,11 @@ interface BusinessMetricsFetch {
   isLoading: boolean;
 }
 
+interface BusinessAssetsFetch {
+  assets: BusinessAsset[] | null;
+  isLoading: boolean;
+}
+
 export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: PreviewStepProps) {
   const [workflowState, setWorkflowState] = useState<WorkflowPreviewState>({
     workflow: null,
@@ -116,6 +123,11 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
   const [health, setHealth] = useState<WebsiteHealthFetch>({ health: null, isLoading: true });
   const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>("30d");
   const [metrics, setMetrics] = useState<BusinessMetricsFetch>({ metrics: null, isLoading: true });
+  // Real logo/photo assets (LR-05) — fetched here, not only inside the
+  // lazily-mounted CreativeSection, because the site preview below and
+  // the exact SiteConfig WebsitePublish sends both need them to actually
+  // show/publish a business's real brand assets, not only its text.
+  const [businessAssets, setBusinessAssets] = useState<BusinessAssetsFetch>({ assets: null, isLoading: true });
   const [reloadToken, setReloadToken] = useState(0);
   // CreativeSection fetches its own data (creative-config/assets/reviews/
   // generations) independently of the four calls above — mounting it
@@ -134,6 +146,7 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
     setWebsiteVersions((prev) => ({ ...prev, isLoading: true }));
     setReadiness((prev) => ({ ...prev, isLoading: true }));
     setLeads((prev) => ({ ...prev, isLoading: true, error: null }));
+    setBusinessAssets((prev) => ({ ...prev, isLoading: true }));
 
     getWorkflowPreview(business.id, tenantId)
       .then((workflow) => {
@@ -209,6 +222,18 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         if (!cancelled) setReadiness({ report: null, isLoading: false });
       });
 
+    // Same idea for this business's real asset library (backend's
+    // app.db.models.business_asset.BusinessAsset) — the real logo/photos
+    // a generated site should use (LR-05), fetched last, same reasoning
+    // as the calls above.
+    listBusinessAssets(business.id, tenantId)
+      .then((assets) => {
+        if (!cancelled) setBusinessAssets({ assets, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setBusinessAssets({ assets: null, isLoading: false });
+      });
+
     return () => {
       cancelled = true;
     };
@@ -248,8 +273,13 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
   // CreatedBusiness.config's docstring) — the same generateSiteConfig()
   // a real website build would use, not a parallel preview-only path.
   // Publishing (below) sends this exact object, never a separately
-  // recomputed one.
-  const siteConfig = useMemo(() => (business.config ? generateSiteConfig(business.config) : null), [business.config]);
+  // recomputed one. Includes this business's real assets (LR-05) so a
+  // real logo/photo is what gets previewed *and* published — never
+  // silently dropped between "what Studio shows" and "what goes live".
+  const siteConfig = useMemo(
+    () => (business.config ? generateSiteConfig(business.config, businessAssets.assets ?? []) : null),
+    [business.config, businessAssets.assets],
+  );
 
   return (
     <div className="preview-step">
@@ -292,6 +322,7 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         siteConfig={siteConfig}
         websiteState={website.state}
         isLoadingWebsiteState={website.isLoading}
+        customDomain={customDomain.state}
         onPublish={(config) =>
           publishWebsite(business.id, tenantId, config).then((state) => {
             setWebsite({ state, isLoading: false });
@@ -313,7 +344,7 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         }
       />
 
-      <h2>Custom domain</h2>
+      <h2 id="custom-domain-section">Custom domain</h2>
       <CustomDomainPanel
         websiteState={website.state}
         customDomain={customDomain.state}

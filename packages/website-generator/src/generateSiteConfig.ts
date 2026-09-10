@@ -13,24 +13,36 @@
  * certifications, or years of experience — see blocks.ts's Hero
  * docstring for the one field, `stat`, that exists specifically to hold
  * that kind of claim and is never populated here).
+ *
+ * `assets` (optional, defaults to none) is a business's real
+ * BusinessAsset rows — see assets.ts for the selection rules that turn
+ * them into a brand logo, a hero image, and a gallery, and design.ts for
+ * the deterministic per-business-family visual variation (LR-07)
+ * layered on top of them. Both are additive: a business with no assets
+ * and default creative direction produces exactly what this module
+ * always produced.
  */
 import type { BusinessConfig } from "@generate-web-ai/business-config-types";
 import type { BlockConfig, PageConfig, SiteConfig } from "@generate-web-ai/site-config";
+import type { BusinessAssetInput } from "./assets.ts";
+import { selectGalleryAssets, selectHeroAsset, selectLogoAsset } from "./assets.ts";
 import {
   buildAboutBlock,
   buildContactBlock,
   buildCtaBlock,
+  buildGalleryBlock,
   buildHeroBlock,
   buildServicesBlock,
   buildWhatsAppConfig,
 } from "./blocks.ts";
 import { buildBusiness } from "./business.ts";
+import { sanitizeCustomerCopy } from "./copy.ts";
+import { getDesignTokens, resolveDesignFamily } from "./design.ts";
 import { buildLegalPages } from "./legal.ts";
 import { getPreset } from "./presets.ts";
 import { buildSeo } from "./seo.ts";
-import { DEFAULT_THEME } from "./theme.ts";
 
-export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
+export function generateSiteConfig(businessConfig: BusinessConfig, assets: readonly BusinessAssetInput[] = []): SiteConfig {
   const {
     business_profile: profile,
     brand,
@@ -39,20 +51,52 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
     legal_profile: legalProfile,
     whatsapp: whatsappConfig,
   } = businessConfig;
-  const preset = getPreset(profile.industry);
 
-  const blocks: BlockConfig[] = [buildHeroBlock(profile, preset)];
+  const realGalleryAssetCount = selectGalleryAssets(assets).length;
+  const family = resolveDesignFamily(profile.industry, brand?.visual_style, realGalleryAssetCount);
+  const tokens = getDesignTokens(family);
+  const preset = getPreset(profile.industry, family);
+
+  // Real assets always take priority over a generated/text substitute
+  // for the same role (LR-05). A business's own manually-entered
+  // `brand.logo` is still a real, human-provided fact — used only when
+  // no uploaded/imported BusinessAsset fills the logo role.
+  const logoAsset = selectLogoAsset(assets);
+  const heroAsset = selectHeroAsset(assets);
+  const galleryAssets = selectGalleryAssets(assets, heroAsset ? new Set([heroAsset.storage_url]) : undefined);
+
+  const customerFacingDescription = sanitizeCustomerCopy(profile.description);
+
+  const blocks: BlockConfig[] = [buildHeroBlock(profile, preset, customerFacingDescription, heroAsset)];
 
   const servicesBlock = buildServicesBlock(profile, preset);
   if (servicesBlock) blocks.push(servicesBlock);
 
-  const aboutBlock = buildAboutBlock(profile, preset);
+  const galleryBlock = buildGalleryBlock(galleryAssets, preset, profile.name);
+  if (galleryBlock && tokens.galleryPlacement === "after_services") blocks.push(galleryBlock);
+
+  const aboutBlock = buildAboutBlock(profile, preset, customerFacingDescription);
   if (aboutBlock) blocks.push(aboutBlock);
 
-  blocks.push(buildCtaBlock(profile, preset));
+  if (galleryBlock && tokens.galleryPlacement === "after_about") blocks.push(galleryBlock);
+
+  blocks.push(buildCtaBlock(profile, preset, tokens.ctaVariant));
 
   const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig);
   if (contactBlock) blocks.push(contactBlock);
+
+  if (galleryBlock && tokens.galleryPlacement === "after_hero") {
+    blocks.splice(1, 0, galleryBlock);
+  }
+
+  if (tokens.alternateSurfaces) {
+    let surfaceToggle = false;
+    for (const block of blocks) {
+      if (block.type === "hero" || block.type === "cta" || block.type === "contact") continue;
+      block.background = surfaceToggle ? "surface" : "base";
+      surfaceToggle = !surfaceToggle;
+    }
+  }
 
   const siteWhatsappConfig = buildWhatsAppConfig(whatsappConfig);
 
@@ -64,6 +108,11 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
     brand: {
       name: profile.name,
       ...(brand?.tagline ? { tagline: brand.tagline } : {}),
+      ...(logoAsset
+        ? { logo: { src: logoAsset.storage_url, alt: logoAsset.alt_text?.trim() || `Logo de ${profile.name}` } }
+        : brand?.logo
+          ? { logo: { src: brand.logo.url, alt: brand.logo.alt } }
+          : {}),
     },
     // BrandTypography (BusinessConfig) and ThemeFontConfig
     // (site-config) share the same field names (sans/display) by
@@ -76,16 +125,16 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
       ? {
           colors: brand.colors,
           fonts: { sans: brand.typography.sans, display: brand.typography.display ?? undefined },
-          radius: DEFAULT_THEME.radius,
+          radius: tokens.radius,
         }
-      : DEFAULT_THEME,
+      : { colors: tokens.colors, fonts: tokens.fonts, radius: tokens.radius },
     pages: [page, ...legalPages],
     features: {
       contactForm: Boolean(contactBlock?.content.form),
       chatbot: false,
       booking: false,
     },
-    seo: buildSeo(profile, website),
+    seo: buildSeo(profile, website, customerFacingDescription),
     ...(business ? { business } : {}),
     ...(siteWhatsappConfig ? { whatsapp: siteWhatsappConfig } : {}),
   };

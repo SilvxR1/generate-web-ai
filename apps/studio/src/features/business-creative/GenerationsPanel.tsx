@@ -15,7 +15,15 @@ interface GenerationsPanelProps {
   onGenerate: (generationType: CreativeGenerationType) => Promise<CreativeGeneration>;
 }
 
-const TYPE_OPTIONS: CreativeGenerationType[] = ["website", "website_concept", "image", "video", "visual_asset"];
+// "website" is the one primary, always-meaningful action (see the big
+// button below) — every other type is either an internal-only concept
+// with no operator-facing output today (`website_concept`: Internal's
+// generate_concept returns static metadata, nothing worth showing a
+// user) or unsupported by any configured provider yet (image/video/
+// visual_asset). Kept available in "Advanced" for a future premium
+// provider, never presented as if it already works (LR-03: "do not
+// clutter the main workflow with unsupported types").
+const ADVANCED_TYPE_OPTIONS: CreativeGenerationType[] = ["website", "website_concept", "image", "video", "visual_asset"];
 
 const STATUS_LABELS: Record<CreativeGeneration["status"], string> = {
   pending: "Pending",
@@ -45,7 +53,7 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
  * website_concept today, so image/video/visual_asset are disabled with
  * an explicit reason rather than left selectable to fail every time. */
 export function GenerationsPanel({ generations, isLoading, error, providers, onGenerate }: GenerationsPanelProps) {
-  const [generationType, setGenerationType] = useState<CreativeGenerationType>("website");
+  const [advancedType, setAdvancedType] = useState<CreativeGenerationType>("website");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
@@ -59,7 +67,7 @@ export function GenerationsPanel({ generations, isLoading, error, providers, onG
     return supported;
   }, [providers]);
 
-  async function handleGenerate() {
+  async function handleGenerate(generationType: CreativeGenerationType) {
     setIsGenerating(true);
     setGenerateError(null);
     try {
@@ -110,26 +118,45 @@ export function GenerationsPanel({ generations, isLoading, error, providers, onG
       )}
 
       {generateError && <p className="banner banner--error">{generateError}</p>}
-      <div className="generations-panel__form">
-        <select
-          value={generationType}
-          onChange={(event) => setGenerationType(event.target.value as CreativeGenerationType)}
-        >
-          {TYPE_OPTIONS.map((type) => (
-            <option key={type} value={type} disabled={providers != null && !supportedTypes.has(type)}>
-              {type}
-              {providers != null && !supportedTypes.has(type) ? " (no available provider)" : ""}
-            </option>
-          ))}
-        </select>
+
+      <div className="generations-panel__primary">
         <button
           type="button"
-          onClick={handleGenerate}
-          disabled={isGenerating || (providers != null && !supportedTypes.has(generationType))}
+          onClick={() => handleGenerate("website")}
+          disabled={isGenerating || (providers != null && !supportedTypes.has("website"))}
         >
-          {isGenerating ? "Generating…" : "Generate"}
+          {isGenerating ? "Generating website…" : "Generate website"}
         </button>
+        <p className="field-hint">
+          Builds a website from this business's current information, brand, and photos. You'll review it below before
+          it ever goes live.
+        </p>
       </div>
+
+      <details className="generations-panel__advanced">
+        <summary>Advanced generation options</summary>
+        <p className="field-hint">
+          Other generation types this platform's providers can produce. Most businesses never need this — the button
+          above is the normal way to generate a website.
+        </p>
+        <div className="generations-panel__form">
+          <select value={advancedType} onChange={(event) => setAdvancedType(event.target.value as CreativeGenerationType)}>
+            {ADVANCED_TYPE_OPTIONS.map((type) => (
+              <option key={type} value={type} disabled={providers != null && !supportedTypes.has(type)}>
+                {type}
+                {providers != null && !supportedTypes.has(type) ? " (no available provider)" : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => handleGenerate(advancedType)}
+            disabled={isGenerating || (providers != null && !supportedTypes.has(advancedType))}
+          >
+            {isGenerating ? "Generating…" : "Generate"}
+          </button>
+        </div>
+      </details>
     </div>
   );
 }

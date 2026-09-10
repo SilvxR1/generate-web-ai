@@ -123,6 +123,14 @@ class BusinessProfile(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     slug: str = Field(min_length=1, max_length=100, pattern=SLUG_PATTERN.pattern)
     industry: BusinessVertical
+    # Customer-facing (LR-08): published, largely verbatim, as hero/about
+    # website copy and the SEO meta description — never internal
+    # briefing/strategy commentary about the website project itself (e.g.
+    # "no website yet", "no ecommerce in v1", a conversion/SEO objective).
+    # app.analysis.claude.prompts.SYSTEM_PROMPT instructs the analyzer to
+    # populate it that way, and packages/website-generator's
+    # `sanitizeCustomerCopy` is a deterministic safety net for whatever
+    # reaches this field regardless of source (analyzer or manual edit).
     description: str | None = Field(default=None, max_length=2000)
     location: Location | None = None
     service_area: list[str] = Field(default_factory=list)

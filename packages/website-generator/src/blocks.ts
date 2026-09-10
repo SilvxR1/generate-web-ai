@@ -11,10 +11,13 @@ import type {
   ContactWhatsAppCtaConfig,
   CTABlockConfig,
   FeaturesBlockConfig,
+  GalleryBlockConfig,
   HeroBlockConfig,
   ServicesBlockConfig,
   WhatsAppConfig,
 } from "@generate-web-ai/site-config";
+import type { BusinessAssetInput } from "./assets.ts";
+import { assetToImageConfig } from "./assets.ts";
 import type { WebsiteGeneratorPreset } from "./presets.ts";
 
 function toTelHref(phone: string): string {
@@ -58,8 +61,20 @@ export function buildWhatsAppConfig(whatsappConfig: BusinessWhatsAppConfig | und
  * (HeroBlockContent.stat) — that field exists specifically for a claim
  * like "+10 años de experiencia", exactly the kind of unverifiable
  * business fact this generator must never invent.
+ *
+ * `subheading` is real customer-facing description only — see copy.ts's
+ * `sanitizeCustomerCopy`, applied by the caller before this function ever
+ * sees it, so no internal briefing/strategy sentence reaches this block
+ * (LR-08). `heroImage` is a real BusinessAsset chosen by the caller
+ * (assets.ts's `selectHeroAsset`) — never a generated/stock substitute
+ * while a real photo exists (LR-05).
  */
-export function buildHeroBlock(profile: BusinessProfile, preset: WebsiteGeneratorPreset): HeroBlockConfig {
+export function buildHeroBlock(
+  profile: BusinessProfile,
+  preset: WebsiteGeneratorPreset,
+  customerFacingDescription: string | undefined,
+  heroImage?: BusinessAssetInput,
+): HeroBlockConfig {
   const services = profile.services ?? [];
 
   return {
@@ -68,9 +83,10 @@ export function buildHeroBlock(profile: BusinessProfile, preset: WebsiteGenerato
     content: {
       ...(profile.location?.city ? { eyebrow: profile.location.city } : {}),
       heading: profile.name,
-      subheading: profile.description || preset.heroSubheadingFallback || undefined,
+      subheading: customerFacingDescription || preset.heroSubheadingFallback || undefined,
       primaryAction: { label: "Contactar", href: "#contact" },
       ...(services.length > 0 ? { secondaryAction: { label: "Ver servicios", href: "#services" } } : {}),
+      ...(heroImage ? { image: assetToImageConfig(heroImage, `Foto de ${profile.name}`) } : {}),
     },
   };
 }
@@ -104,7 +120,11 @@ export function buildServicesBlock(profile: BusinessProfile, preset: WebsiteGene
  * a real BusinessProfile field: service_area and target_customers. Both
  * absent -> no block (no invented "why choose us" content).
  */
-export function buildAboutBlock(profile: BusinessProfile, preset: WebsiteGeneratorPreset): FeaturesBlockConfig | null {
+export function buildAboutBlock(
+  profile: BusinessProfile,
+  preset: WebsiteGeneratorPreset,
+  customerFacingDescription: string | undefined,
+): FeaturesBlockConfig | null {
   const items: FeaturesBlockConfig["content"]["items"] = [];
   const serviceArea = profile.service_area ?? [];
 
@@ -115,15 +135,51 @@ export function buildAboutBlock(profile: BusinessProfile, preset: WebsiteGenerat
     items.push({ title: "¿Para quién?", description: profile.target_customers });
   }
 
-  if (items.length === 0 && !profile.description) return null;
+  if (items.length === 0 && !customerFacingDescription) return null;
 
   return {
     type: "features",
     id: "about",
     content: {
       heading: preset.aboutHeading,
-      ...(profile.description ? { subheading: profile.description } : {}),
+      ...(customerFacingDescription ? { subheading: customerFacingDescription } : {}),
       items,
+    },
+  };
+}
+
+/** Only generated when the business has real gallery-worthy photography
+ * (assets.ts's `selectGalleryAssets`) — never invented placeholder
+ * imagery. Each item's `title` is deliberately generic (its category,
+ * title-cased) rather than a fabricated project name this generator has
+ * no basis to invent. */
+const CATEGORY_LABELS: Record<string, string> = {
+  project: "Proyecto",
+  gallery: "Trabajo realizado",
+  product: "Producto",
+  before: "Antes",
+  after: "Después",
+  team: "Equipo",
+  facility: "Instalaciones",
+};
+
+export function buildGalleryBlock(
+  images: readonly BusinessAssetInput[],
+  preset: WebsiteGeneratorPreset,
+  businessName: string,
+): GalleryBlockConfig | null {
+  if (images.length === 0) return null;
+
+  return {
+    type: "gallery",
+    id: "gallery",
+    content: {
+      heading: preset.galleryHeading,
+      items: images.map((asset, index) => ({
+        title: CATEGORY_LABELS[asset.category] ?? businessName,
+        ...(asset.category ? { category: CATEGORY_LABELS[asset.category] } : {}),
+        image: assetToImageConfig(asset, `${businessName} — foto ${index + 1}`),
+      })),
     },
   };
 }
@@ -131,7 +187,11 @@ export function buildAboutBlock(profile: BusinessProfile, preset: WebsiteGenerat
 /** Always generated — every business has *something* worth a
  * call-to-action, and both fields here are generic template copy plus a
  * real in-page anchor, never a claim about the business. */
-export function buildCtaBlock(profile: BusinessProfile, preset: WebsiteGeneratorPreset): CTABlockConfig {
+export function buildCtaBlock(
+  profile: BusinessProfile,
+  preset: WebsiteGeneratorPreset,
+  variant: "default" | "emphasis" = "default",
+): CTABlockConfig {
   const phone = profile.contact?.phone;
 
   return {
@@ -141,6 +201,7 @@ export function buildCtaBlock(profile: BusinessProfile, preset: WebsiteGenerator
       heading: preset.ctaHeading,
       primaryAction: { label: preset.ctaPrimaryLabel, href: "#contact" },
       ...(phone ? { secondaryAction: { label: "Llamar ahora", href: toTelHref(phone) } } : {}),
+      ...(variant !== "default" ? { variant } : {}),
     },
   };
 }

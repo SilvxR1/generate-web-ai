@@ -443,12 +443,14 @@ export function ProposalReview({
         <legend>Legal profile</legend>
         <p className="field-hint">
           Used to fill in this business's generated Privacy Policy, Terms of Service, and Cookie Policy pages. Every
-          field is optional — anything left blank shows as "Not provided" on those pages rather than being
-          invented. This app never purchases, registers, or verifies these facts on your behalf.
+          field below is optional and can be completed later — anything left blank shows as "Not provided" on those
+          pages rather than being invented. This app never purchases, registers, verifies, or gives legal advice
+          about any of these facts on your behalf.
         </p>
 
+        <p className="field-label field-label--group">Business identity</p>
         <label className="field-label" htmlFor="legal-name">
-          Legal name
+          Legal / registered entity name (only if different from "{draft.name || "the business name above"}")
         </label>
         <input
           id="legal-name"
@@ -462,7 +464,7 @@ export function ProposalReview({
         />
 
         <label className="field-label" htmlFor="legal-registration-number">
-          Registration number
+          Company/registration number
         </label>
         <input
           id="legal-registration-number"
@@ -475,7 +477,7 @@ export function ProposalReview({
         />
 
         <label className="field-label" htmlFor="legal-tax-id">
-          Tax ID
+          Tax identifier (VAT/EIN/NIF, depending on your country)
         </label>
         <input
           id="legal-tax-id"
@@ -487,6 +489,7 @@ export function ProposalReview({
           }}
         />
 
+        <p className="field-label field-label--group">Registered address</p>
         <label className="field-label" htmlFor="legal-street-address">
           Registered address — street
         </label>
@@ -564,8 +567,9 @@ export function ProposalReview({
           }}
         />
 
+        <p className="field-label field-label--group">Privacy &amp; compliance</p>
         <label className="field-label" htmlFor="legal-privacy-contact-email">
-          Privacy contact email
+          Privacy contact email (where a customer's data-privacy request should go)
         </label>
         <input
           id="legal-privacy-contact-email"
@@ -578,18 +582,72 @@ export function ProposalReview({
           }}
         />
 
-        <label className="field-label" htmlFor="legal-data-processors">
-          Third-party data processors (comma-separated, e.g. "Resend (email), Cloudflare (hosting)")
-        </label>
-        <input
-          id="legal-data-processors"
-          type="text"
-          value={draft.legalProfile.dataProcessors}
-          onChange={(event) => {
-            const dataProcessors = event.target.value;
-            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, dataProcessors } }));
-          }}
-        />
+        <details className="legal-processors-advanced">
+          <summary>Advanced: third-party data processors</summary>
+          <p className="field-hint">
+            Only list a service that actually receives this business's visitor/customer data — e.g. an email
+            provider that sends notifications, or an automation tool that processes lead submissions. This platform
+            never assumes a provider is active just because it's supported; add one here only if it genuinely
+            applies to this business. Common examples for a site built on this platform:{" "}
+            <button
+              type="button"
+              className="legal-processors-advanced__suggestion"
+              onClick={() =>
+                onChange((prev) => ({
+                  ...prev,
+                  legalProfile: {
+                    ...prev.legalProfile,
+                    dataProcessors: [prev.legalProfile.dataProcessors, "Cloudflare (hosting)"].filter(Boolean).join(", "),
+                  },
+                }))
+              }
+            >
+              + Cloudflare (hosting)
+            </button>{" "}
+            <button
+              type="button"
+              className="legal-processors-advanced__suggestion"
+              onClick={() =>
+                onChange((prev) => ({
+                  ...prev,
+                  legalProfile: {
+                    ...prev.legalProfile,
+                    dataProcessors: [prev.legalProfile.dataProcessors, "Resend (email)"].filter(Boolean).join(", "),
+                  },
+                }))
+              }
+            >
+              + Resend (email)
+            </button>{" "}
+            <button
+              type="button"
+              className="legal-processors-advanced__suggestion"
+              onClick={() =>
+                onChange((prev) => ({
+                  ...prev,
+                  legalProfile: {
+                    ...prev.legalProfile,
+                    dataProcessors: [prev.legalProfile.dataProcessors, "n8n (automation)"].filter(Boolean).join(", "),
+                  },
+                }))
+              }
+            >
+              + n8n (automation)
+            </button>
+          </p>
+          <label className="field-label" htmlFor="legal-data-processors">
+            Third-party data processors (comma-separated)
+          </label>
+          <input
+            id="legal-data-processors"
+            type="text"
+            value={draft.legalProfile.dataProcessors}
+            onChange={(event) => {
+              const dataProcessors = event.target.value;
+              onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, dataProcessors } }));
+            }}
+          />
+        </details>
       </fieldset>
 
       <details className="json-preview">

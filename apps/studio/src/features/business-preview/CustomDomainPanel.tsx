@@ -86,22 +86,28 @@ export function CustomDomainPanel({
       )}
 
       {isWebsiteLive && !customDomain && (
-        <form className="custom-domain-panel__attach-form" onSubmit={handleAttach}>
-          <label>
-            Domain
-            <input
-              type="text"
-              value={domainInput}
-              onChange={(event) => setDomainInput(event.target.value)}
-              placeholder="example.com"
-              disabled={ui.kind === "attaching"}
-              required
-            />
-          </label>
-          <button type="submit" disabled={ui.kind === "attaching" || domainInput.trim() === ""}>
-            {ui.kind === "attaching" ? "Attaching…" : "Attach domain"}
-          </button>
-        </form>
+        <>
+          <p className="field-hint">
+            If this business doesn't have a domain yet, that's fine — it's fine to configure later, and the site
+            stays reachable at its technical preview URL until then.
+          </p>
+          <form className="custom-domain-panel__attach-form" onSubmit={handleAttach}>
+            <label>
+              Domain (leave this for later if the business doesn't already own one)
+              <input
+                type="text"
+                value={domainInput}
+                onChange={(event) => setDomainInput(event.target.value)}
+                placeholder="example.com"
+                disabled={ui.kind === "attaching"}
+                required
+              />
+            </label>
+            <button type="submit" disabled={ui.kind === "attaching" || domainInput.trim() === ""}>
+              {ui.kind === "attaching" ? "Attaching…" : "Attach domain"}
+            </button>
+          </form>
+        </>
       )}
 
       {customDomain && customDomain.status === "active" && (
