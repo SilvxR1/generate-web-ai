@@ -171,3 +171,85 @@ describe("generateSiteConfig — seo.description length cap", () => {
     expect(site.seo.description.length).toBeLessThanOrEqual(500);
   });
 });
+
+// P1.1: WhatsApp CTA generation — never fabricated, never forced on,
+// placements strictly follow configuration.
+describe("generateSiteConfig — WhatsApp", () => {
+  it("omits site.whatsapp entirely when not configured", () => {
+    const site = generateSiteConfig(minimalBusinessConfig());
+
+    expect(site.whatsapp).toBeUndefined();
+  });
+
+  it("omits site.whatsapp when whatsapp is present but disabled", () => {
+    const site = generateSiteConfig(minimalBusinessConfig({ whatsapp: { enabled: false } }));
+
+    expect(site.whatsapp).toBeUndefined();
+  });
+
+  it("maps a fully-configured whatsapp block to site-config's camelCase shape", () => {
+    const site = generateSiteConfig(
+      minimalBusinessConfig({
+        whatsapp: {
+          enabled: true,
+          phone_number: "+34 600 123 456",
+          default_message: "Hola, he visto vuestra web y me gustaría solicitar información.",
+          show_floating_button: true,
+          show_contact_cta: true,
+          tracking_enabled: true,
+        },
+      }),
+    );
+
+    expect(site.whatsapp).toEqual({
+      enabled: true,
+      phoneNumber: "+34 600 123 456",
+      defaultMessage: "Hola, he visto vuestra web y me gustaría solicitar información.",
+      showFloatingButton: true,
+      showContactCta: true,
+      trackingEnabled: true,
+    });
+  });
+
+  it("never renders a contact-section WhatsApp CTA when show_contact_cta is false", () => {
+    const site = generateSiteConfig(
+      minimalBusinessConfig({
+        whatsapp: { enabled: true, phone_number: "+34600123456", show_contact_cta: false },
+      }),
+    );
+
+    const contact = site.pages[0]?.blocks.find((b) => b.type === "contact");
+    expect(contact).toBeUndefined(); // no other contact detail configured either
+  });
+
+  it("renders a contact-section WhatsApp CTA with a wa.me link and prefilled message when show_contact_cta is true", () => {
+    const site = generateSiteConfig(
+      minimalBusinessConfig({
+        whatsapp: {
+          enabled: true,
+          phone_number: "+34 600 123 456",
+          default_message: "Hola!",
+          show_contact_cta: true,
+        },
+      }),
+    );
+
+    const contact = site.pages[0]?.blocks.find((b) => b.type === "contact");
+    expect(contact).toBeDefined();
+    if (contact?.type !== "contact") throw new Error("expected a contact block");
+    expect(contact.content.whatsappCta?.href).toBe("https://wa.me/34600123456?text=Hola!");
+    expect(contact.content.whatsappCta?.label).toBeTruthy();
+  });
+
+  it("never fabricates a phone number — no digits appear that weren't in the real config", () => {
+    const site = generateSiteConfig(
+      minimalBusinessConfig({
+        whatsapp: { enabled: true, phone_number: "+34611222333", show_contact_cta: true },
+      }),
+    );
+
+    const contact = site.pages[0]?.blocks.find((b) => b.type === "contact");
+    if (contact?.type !== "contact") throw new Error("expected a contact block");
+    expect(contact.content.whatsappCta?.href).toContain("34611222333");
+  });
+});

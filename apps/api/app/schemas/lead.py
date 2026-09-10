@@ -1,9 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from app.domain.enums import LeadStatus
+from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 
 
 class LeadRead(BaseModel):
@@ -20,6 +20,7 @@ class LeadRead(BaseModel):
     source_url: str | None
     consent_given: bool
     status: LeadStatus
+    acknowledgement_status: NotificationDeliveryStatus
     created_at: datetime
 
 
@@ -32,3 +33,21 @@ class LeadStatusUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: LeadStatus
+
+
+class LeadNoteCreateRequest(BaseModel):
+    """Body for POST /businesses/{id}/leads/{id}/notes (P1.3) — one plain
+    internal note, never a structured activity-timeline entry."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=2000)
+
+
+class LeadNoteRead(BaseModel):
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: uuid.UUID
+    lead_id: uuid.UUID
+    body: str
+    created_at: datetime

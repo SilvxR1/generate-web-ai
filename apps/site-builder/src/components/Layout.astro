@@ -28,7 +28,10 @@
  * `</style>` break out of the tag and inject real markup.
  */
 import type { SiteConfig } from "@generate-web-ai/site-config";
+import Analytics from "./Analytics.astro";
 import CookieConsentBanner from "./CookieConsentBanner.astro";
+import LeadSubmission from "./LeadSubmission.astro";
+import WhatsAppFloatingButton from "./WhatsAppFloatingButton.astro";
 import "../styles/global.css";
 
 export interface Props {
@@ -36,7 +39,21 @@ export interface Props {
 }
 
 const { siteConfig } = Astro.props;
-const { theme, seo, brand, pages } = siteConfig;
+const { theme, seo, brand, pages, whatsapp, businessId } = siteConfig;
+const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL as string | undefined;
+
+// Same digits-only + optional prefilled-message shape
+// @generate-web-ai/website-generator's toWhatsAppHref already produces —
+// duplicated here rather than imported since that helper lives in a
+// package with no Astro/browser runtime dependency of its own; this is
+// the one other place a real wa.me link needs building (the floating
+// button, which packages/website-generator has no block/placement for).
+const whatsappFloatingHref =
+  whatsapp?.enabled && whatsapp.showFloatingButton
+    ? `https://wa.me/${whatsapp.phoneNumber.replace(/\D/g, "")}${
+        whatsapp.defaultMessage ? `?text=${encodeURIComponent(whatsapp.defaultMessage)}` : ""
+      }`
+    : null;
 
 // Only linked when the SiteConfig actually has that page — never a
 // dead link guessed at for a business that (in principle, even though
@@ -93,6 +110,9 @@ if (theme.fonts.display) {
       )}
     </footer>
     <CookieConsentBanner />
+    {whatsappFloatingHref && <WhatsAppFloatingButton href={whatsappFloatingHref} />}
+    <Analytics businessId={businessId} whatsappTrackingEnabled={whatsapp?.trackingEnabled !== false} />
+    <LeadSubmission businessId={businessId} apiBaseUrl={apiBaseUrl} />
   </body>
 </html>
 

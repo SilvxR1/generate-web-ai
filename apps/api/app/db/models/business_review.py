@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -51,5 +51,11 @@ class BusinessReview(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Bas
     # The raw provider payload, kept verbatim for provenance/audit — never
     # parsed back into body/rating after initial import.
     raw_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # P1.6: hidden vs. deleted are deliberately different actions — a
+    # business can stop showing a real review on its website without
+    # losing its provenance (source/source_review_id/raw_payload stay
+    # intact either way). Website generation must only ever use reviews
+    # where this is True; Studio's own management list shows both.
+    is_visible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     business: Mapped["Business"] = relationship(back_populates="reviews")

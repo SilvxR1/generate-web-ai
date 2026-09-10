@@ -1,0 +1,167 @@
+---
+/**
+ * Completes P1's contact-form → Lead API flow (Part B): listens for the
+ * `lead.submitted` event Contact.astro dispatches (packages/blocks) —
+ * which only ever fires when that form has no configured `action`, i.e.
+ * no active n8n automation is wired up (see Contact.astro's own
+ * docstring) — and actually POSTs the mapped fields to this backend's
+ * public, anonymous Lead endpoint:
+ *
+ *   POST {PUBLIC_API_BASE_URL}/public/businesses/{businessId}/leads
+ *
+ * A form *with* a real `action` is never touched by this component at
+ * all: Contact.astro never dispatches `lead.submitted` for it, so the
+ * browser's own native submission (straight to n8n's webhook) is the
+ * only thing that ever happens — no double-post, by construction, not
+ * by a runtime branch here.
+ *
+ * `businessId` (SiteConfig.businessId, injected server-side at
+ * build/publish time — see app.schemas.site_config's own docstring) and
+ * `apiBaseUrl` (PUBLIC_API_BASE_URL, an Astro build-time env var) are
+ * both optional: without either, this component still renders nothing
+ * and does nothing beyond the DOM event already firing — the same safe
+ * no-op shape apps/site-builder's Analytics.astro already uses for the
+ * same reason (e.g. a local `astro build` run outside the real
+ * publishing pipeline never throws).
+ */
+export interface Props {
+  businessId?: string;
+  apiBaseUrl?: string;
+}
+
+const { businessId, apiBaseUrl } = Astro.props;
+---
+
+<script is:inline type="application/json" id="lead-submission-config" set:html={JSON.stringify({ businessId, apiBaseUrl })} />
+<script>
+  import { buildPublicLeadPayload } from "../lib/leadPayload.ts";
+
+  declare global {
+    interface Window {
+      gwaAnalytics?: { track: (eventType: string, metadata?: Record<string, string>) => void };
+    }
+  }
+
+  interface LeadSubmissionConfig {
+    businessId?: string;
+    apiBaseUrl?: string;
+  }
+
+  function readConfig(): LeadSubmissionConfig {
+    const raw = document.getElementById("lead-submission-config")?.textContent;
+    if (!raw) return {};
+    try {
+      return JSON.parse(raw) as LeadSubmissionConfig;
+    } catch {
+      return {};
+    }
+  }
+
+  const { businessId, apiBaseUrl } = readConfig();
+  const leadsUrl = businessId && apiBaseUrl ? `${apiBaseUrl}/public/businesses/${businessId}/leads` : null;
+
+  function statusElementFor(form: HTMLFormElement): HTMLParagraphElement {
+    let status = form.querySelector<HTMLParagraphElement>(".block-contact__status");
+    if (!status) {
+      status = document.createElement("p");
+      status.className = "block-contact__status";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      form.appendChild(status);
+    }
+    return status;
+  }
+
+  function setFormDisabled(form: HTMLFormElement, disabled: boolean) {
+    for (const element of Array.from(form.elements)) {
+      (element as HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement).disabled = disabled;
+    }
+  }
+
+  function resolveServiceLabel(form: HTMLFormElement): string | undefined {
+    const select = form.querySelector<HTMLSelectElement>('select[name="service"]');
+    if (!select || select.selectedIndex < 0) return undefined;
+    return select.options[select.selectedIndex]?.textContent?.trim() || undefined;
+  }
+
+  async function handleLeadSubmitted(event: Event) {
+    const detail = (event as CustomEvent<{ fields: Record<string, string>; form: HTMLFormElement }>).detail;
+    const { fields, form } = detail;
+    const status = statusElementFor(form);
+
+    // Prevent duplicate immediate resubmission — a second `submit`
+    // firing (double-click, Enter held down) while one request is
+    // already in flight, or after a real success, is simply ignored.
+    if (form.dataset.leadSubmissionState === "submitting" || form.dataset.leadSubmissionState === "submitted") {
+      return;
+    }
+
+    if (!leadsUrl) {
+      // No business id / API base URL configured (e.g. a local build
+      // outside the real publishing pipeline) — nothing to submit to.
+      // Never pretends success here; simply nothing happens beyond the
+      // DOM event, same as before this component existed.
+      return;
+    }
+
+    form.dataset.leadSubmissionState = "submitting";
+    setFormDisabled(form, true);
+    status.textContent = "";
+    status.classList.remove("block-contact__status--error", "block-contact__status--success");
+
+    const payload = buildPublicLeadPayload({ fields, serviceLabel: resolveServiceLabel(form) });
+
+    let succeeded = false;
+    try {
+      const response = await fetch(leadsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      // A non-2xx here is a real backend/network problem (rate limited,
+      // validation error, disabled lead capture, ...) — never confused
+      // with the backend's own, deliberate "identical response for a
+      // real vs. a silently-dropped spam submission" behavior, which
+      // this code never tries to see past (both look like `response.ok`
+      // here, and both correctly show the same success state).
+      if (!response.ok) throw new Error(`lead submission failed with status ${response.status}`);
+      succeeded = true;
+    } catch {
+      succeeded = false;
+    }
+
+    if (succeeded) {
+      form.dataset.leadSubmissionState = "submitted";
+      status.textContent = "Gracias. Hemos recibido tu mensaje y te responderemos en breve.";
+      status.classList.add("block-contact__status--success");
+      // Form stays disabled (set above) — prevents any further
+      // resubmission of the same content.
+      window.gwaAnalytics?.track("lead_submitted");
+    } else {
+      form.dataset.leadSubmissionState = "error";
+      status.textContent = "No hemos podido enviar tu mensaje. Comprueba tu conexión e inténtalo de nuevo.";
+      status.classList.add("block-contact__status--error");
+      // Re-enable so the visitor can retry without retyping anything —
+      // field values are untouched, nothing was cleared.
+      setFormDisabled(form, false);
+    }
+  }
+
+  document.addEventListener("lead.submitted", handleLeadSubmitted);
+</script>
+
+<style>
+  .block-contact__status {
+    margin: 0.75rem 0 0;
+    font-family: var(--ui-font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: 0.9rem;
+  }
+
+  .block-contact__status--success {
+    color: var(--ui-color-success-fg, #15803d);
+  }
+
+  .block-contact__status--error {
+    color: var(--ui-color-error-fg, #b91c1c);
+  }
+</style>

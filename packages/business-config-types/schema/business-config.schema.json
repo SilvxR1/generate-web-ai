@@ -924,6 +924,51 @@
         "sunday"
       ],
       "type": "string"
+    },
+    "WhatsAppConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "default_message": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "phone_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "show_contact_cta": {
+          "default": false,
+          "type": "boolean"
+        },
+        "show_floating_button": {
+          "default": false,
+          "type": "boolean"
+        },
+        "tracking_enabled": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -974,6 +1019,9 @@
     },
     "website": {
       "$ref": "#/$defs/WebsiteConfig"
+    },
+    "whatsapp": {
+      "$ref": "#/$defs/WhatsAppConfig"
     }
   },
   "required": [

@@ -10,6 +10,7 @@ import {
   createWebsiteDraft,
   deleteBusinessAsset,
   deleteBusinessReview,
+  updateBusinessReviewVisibility,
   getCreativeConfig,
   listBusinessAssets,
   listBusinessReviews,
@@ -158,6 +159,15 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
         onDelete={(reviewId) =>
           deleteBusinessReview(businessId, reviewId, tenantId).then(() => {
             setReviews((prev) => ({ ...prev, data: (prev.data ?? []).filter((review) => review.id !== reviewId) }));
+          })
+        }
+        onToggleVisibility={(reviewId, isVisible) =>
+          updateBusinessReviewVisibility(businessId, reviewId, isVisible, tenantId).then((updated) => {
+            setReviews((prev) => ({
+              ...prev,
+              data: (prev.data ?? []).map((review) => (review.id === updated.id ? updated : review)),
+            }));
+            return updated;
           })
         }
       />

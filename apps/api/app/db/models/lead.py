@@ -7,10 +7,11 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.models.columns import str_enum
 from app.db.models.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
-from app.domain.enums import LeadStatus
+from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 
 if TYPE_CHECKING:
     from app.db.models.business import Business
+    from app.db.models.lead_note import LeadNote
 
 
 class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
@@ -63,5 +64,16 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     # /businesses/{id}/leads/{id}/status (app.routers.businesses) can
     # move it, and only within the same tenant/business.
     status: Mapped[LeadStatus] = mapped_column(str_enum(LeadStatus, 20), nullable=False, default=LeadStatus.NEW)
+    # The visitor-facing acknowledgement email's delivery outcome (P1.2)
+    # — deliberately its own column, never folded into `status` above
+    # (that's the lead's follow-up pipeline stage, a different concept;
+    # see app.domain.enums.NotificationDeliveryStatus's own docstring).
+    # A FAILED/NOT_CONFIGURED send never touches this row otherwise —
+    # the lead itself is always already committed by the time this is
+    # set (app.routers.public.create_public_lead).
+    acknowledgement_status: Mapped[NotificationDeliveryStatus] = mapped_column(
+        str_enum(NotificationDeliveryStatus, 20), nullable=False, default=NotificationDeliveryStatus.PENDING
+    )
 
     business: Mapped["Business"] = relationship(back_populates="leads")
+    notes: Mapped[list["LeadNote"]] = relationship(back_populates="lead", cascade="all, delete-orphan")

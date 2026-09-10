@@ -21,7 +21,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.domain.enums import LeadStatus
+from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 
 
 class LeadIngestRequest(BaseModel):
@@ -48,6 +48,7 @@ class LeadResponse(BaseModel):
     phone: str | None
     message: str | None
     status: LeadStatus
+    acknowledgement_status: NotificationDeliveryStatus
     created_at: datetime
 
 
@@ -75,6 +76,7 @@ class NotificationResponse(BaseModel):
     source: str
     summary: str
     delivered: bool
+    status: NotificationDeliveryStatus
     created_at: datetime
 
 

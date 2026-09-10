@@ -93,6 +93,31 @@ class BusinessReviewRead(BaseModel):
     review_url: str | None
     published_at: datetime | None
     imported_at: datetime
+    is_visible: bool
+
+
+class BusinessReviewVisibilityUpdateRequest(BaseModel):
+    """Body for PATCH /businesses/{id}/reviews/{id}/visibility (P1.6) —
+    deliberately the only writable field from this endpoint; provenance
+    (source/body/rating/...) is immutable once imported."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    is_visible: bool
+
+
+class ReviewProviderAvailability(BaseModel):
+    """One row of GET /businesses/{id}/review-providers (P1.6/P1.12) —
+    the same honest, real-config-backed availability shape as
+    CreativeProviderAvailability above: `available`/`unavailable_reason`
+    reflect exactly what app.reviews.provider.GoogleReviewProvider itself
+    would report right now, never a hardcoded 'coming soon'."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: ReviewSource
+    available: bool
+    unavailable_reason: str | None = None
 
 
 class CreativeGenerationRequest(BaseModel):

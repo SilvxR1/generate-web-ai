@@ -60,6 +60,14 @@ def create_website_draft(
     The build's own artifact (HTML/CSS bytes) is intentionally discarded —
     see WebsiteDraft's own docstring for why.
     """
+    # The generated static site has no other way to learn its own
+    # business id — needed client-side for the analytics beacon and the
+    # direct (no-n8n) lead-submission fallback to know which business to
+    # call (POST /public/businesses/{id}/events, POST .../leads). Set
+    # here rather than trusted from Studio's own payload, so it can never
+    # be spoofed to point a generated site at a different business.
+    site_config.businessId = str(business_id)
+
     draft = WebsiteDraft(
         tenant_id=tenant_id,
         business_id=business_id,

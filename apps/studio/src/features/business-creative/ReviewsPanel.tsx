@@ -8,6 +8,9 @@ interface ReviewsPanelProps {
   error: string | null;
   onAdd: (payload: CreateReviewPayload) => Promise<BusinessReview>;
   onDelete: (reviewId: string) => Promise<void>;
+  /** PATCH .../reviews/{id}/visibility (P1.6) — show/hide on the
+   * generated website without deleting the review or its provenance. */
+  onToggleVisibility: (reviewId: string, isVisible: boolean) => Promise<BusinessReview>;
 }
 
 const EMPTY_FORM = { source: "google" as ReviewSource, author_name: "", rating: "", body: "", review_url: "" };
@@ -19,11 +22,12 @@ const EMPTY_FORM = { source: "google" as ReviewSource, author_name: "", rating: 
  * provenance). No live Google Reviews API integration exists yet — see
  * app.routers.creative's create_business_review docstring on the
  * backend. */
-export function ReviewsPanel({ reviews, isLoading, error, onAdd, onDelete }: ReviewsPanelProps) {
+export function ReviewsPanel({ reviews, isLoading, error, onAdd, onDelete, onToggleVisibility }: ReviewsPanelProps) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingVisibilityId, setPendingVisibilityId] = useState<string | null>(null);
 
   async function handleAdd() {
     if (!form.body.trim()) {
@@ -57,6 +61,15 @@ export function ReviewsPanel({ reviews, isLoading, error, onAdd, onDelete }: Rev
     }
   }
 
+  async function handleToggleVisibility(review: BusinessReview) {
+    setPendingVisibilityId(review.id);
+    try {
+      await onToggleVisibility(review.id, !review.is_visible);
+    } finally {
+      setPendingVisibilityId(null);
+    }
+  }
+
   return (
     <div className="reviews-panel">
       {error && <p className="banner banner--error">Could not load reviews: {error}</p>}
@@ -72,8 +85,16 @@ export function ReviewsPanel({ reviews, isLoading, error, onAdd, onDelete }: Rev
                 <strong>{review.author_name ?? "Anonymous"}</strong>
                 {review.rating != null && <span> · {review.rating}/5</span>}
                 <span className="field-hint"> · {review.source}</span>
+                <span className="field-hint"> · {review.is_visible ? "Visible on website" : "Hidden"}</span>
               </div>
               <p>{review.body}</p>
+              <button
+                type="button"
+                onClick={() => handleToggleVisibility(review)}
+                disabled={pendingVisibilityId === review.id}
+              >
+                {pendingVisibilityId === review.id ? "Saving…" : review.is_visible ? "Hide" : "Show"}
+              </button>
               <button
                 type="button"
                 onClick={() => handleDelete(review.id)}

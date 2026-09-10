@@ -24,5 +24,6 @@ export type {
   ServiceOffering,
   Weekday,
   WebsiteConfig,
+  WhatsAppConfig,
 } from "./business-config.ts";
 export { exampleReformaValenciaConfig } from "./fixtures.ts";

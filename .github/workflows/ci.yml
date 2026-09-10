@@ -51,6 +51,24 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # app.publishing.build shells out to a real `pnpm exec astro build`
+      # (see its own docstring: "no second renderer, no duplicated
+      # blocks") — the site-builder integration tests exercise that real
+      # subprocess, not a stand-in, so this job needs the same Node/pnpm
+      # toolchain the frontend job has, not just Python.
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install monorepo dependencies (for the real astro build the publishing tests run)
+        working-directory: .
+        run: pnpm install --frozen-lockfile
+
       - name: Apply migrations to a fresh database
         run: uv run alembic upgrade head
 

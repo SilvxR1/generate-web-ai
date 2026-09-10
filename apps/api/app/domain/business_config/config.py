@@ -32,6 +32,7 @@ from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
 from app.domain.business_config.legal import LegalProfile
 from app.domain.business_config.website import WebsiteConfig
+from app.domain.business_config.whatsapp import WhatsAppConfig
 from app.domain.enums import LeadSource
 
 CURRENT_BUSINESS_CONFIG_SCHEMA_VERSION = 1
@@ -50,6 +51,7 @@ class BusinessConfig(BaseModel):
     communications: CommunicationConfig = Field(default_factory=CommunicationConfig)
     integrations: IntegrationPreferences = Field(default_factory=IntegrationPreferences)
     automation: AutomationConfig = Field(default_factory=AutomationConfig)
+    whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
 
     @field_validator("schema_version")
     @classmethod
@@ -101,4 +103,16 @@ class BusinessConfig(BaseModel):
         self.lead_management = lead_management.model_copy(
             update={"enabled": True, "sources": sources, "required_fields": required_fields}
         )
+        return self
+
+    @model_validator(mode="after")
+    def _whatsapp_requires_phone_number(self) -> "BusinessConfig":
+        """P1.1: "Do not make WhatsApp enabled without configuration." A
+        config that turns WhatsApp on with no real phone number is
+        rejected outright rather than silently coerced to disabled —
+        the caller (Studio, the AI analyzer) gets an immediate, clear
+        error instead of a website that quietly renders no WhatsApp CTA
+        despite asking for one."""
+        if self.whatsapp.enabled and not self.whatsapp.phone_number:
+            raise ValueError("whatsapp.enabled requires a real whatsapp.phone_number.")
         return self

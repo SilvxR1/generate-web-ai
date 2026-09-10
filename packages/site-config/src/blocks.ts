@@ -197,11 +197,22 @@ export interface ContactFormConfig {
   submitLabel?: string;
 }
 
+/** A prominent WhatsApp call-to-action rendered in the Contact block's
+ * info panel, distinct from the plain `details` row a configured
+ * WhatsApp number already gets — only present when
+ * WhatsAppConfig.showContactCta is true (see the website generator's
+ * buildContactBlock). */
+export interface ContactWhatsAppCtaConfig {
+  href: string;
+  label: string;
+}
+
 export interface ContactBlockContent {
   heading?: string;
   subheading?: string;
   details?: ContactDetailConfig[];
   form?: ContactFormConfig;
+  whatsappCta?: ContactWhatsAppCtaConfig;
 }
 
 /** One heading + body section of a legal page. `body` may contain blank

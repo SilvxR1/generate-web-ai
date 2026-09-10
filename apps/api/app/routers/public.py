@@ -24,9 +24,15 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
+from app.analytics_events.provider import AnalyticsProvider
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
-from app.dependencies import get_optional_notification_sender, get_session, rate_limit_dependency
+from app.dependencies import (
+    get_analytics_provider,
+    get_optional_notification_sender,
+    get_session,
+    rate_limit_dependency,
+)
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource
 from app.errors import AppError
@@ -41,6 +47,7 @@ from app.notifications.service import (
 from app.repositories.business import BusinessRepository
 from app.repositories.internal_notification import InternalNotificationRepository
 from app.repositories.lead import LeadRepository
+from app.schemas.analytics import AnalyticsEventCreateRequest, AnalyticsEventCreateResponse
 from app.schemas.public import PublicLeadCreateRequest, PublicLeadCreateResponse
 
 router = APIRouter(prefix="/public/businesses/{business_id}", tags=["public"])
@@ -121,3 +128,41 @@ def create_public_lead(
         pass
 
     return PublicLeadCreateResponse()
+
+
+@router.post("/events", response_model=AnalyticsEventCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_public_analytics_event(
+    business_id: UUID,
+    payload: AnalyticsEventCreateRequest,
+    request: Request,
+    session: Session = Depends(get_session),
+    provider: AnalyticsProvider = Depends(get_analytics_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="public_analytics", limit_attr="public_analytics_rate_limit_per_minute")
+    ),
+) -> AnalyticsEventCreateResponse:
+    """P1.7's one anonymous analytics surface — same "derive tenant_id
+    from the business row, never trust a header" shape as
+    create_public_lead above. Consent (ConsentCategory.ANALYTICS) is
+    enforced client-side, before a generated site's analytics script
+    ever calls this endpoint at all (see apps/site-builder's consent
+    script) — this endpoint has no session/cookie to re-check consent
+    against server-side, the same trust boundary any client-side
+    analytics beacon has. `received: true` is returned even for an
+    unknown business, so this can never be used to probe which business
+    ids exist."""
+    del request  # rate_limit_dependency already reads this for the client IP.
+
+    business = BusinessRepository(session).get_by_id_only(business_id)
+    if business is None:
+        return AnalyticsEventCreateResponse()
+
+    provider.record_event(
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        event_type=payload.event_type,
+        occurred_at=datetime.now(UTC),
+        source_page=payload.source_page,
+        metadata=payload.metadata,
+    )
+    return AnalyticsEventCreateResponse()

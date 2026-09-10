@@ -189,5 +189,13 @@
       "title": "Reforma Casa Valencia | Reformas integrales en Valencia"
     },
     "template_preference": null
+  },
+  "whatsapp": {
+    "default_message": null,
+    "enabled": false,
+    "phone_number": null,
+    "show_contact_cta": false,
+    "show_floating_button": false,
+    "tracking_enabled": true
   }
 }
