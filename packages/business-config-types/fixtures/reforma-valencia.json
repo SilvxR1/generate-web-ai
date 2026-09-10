@@ -179,6 +179,7 @@
       "whatsapp"
     ]
   },
+  "legal_profile": null,
   "schema_version": 1,
   "website": {
     "enabled": true,

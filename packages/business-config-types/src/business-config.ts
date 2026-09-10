@@ -49,6 +49,7 @@ export interface BusinessConfig {
   creative?: CreativeConfig;
   integrations?: IntegrationPreferences;
   lead_management?: LeadManagementConfig;
+  legal_profile?: LegalProfile | null;
   schema_version?: number;
   website?: WebsiteConfig;
 }
@@ -245,6 +246,14 @@ export interface LeadManagementConfig {
   follow_up?: boolean;
   required_fields?: string[];
   sources?: LeadSource[];
+}
+export interface LegalProfile {
+  address?: PostalAddress | null;
+  data_processors?: string[];
+  legal_name?: string | null;
+  privacy_contact_email?: string | null;
+  registration_number?: string | null;
+  tax_id?: string | null;
 }
 export interface WebsiteConfig {
   enabled?: boolean;

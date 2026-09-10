@@ -63,6 +63,23 @@ export interface AutomationDraft {
   followUpDelayHours: number;
 }
 
+/** BusinessConfig.legal_profile's editable working copy. Every field is
+ * a plain string a human fills in (or leaves blank) — nothing here is
+ * ever guessed from other draft fields (e.g. `legalName` does NOT
+ * default to `name`: they're legitimately different facts, see
+ * LegalProfile's own docstring on the backend). `dataProcessors` is
+ * comma-separated free text in this one input, split into a real list
+ * at submit time (buildCreatePayload) — kept as a single field here
+ * since there's no meaningful per-item structure to edit. */
+export interface LegalProfileDraft {
+  legalName: string;
+  registrationNumber: string;
+  taxId: string;
+  address: { streetAddress: string; locality: string; region: string; postalCode: string; country: string };
+  privacyContactEmail: string;
+  dataProcessors: string;
+}
+
 export interface BusinessDraft {
   name: string;
   slug: string;
@@ -78,6 +95,7 @@ export interface BusinessDraft {
   contact: { email: string; phone: string; whatsapp: string; website: string };
   leadSources: LeadSource[];
   automation: AutomationDraft;
+  legalProfile: LegalProfileDraft;
 }
 
 /** Builds the editable working copy from the AI's proposal — every
@@ -125,6 +143,20 @@ export function buildDraftFromAnalysis(response: AnalyzeBusinessResponse, briefi
       // (e.g. it only set the free-form `delay` string) still gets a
       // sane, non-zero starting value here.
       followUpDelayHours: response.proposed_config?.automation?.follow_up?.delay_hours ?? 24,
+    },
+    legalProfile: {
+      legalName: response.proposed_config?.legal_profile?.legal_name ?? "",
+      registrationNumber: response.proposed_config?.legal_profile?.registration_number ?? "",
+      taxId: response.proposed_config?.legal_profile?.tax_id ?? "",
+      address: {
+        streetAddress: response.proposed_config?.legal_profile?.address?.street_address ?? "",
+        locality: response.proposed_config?.legal_profile?.address?.locality ?? "",
+        region: response.proposed_config?.legal_profile?.address?.region ?? "",
+        postalCode: response.proposed_config?.legal_profile?.address?.postal_code ?? "",
+        country: response.proposed_config?.legal_profile?.address?.country ?? "",
+      },
+      privacyContactEmail: response.proposed_config?.legal_profile?.privacy_contact_email ?? "",
+      dataProcessors: (response.proposed_config?.legal_profile?.data_processors ?? []).join(", "),
     },
   };
 }
@@ -174,7 +206,65 @@ export function validateDraft(draft: BusinessDraft): string[] {
     }
   });
 
+  if (draft.legalProfile.privacyContactEmail.trim() && !draft.legalProfile.privacyContactEmail.includes("@")) {
+    errors.push("Legal profile's privacy contact email doesn't look valid.");
+  }
+
+  const legalStreet = draft.legalProfile.address.streetAddress.trim();
+  const legalLocality = draft.legalProfile.address.locality.trim();
+  const legalCountry = draft.legalProfile.address.country.trim();
+  const anyLegalAddressField = legalStreet || legalLocality || legalCountry;
+  if (anyLegalAddressField && !(legalStreet && legalLocality && legalCountry)) {
+    errors.push("Legal profile's address needs a street, locality, and country code, or leave all three empty.");
+  }
+  if (legalCountry && legalCountry.length !== 2) {
+    errors.push("Legal profile's address country must be a 2-letter code (e.g. ES, US).");
+  }
+
   return errors;
+}
+
+/** `undefined` when every field is blank — a business that hasn't
+ * filled in any legal facts yet gets no legal_profile at all, not an
+ * object full of empty strings (LegalProfile's fields are all
+ * optional on the backend; this just avoids sending a meaningless
+ * empty shell). Never invents a value for a field the human left
+ * blank — see LegalProfileDraft's own docstring. */
+function buildLegalProfile(draft: LegalProfileDraft): BusinessConfig["legal_profile"] {
+  const legalName = draft.legalName.trim();
+  const registrationNumber = draft.registrationNumber.trim();
+  const taxId = draft.taxId.trim();
+  const privacyContactEmail = draft.privacyContactEmail.trim();
+  const dataProcessors = draft.dataProcessors
+    .split(",")
+    .map((processor) => processor.trim())
+    .filter((processor) => processor.length > 0);
+  const street = draft.address.streetAddress.trim();
+  const locality = draft.address.locality.trim();
+  const country = draft.address.country.trim();
+  const hasAddress = Boolean(street && locality && country);
+
+  const hasAnything = Boolean(
+    legalName || registrationNumber || taxId || privacyContactEmail || dataProcessors.length > 0 || hasAddress,
+  );
+  if (!hasAnything) return undefined;
+
+  return {
+    legal_name: legalName || undefined,
+    registration_number: registrationNumber || undefined,
+    tax_id: taxId || undefined,
+    address: hasAddress
+      ? {
+          street_address: street,
+          locality,
+          region: draft.address.region.trim() || undefined,
+          postal_code: draft.address.postalCode.trim() || undefined,
+          country: country.toUpperCase(),
+        }
+      : undefined,
+    privacy_contact_email: privacyContactEmail || undefined,
+    data_processors: dataProcessors,
+  };
 }
 
 /** Converts the reviewed draft into the exact POST /businesses body.
@@ -271,6 +361,7 @@ export function buildCreatePayload(draft: BusinessDraft): CreateBusinessPayload 
       internal_notifications: { email: draft.automation.leadNotifications },
       customer_notifications: { email: draft.automation.customerAcknowledgement },
     },
+    legal_profile: buildLegalProfile(draft.legalProfile),
   };
 
   return {

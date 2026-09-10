@@ -5,23 +5,36 @@ import { categorizeWorkflowPreviewError, friendlyErrorMessage } from "../busines
 import type { CategorizedError } from "../business-analysis/errors";
 import {
   activateAutomation,
+  attachCustomDomain,
   deactivateAutomation,
+  detachCustomDomain,
   getAutomationState,
+  getCustomDomain,
   getLeads,
+  getProductionReadiness,
   getWebsiteState,
+  getWebsiteVersions,
   getWorkflowPreview,
   publishWebsite,
+  refreshCustomDomain,
+  rollbackToWebsiteVersion,
   updateLeadStatus,
   type AutomationState,
   type CreatedBusiness,
+  type CustomDomainState,
   type Lead,
   type LeadStatus,
+  type ProductionReadinessReport,
   type WebsiteState,
+  type WebsiteVersionSummary,
 } from "../../lib/api";
 import { CreativeSection } from "../business-creative/CreativeSection";
+import { CustomDomainPanel } from "./CustomDomainPanel";
 import { LeadsList } from "./LeadsList";
+import { ProductionReadinessPanel } from "./ProductionReadinessPanel";
 import { SiteConfigPreview } from "./SiteConfigPreview";
 import { WebsitePublish } from "./WebsitePublish";
+import { WebsiteVersionsPanel } from "./WebsiteVersionsPanel";
 import { WorkflowPreview } from "./WorkflowPreview";
 
 interface PreviewStepProps {
@@ -47,6 +60,21 @@ interface WebsiteStateFetch {
   isLoading: boolean;
 }
 
+interface CustomDomainFetch {
+  state: CustomDomainState | null;
+  isLoading: boolean;
+}
+
+interface WebsiteVersionsFetch {
+  versions: WebsiteVersionSummary[] | null;
+  isLoading: boolean;
+}
+
+interface ProductionReadinessFetch {
+  report: ProductionReadinessReport | null;
+  isLoading: boolean;
+}
+
 interface LeadsFetch {
   leads: Lead[] | null;
   isLoading: boolean;
@@ -61,6 +89,9 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
   });
   const [automation, setAutomation] = useState<AutomationStateFetch>({ state: null, isLoading: true });
   const [website, setWebsite] = useState<WebsiteStateFetch>({ state: null, isLoading: true });
+  const [customDomain, setCustomDomain] = useState<CustomDomainFetch>({ state: null, isLoading: true });
+  const [websiteVersions, setWebsiteVersions] = useState<WebsiteVersionsFetch>({ versions: null, isLoading: true });
+  const [readiness, setReadiness] = useState<ProductionReadinessFetch>({ report: null, isLoading: true });
   const [leads, setLeads] = useState<LeadsFetch>({ leads: null, isLoading: true, error: null });
   const [reloadToken, setReloadToken] = useState(0);
   // CreativeSection fetches its own data (creative-config/assets/reviews/
@@ -76,6 +107,9 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
     setWorkflowState((prev) => ({ ...prev, isLoading: true, error: null }));
     setAutomation((prev) => ({ ...prev, isLoading: true }));
     setWebsite((prev) => ({ ...prev, isLoading: true }));
+    setCustomDomain((prev) => ({ ...prev, isLoading: true }));
+    setWebsiteVersions((prev) => ({ ...prev, isLoading: true }));
+    setReadiness((prev) => ({ ...prev, isLoading: true }));
     setLeads((prev) => ({ ...prev, isLoading: true, error: null }));
 
     getWorkflowPreview(business.id, tenantId)
@@ -119,6 +153,39 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         }
       });
 
+    // Same idea for the business's *persisted* custom-domain attachment
+    // state (backend's app.db.models.custom_domain.CustomDomain) — fetched
+    // last since it's the newest, least core of these five calls.
+    getCustomDomain(business.id, tenantId)
+      .then((state) => {
+        if (!cancelled) setCustomDomain({ state, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setCustomDomain({ state: null, isLoading: false });
+      });
+
+    // Same idea for this business's *persisted* publish history
+    // (backend's app.db.models.website_version.WebsiteVersion) — fetched
+    // last, same reasoning as the custom-domain fetch above.
+    getWebsiteVersions(business.id, tenantId)
+      .then((versions) => {
+        if (!cancelled) setWebsiteVersions({ versions, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setWebsiteVersions({ versions: null, isLoading: false });
+      });
+
+    // Same idea for the read-only production-readiness checklist
+    // (backend's app.publishing.readiness) — fetched last, same
+    // reasoning as the calls above.
+    getProductionReadiness(business.id, tenantId)
+      .then((report) => {
+        if (!cancelled) setReadiness({ report, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setReadiness({ report: null, isLoading: false });
+      });
+
     return () => {
       cancelled = true;
     };
@@ -139,6 +206,9 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         </p>
       </div>
 
+      <h2>Production readiness</h2>
+      <ProductionReadinessPanel report={readiness.report} isLoading={readiness.isLoading} />
+
       <h2>Website preview</h2>
       {siteConfig ? (
         <SiteConfigPreview siteConfig={siteConfig} />
@@ -152,6 +222,44 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         onPublish={(config) =>
           publishWebsite(business.id, tenantId, config).then((state) => {
             setWebsite({ state, isLoading: false });
+            return state;
+          })
+        }
+      />
+
+      <h2>Version history</h2>
+      <WebsiteVersionsPanel
+        versions={websiteVersions.versions}
+        isLoading={websiteVersions.isLoading}
+        onRollback={(versionId) =>
+          rollbackToWebsiteVersion(business.id, versionId, tenantId).then((state) => {
+            setWebsite({ state, isLoading: false });
+            setReloadToken((n) => n + 1);
+            return state;
+          })
+        }
+      />
+
+      <h2>Custom domain</h2>
+      <CustomDomainPanel
+        websiteState={website.state}
+        customDomain={customDomain.state}
+        isLoading={customDomain.isLoading}
+        onAttach={(domain) =>
+          attachCustomDomain(business.id, domain, tenantId).then((state) => {
+            setCustomDomain({ state, isLoading: false });
+            return state;
+          })
+        }
+        onRefresh={() =>
+          refreshCustomDomain(business.id, tenantId).then((state) => {
+            setCustomDomain({ state, isLoading: false });
+            return state;
+          })
+        }
+        onDetach={() =>
+          detachCustomDomain(business.id, tenantId).then((state) => {
+            setCustomDomain({ state: state.status === "removed" ? null : state, isLoading: false });
             return state;
           })
         }

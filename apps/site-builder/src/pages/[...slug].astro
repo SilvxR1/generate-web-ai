@@ -1,0 +1,28 @@
+---
+/**
+ * Every page in the SiteConfig other than the homepage (e.g. the
+ * /privacy, /terms, /cookies legal pages packages/website-generator
+ * always adds) — index.astro handles "/" alone. Same real
+ * @generate-web-ai/renderer/blocks pipeline, no second renderer.
+ */
+import type { GetStaticPaths } from "astro";
+import { PageRenderer } from "@generate-web-ai/renderer";
+import Layout from "../components/Layout.astro";
+import { loadSiteConfig } from "../lib/loadSiteConfig.ts";
+
+export const getStaticPaths = (() => {
+  const siteConfig = loadSiteConfig();
+  return siteConfig.pages
+    .filter((page) => page.path !== "/")
+    .map((page) => ({
+      params: { slug: page.path.replace(/^\//, "") },
+      props: { page, siteConfig },
+    }));
+}) satisfies GetStaticPaths;
+
+const { page, siteConfig } = Astro.props;
+---
+
+<Layout siteConfig={siteConfig}>
+  <PageRenderer page={page} />
+</Layout>

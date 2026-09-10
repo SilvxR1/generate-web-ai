@@ -67,7 +67,7 @@ def test_update_lead_status_changes_it(client: TestClient, session, tenant: Tena
     assert lead.status == "contacted"
 
 
-@pytest.mark.parametrize("status", ["new", "contacted", "won", "lost"])
+@pytest.mark.parametrize("status", ["new", "contacted", "qualified", "won", "lost"])
 def test_update_lead_status_accepts_every_enum_value(
     client: TestClient, session, tenant: Tenant, business: Business, status: str
 ):
@@ -82,7 +82,7 @@ def test_update_lead_status_accepts_every_enum_value(
 def test_update_lead_status_rejects_an_unknown_value(client: TestClient, session, tenant: Tenant, business: Business):
     lead = _add_lead(session, tenant_id=tenant.id, business_id=business.id)
 
-    response = _update_status(client, business.id, lead.id, tenant.id, "qualified")
+    response = _update_status(client, business.id, lead.id, tenant.id, "archived")
 
     assert response.status_code == 422
     assert lead.status == "new"

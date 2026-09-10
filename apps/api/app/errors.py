@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -49,7 +50,15 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         return _error_response(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "validation_error", "Request validation failed.", exc.errors()
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "validation_error",
+            "Request validation failed.",
+            # exc.errors() can embed a raw exception object in an entry's
+            # ctx (e.g. a bare `raise ValueError(...)` from a
+            # model_validator), which plain JSONResponse can't serialize —
+            # jsonable_encoder is what FastAPI's own default handler uses
+            # to make this safe.
+            jsonable_encoder(exc.errors()),
         )
 
     @app.exception_handler(StarletteHTTPException)

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.db.models.business_asset import BusinessAsset
     from app.db.models.business_review import BusinessReview
     from app.db.models.creative_generation import CreativeGeneration
+    from app.db.models.custom_domain import CustomDomain
     from app.db.models.execution import Execution
     from app.db.models.integration import Integration
     from app.db.models.internal_notification import InternalNotification
@@ -59,6 +60,9 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
 
     tenant: Mapped["Tenant"] = relationship(back_populates="businesses")
     website: Mapped["Website | None"] = relationship(
+        back_populates="business", uselist=False, cascade="all, delete-orphan"
+    )
+    custom_domain: Mapped["CustomDomain | None"] = relationship(
         back_populates="business", uselist=False, cascade="all, delete-orphan"
     )
     workflows: Mapped[list["Workflow"]] = relationship(back_populates="business", cascade="all, delete-orphan")

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same PR/branch cancels the still-running check for
+# the previous one — no point finishing a superseded run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (apps/api)
+    runs-on: ubuntu-latest
+    # A real Postgres service container — the same engine
+    # docker-compose.yml and production use (sqlite is a dev-only
+    # fallback, see app.config.Settings) — so "alembic upgrade head"
+    # below is a genuine test, not just a sqlite-shaped approximation.
+    # Ephemeral, CI-local credentials only; never a real secret.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: generate_web_ai
+          POSTGRES_USER: generate_web_ai
+          POSTGRES_PASSWORD: generate_web_ai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U generate_web_ai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://generate_web_ai:generate_web_ai@localhost:5432/generate_web_ai
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Apply migrations to a fresh database
+        run: uv run alembic upgrade head
+
+      - name: Run tests
+        # Tests use their own in-memory sqlite session (see
+        # tests/conftest.py) regardless of DATABASE_URL — this proves the
+        # schema itself (via the migration step above), pytest proves
+        # behavior.
+        run: uv run pytest -q
+
+      - name: mypy
+        run: uv run mypy app/
+
+      - name: ruff
+        run: uv run ruff check .
+
+  frontend:
+    name: Frontend (pnpm monorepo)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Repo-wide typecheck (turbo run check)
+        run: pnpm check
+
+      - name: Repo-wide tests (turbo run test — studio, website-generator, workflow-config-types)
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build

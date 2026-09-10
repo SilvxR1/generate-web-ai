@@ -24,7 +24,6 @@ uploading file content.
 """
 
 import os
-import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -33,6 +32,7 @@ from pydantic import AnyHttpUrl
 
 from app.publishing.build import SITE_BUILDER_DIR
 from app.publishing.cloudflare.client import CloudflarePagesClient
+from app.publishing.cloudflare.client import validate_project_name as _validate_project_name
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
 
@@ -42,18 +42,7 @@ from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePubl
 # other layer, so a composite key stays entirely internal to this module.
 _DEPLOYMENT_ID_SEPARATOR = "::"
 
-_PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,56}$")
-
 _WRANGLER_TIMEOUT_SECONDS = 120
-
-
-def _validate_project_name(site_id: str) -> str:
-    if not _PROJECT_NAME_PATTERN.match(site_id):
-        raise WebsitePublisherError(
-            f"{site_id!r} is not a valid Cloudflare Pages project name "
-            "(lowercase letters, digits, hyphens; 1-57 chars; can't start with a hyphen)."
-        )
-    return site_id
 
 
 class CloudflarePagesPublisher(WebsitePublisher):

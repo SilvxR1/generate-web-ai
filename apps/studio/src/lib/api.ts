@@ -300,6 +300,116 @@ export function deactivateWebsite(businessId: string, tenantId: string): Promise
   return requestJson<WebsiteState>(`/businesses/${businessId}/website/deactivate`, { method: "POST" }, tenantId);
 }
 
+// --- Production readiness --------------------------------------------------
+//
+// GET .../production-readiness (app.routers.businesses) is a read-only
+// checklist synthesizing signals this API already exposes elsewhere —
+// never a second gate on top of publishing. Only "website_config" and
+// "hosting_provider" can ever come back with `blocking: true`; every
+// other check (legal profile, custom domain, published) is purely
+// informational and Studio must never use it to disable the publish
+// action (see ProductionReadinessPanel).
+
+export interface ProductionReadinessCheckResult {
+  id: string;
+  label: string;
+  ready: boolean;
+  blocking: boolean;
+  detail: string;
+}
+
+export interface ProductionReadinessReport {
+  checks: ProductionReadinessCheckResult[];
+  has_blocking_issues: boolean;
+}
+
+export function getProductionReadiness(businessId: string, tenantId: string): Promise<ProductionReadinessReport> {
+  return requestJson<ProductionReadinessReport>(
+    `/businesses/${businessId}/production-readiness`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+// --- Website versions + rollback -----------------------------------------
+//
+// Every successful publish (POST .../website/publish) persists one
+// immutable WebsiteVersion snapshot server-side — GET .../website/
+// versions reads that history back, most recent first. Rollback (POST
+// .../website/versions/{id}/rollback) republishes an old snapshot
+// through the exact same publish path a normal publish uses: a failed
+// rollback leaves the currently-live site reported live (same
+// guarantee a normal failed publish already has), and no version is
+// ever deleted, whatever the outcome.
+
+export interface WebsiteVersionSummary {
+  id: string;
+  published_at: string;
+  deploy_url: string;
+  is_current: boolean;
+}
+
+export function getWebsiteVersions(businessId: string, tenantId: string): Promise<WebsiteVersionSummary[]> {
+  return requestJson<WebsiteVersionSummary[]>(`/businesses/${businessId}/website/versions`, { method: "GET" }, tenantId);
+}
+
+export function rollbackToWebsiteVersion(
+  businessId: string,
+  versionId: string,
+  tenantId: string,
+): Promise<WebsiteState> {
+  return requestJson<WebsiteState>(
+    `/businesses/${businessId}/website/versions/${versionId}/rollback`,
+    { method: "POST" },
+    tenantId,
+  );
+}
+
+// --- Custom domain --------------------------------------------------------
+//
+// This app never purchases or registers a domain on a business's behalf
+// — attachCustomDomain only tells the backend "this domain, which the
+// business already owns, should route to its live website" and gets
+// back the CNAME target the human must add at their own DNS provider
+// (see CustomDomainPanel's own copy, which says this explicitly).
+// Attaching requires the website to already be published (live).
+
+export type DomainStatus = "pending_verification" | "active" | "error" | "removed";
+
+export interface CustomDomainState {
+  domain: string;
+  status: DomainStatus;
+  provider_status: string | null;
+  cname_target: string | null;
+  error_message: string | null;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function getCustomDomain(businessId: string, tenantId: string): Promise<CustomDomainState | null> {
+  return requestJson<CustomDomainState | null>(`/businesses/${businessId}/website/domain`, { method: "GET" }, tenantId);
+}
+
+export function attachCustomDomain(businessId: string, domain: string, tenantId: string): Promise<CustomDomainState> {
+  return requestJson<CustomDomainState>(
+    `/businesses/${businessId}/website/domain`,
+    { method: "POST", body: JSON.stringify({ domain }) },
+    tenantId,
+  );
+}
+
+/** Re-checks the hosting provider for real (never a locally-cached
+ * guess) — what a human calls after adding the CNAME record attach's
+ * response told them to. */
+export function refreshCustomDomain(businessId: string, tenantId: string): Promise<CustomDomainState> {
+  return requestJson<CustomDomainState>(`/businesses/${businessId}/website/domain/refresh`, { method: "POST" }, tenantId);
+}
+
+export function detachCustomDomain(businessId: string, tenantId: string): Promise<CustomDomainState> {
+  return requestJson<CustomDomainState>(`/businesses/${businessId}/website/domain`, { method: "DELETE" }, tenantId);
+}
+
 // --- Leads --------------------------------------------------------------
 //
 // GET .../leads (app.routers.businesses) reads persisted Lead rows,
@@ -309,7 +419,7 @@ export function deactivateWebsite(businessId: string, tenantId: string): Promise
 // LeadStatusUpdateRequest rejects any other field), same tenant/business
 // scoping as the read.
 
-export type LeadStatus = "new" | "contacted" | "won" | "lost";
+export type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
 
 export interface Lead {
   id: string;
@@ -319,6 +429,9 @@ export interface Lead {
   email: string | null;
   phone: string | null;
   message: string | null;
+  subject: string | null;
+  source_url: string | null;
+  consent_given: boolean;
   status: LeadStatus;
   created_at: string;
 }

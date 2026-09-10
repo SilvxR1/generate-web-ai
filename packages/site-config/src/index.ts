@@ -46,6 +46,9 @@ export type {
   ContactFormConfig,
   ContactBlockContent,
   ContactBlockConfig,
+  LegalSectionConfig,
+  LegalTextBlockContent,
+  LegalTextBlockConfig,
   BlockConfig,
   BlockType,
 } from "./blocks.ts";

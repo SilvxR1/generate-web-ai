@@ -571,6 +571,77 @@
       ],
       "type": "string"
     },
+    "LegalProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PostalAddress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "data_processors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "legal_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "privacy_contact_email": {
+          "anyOf": [
+            {
+              "format": "email",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "registration_number": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tax_id": {
+          "anyOf": [
+            {
+              "maxLength": 100,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "type": "object"
+    },
     "Location": {
       "additionalProperties": false,
       "description": "Coarse operating location for service-area context \u2014 not\nnecessarily a full mailing address (see ContactInfo.address for\nthat). Deliberately shallow per Section 3's instruction not to\nover-model geography.",
@@ -885,6 +956,17 @@
     },
     "lead_management": {
       "$ref": "#/$defs/LeadManagementConfig"
+    },
+    "legal_profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LegalProfile"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "schema_version": {
       "default": 1,

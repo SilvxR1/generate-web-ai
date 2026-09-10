@@ -16,6 +16,7 @@ export type {
   IntegrationProvider,
   LeadManagementConfig,
   LeadSource,
+  LegalProfile,
   Location,
   NotificationPreferences,
   PostalAddress,

@@ -204,6 +204,32 @@ export interface ContactBlockContent {
   form?: ContactFormConfig;
 }
 
+/** One heading + body section of a legal page. `body` may contain blank
+ * lines to separate paragraphs — rendered as one <p> per paragraph,
+ * never as raw HTML (see LegalText.astro). */
+export interface LegalSectionConfig {
+  heading?: string;
+  body: string;
+}
+
+/**
+ * A page of legal prose (Privacy Policy, Terms of Service, Cookie
+ * Policy — see packages/website-generator's legal.ts, the only current
+ * producer of this block type). Every value here is either a real fact
+ * pulled from BusinessConfig.legal_profile or explicit template/
+ * disclaimer copy — never a fabricated compliance claim. `disclaimer`
+ * is the required, always-visible "this is not legal advice" notice
+ * (P0's "Do NOT claim ... lawyer-reviewed status" constraint) — kept
+ * separate from `sections` so a consumer can never omit it by accident.
+ */
+export interface LegalTextBlockContent {
+  heading: string;
+  disclaimer: string;
+  intro?: string;
+  sections: LegalSectionConfig[];
+  lastUpdated?: string;
+}
+
 interface BlockConfigBase {
   /** Anchor id for in-page navigation (e.g. a nav link to "#services"). */
   id?: string;
@@ -270,6 +296,11 @@ export interface ContactBlockConfig extends BlockConfigBase {
   content: ContactBlockContent;
 }
 
+export interface LegalTextBlockConfig extends BlockConfigBase {
+  type: "legal_text";
+  content: LegalTextBlockContent;
+}
+
 /**
  * Every block a page can be built from, discriminated on `type` so a
  * consumer — an AI, the renderer, a future editing form — can narrow to
@@ -284,7 +315,8 @@ export type BlockConfig =
   | TestimonialsBlockConfig
   | FAQBlockConfig
   | CTABlockConfig
-  | ContactBlockConfig;
+  | ContactBlockConfig
+  | LegalTextBlockConfig;
 
 export type BlockType = BlockConfig["type"];
 
@@ -303,6 +335,7 @@ export const BLOCK_TYPES = [
   "faq",
   "cta",
   "contact",
+  "legal_text",
 ] as const satisfies readonly BlockType[];
 
 export function isKnownBlockType(value: string): value is BlockType {

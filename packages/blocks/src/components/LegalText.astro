@@ -1,0 +1,92 @@
+---
+/**
+ * LegalText — plain prose for a legal page (Privacy Policy, Terms of
+ * Service, Cookie Policy). `body` paragraphs are split on blank lines
+ * and rendered as separate <p> elements from plain text, never
+ * `set:html`/`is:raw` — nothing here accepts markup. `disclaimer`
+ * always renders, visibly, above the page content: this block can never
+ * be used to present generated legal text as reviewed or guaranteed
+ * compliant (see LegalTextBlockContent's own docstring in
+ * packages/site-config).
+ */
+import { Container, Heading, Text } from "@generate-web-ai/ui";
+
+export interface LegalSection {
+  heading?: string;
+  body: string;
+}
+
+export interface LegalTextContent {
+  heading: string;
+  disclaimer: string;
+  intro?: string;
+  sections: LegalSection[];
+  lastUpdated?: string;
+}
+
+export interface Props {
+  content: LegalTextContent;
+  id?: string;
+  background?: "base" | "surface";
+  reveal?: boolean;
+  class?: string;
+}
+
+const { content, id, background = "base", reveal = false, class: className } = Astro.props;
+const { heading, disclaimer, intro, sections, lastUpdated } = content;
+
+function paragraphs(body: string): string[] {
+  return body
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+}
+---
+
+<section id={id} data-surface={background} class:list={["block-legal-text", { "block-reveal": reveal }, className]}>
+  <Container size="sm">
+    <Heading level={1} font="display">{heading}</Heading>
+    <div class="block-legal-text__disclaimer">
+      <Text size="sm">{disclaimer}</Text>
+    </div>
+    {lastUpdated && (
+      <Text size="sm" variant="muted">
+        Last updated: {lastUpdated}
+      </Text>
+    )}
+    {intro && <Text variant="muted">{intro}</Text>}
+    {sections.map((section) => (
+      <div class="block-legal-text__section">
+        {section.heading && <Heading level={2}>{section.heading}</Heading>}
+        {paragraphs(section.body).map((paragraph) => (
+          <Text as="p">{paragraph}</Text>
+        ))}
+      </div>
+    ))}
+  </Container>
+</section>
+
+<style>
+  .block-legal-text {
+    padding-block: var(--ui-space-section-sm, clamp(3rem, 2.6rem + 1.6vw, 4rem));
+    background-color: var(--ui-color-bg, #ffffff);
+  }
+
+  .block-legal-text[data-surface="surface"] {
+    background-color: var(--ui-color-surface-alt, var(--ui-color-bg, #ffffff));
+  }
+
+  .block-legal-text__disclaimer {
+    margin-block: 1rem 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--ui-color-border, #e5e7eb);
+    border-radius: var(--ui-radius, 0.5rem);
+  }
+
+  .block-legal-text__section {
+    margin-top: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+</style>

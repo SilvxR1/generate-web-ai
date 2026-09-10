@@ -153,6 +153,34 @@ describe("validateDraft", () => {
     expect(validateDraft(atLowerBound)).toEqual([]);
     expect(validateDraft(atUpperBound)).toEqual([]);
   });
+
+  it("flags a half-filled legal address the same way a half-filled location is flagged", () => {
+    const draft = {
+      ...baseDraft(),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      legalProfile: {
+        ...baseDraft().legalProfile,
+        address: { streetAddress: "Calle Mayor 1", locality: "", region: "", postalCode: "", country: "" },
+      },
+    };
+    expect(validateDraft(draft).some((e) => e.includes("Legal profile's address"))).toBe(true);
+  });
+
+  it("flags an invalid legal privacy contact email", () => {
+    const draft = {
+      ...baseDraft(),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      legalProfile: { ...baseDraft().legalProfile, privacyContactEmail: "not-an-email" },
+    };
+    expect(validateDraft(draft).some((e) => e.includes("privacy contact email"))).toBe(true);
+  });
+
+  it("passes with a fully-empty legal profile — every field there is optional", () => {
+    const draft = { ...baseDraft(), name: "Cafe del Mar", slug: "cafe-del-mar" };
+    expect(validateDraft(draft)).toEqual([]);
+  });
 });
 
 describe("buildCreatePayload", () => {
@@ -296,5 +324,70 @@ describe("buildCreatePayload", () => {
 
     expect(payload.config?.communications?.internal_notifications).toEqual({ email: true });
     expect(payload.config?.communications?.customer_notifications).toEqual({ email: false });
+  });
+
+  it("omits legal_profile entirely when every legal field is left blank — never an empty shell", () => {
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.legal_profile).toBeUndefined();
+  });
+
+  it("sends real legal_profile facts through untouched, splitting data processors on comma", () => {
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      legalProfile: {
+        legalName: "Cafe del Mar S.L.",
+        registrationNumber: "B-12345678",
+        taxId: "ESB12345678",
+        address: { streetAddress: "Calle Mayor 1", locality: "Valencia", region: "", postalCode: "46001", country: "es" },
+        privacyContactEmail: "privacidad@cafedelmar.example",
+        dataProcessors: "Resend (email),  Cloudflare (hosting) ",
+      },
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.legal_profile).toEqual({
+      legal_name: "Cafe del Mar S.L.",
+      registration_number: "B-12345678",
+      tax_id: "ESB12345678",
+      address: {
+        street_address: "Calle Mayor 1",
+        locality: "Valencia",
+        region: undefined,
+        postal_code: "46001",
+        country: "ES",
+      },
+      privacy_contact_email: "privacidad@cafedelmar.example",
+      data_processors: ["Resend (email)", "Cloudflare (hosting)"],
+    });
+  });
+
+  it("omits the legal address entirely unless street, locality, and country are all present", () => {
+    const draft = {
+      ...buildDraftFromAnalysis({ proposed_config: null, missing_information: [], questions: [] }, "x".repeat(20)),
+      name: "Cafe del Mar",
+      slug: "cafe-del-mar",
+      legalProfile: {
+        legalName: "Cafe del Mar S.L.",
+        registrationNumber: "",
+        taxId: "",
+        address: { streetAddress: "Calle Mayor 1", locality: "", region: "", postalCode: "", country: "" },
+        privacyContactEmail: "",
+        dataProcessors: "",
+      },
+    };
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.legal_profile?.address).toBeUndefined();
   });
 });

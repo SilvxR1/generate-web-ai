@@ -146,6 +146,10 @@ class LeadStatus(StrEnum):
 
     NEW = "new"
     CONTACTED = "contacted"
+    # Added in P0: a lead the business has actively engaged with and
+    # judged a real prospect, distinct from merely CONTACTED (which only
+    # means "we reached out," not "this looks like a real opportunity").
+    QUALIFIED = "qualified"
     WON = "won"
     LOST = "lost"
 
@@ -282,6 +286,42 @@ class WebsiteDraftStatus(StrEnum):
     BUILD_FAILED = "build_failed"
     APPROVED = "approved"
     PUBLISHED = "published"
+
+
+class ConsentCategory(StrEnum):
+    """The fixed vocabulary a generated site's cookie-consent banner
+    (apps.site-builder's CookieConsentBanner) and any non-essential
+    script it ever loads are built around (P0 Phase 16-19's "real
+    consent architecture" requirement). NECESSARY is never optional and
+    never shown as a toggle — everything else defaults to withheld and
+    is only granted by an explicit, unpreselected visitor choice. A
+    future non-essential block/integration (analytics, marketing pixel,
+    a reviews widget) declares one of these, and its script is gated on
+    that category actually being granted before this codebase ever loads
+    it — see packages/website-generator's consent module and
+    apps/site-builder's CookieConsentBanner for where that's enforced."""
+
+    NECESSARY = "necessary"
+    ANALYTICS = "analytics"
+    MARKETING = "marketing"
+    PREFERENCES = "preferences"
+
+
+class DomainStatus(StrEnum):
+    """A CustomDomain's lifecycle (P0 Phase 11-15). PENDING_VERIFICATION
+    covers everything Cloudflare hasn't yet reported as its own "active"
+    state — this codebase never asserts a finer-grained reading of
+    Cloudflare's own status than that, since the exact intermediate
+    values aren't a contract this app depends on. ACTIVE only follows a
+    real CloudflarePagesDomainProvider response reporting the hostname
+    active; ERROR is set on a provider failure the human must act on;
+    REMOVED mirrors WebsiteStatus.INACTIVE's shape — detached for real,
+    row kept rather than deleted."""
+
+    PENDING_VERIFICATION = "pending_verification"
+    ACTIVE = "active"
+    ERROR = "error"
+    REMOVED = "removed"
 
 
 class ReviewSource(StrEnum):

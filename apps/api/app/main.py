@@ -12,12 +12,20 @@ from app.routers.businesses import router as businesses_router
 from app.routers.creative import router as creative_router
 from app.routers.health import router as health_router
 from app.routers.internal_automation import router as internal_automation_router
+from app.routers.public import router as public_router
+from app.security import SecurityHeadersMiddleware
 
 
 def create_app() -> FastAPI:
     configure_logging()
 
     app = FastAPI(title=settings.service_name, version=settings.version)
+
+    # Applied to every response, including error responses (Starlette
+    # middleware wraps exception handling) — see
+    # app.security.headers.SecurityHeadersMiddleware's own docstring for
+    # what's set and why HSTS is environment-gated.
+    app.add_middleware(SecurityHeadersMiddleware, is_production=settings.environment == "production")
 
     app.add_middleware(
         CORSMiddleware,
@@ -33,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(business_summaries_router)
     app.include_router(creative_router)
     app.include_router(internal_automation_router)
+    app.include_router(public_router)
 
     # Serves whatever LocalStorageProvider (app.storage.local) has saved
     # under settings.local_storage_dir — the dev-only asset storage

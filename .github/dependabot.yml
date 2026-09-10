@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # apps/api's Python dependencies (pyproject.toml/uv.lock).
+  - package-ecosystem: "pip"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # The pnpm workspace root — covers every app/package's package.json via
+  # the single pnpm-lock.yaml (Dependabot understands pnpm workspaces
+  # natively through the npm ecosystem).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # The CI workflow's own actions (actions/checkout, astral-sh/setup-uv,
+  # actions/setup-node, ...).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

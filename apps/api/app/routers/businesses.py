@@ -20,6 +20,7 @@ from app.db.models.workflow import Workflow
 from app.dependencies import (
     get_business_analyzer,
     get_current_tenant_id,
+    get_domain_provider,
     get_n8n_client,
     get_optional_n8n_client,
     get_session,
@@ -29,7 +30,16 @@ from app.domain.business_config import BusinessConfig, Location
 from app.domain.enums import BusinessVertical, WorkflowStatus
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
+from app.publishing.domain_provider import DomainProvider
+from app.publishing.domains import (
+    CustomDomainError,
+    attach_custom_domain,
+    detach_custom_domain,
+    get_custom_domain_state,
+    refresh_custom_domain_status,
+)
 from app.publishing.publisher import WebsitePublisher
+from app.publishing.readiness import get_production_readiness
 from app.publishing.service import (
     WebsitePublishError,
     WebsiteStateResult,
@@ -37,6 +47,7 @@ from app.publishing.service import (
     publish_website,
     unpublish_website,
 )
+from app.publishing.versions import list_website_versions, rollback_to_version
 from app.repositories.lead import LeadRepository
 from app.repositories.website import WebsiteRepository
 from app.repositories.workflow import WorkflowRepository
@@ -49,8 +60,11 @@ from app.schemas.business import (
     BusinessWriteRequest,
 )
 from app.schemas.business_analysis import BusinessAnalysisRequest
+from app.schemas.domain import CustomDomainCreateRequest, CustomDomainState
 from app.schemas.lead import LeadRead, LeadStatusUpdateRequest
+from app.schemas.readiness import ProductionReadinessReport
 from app.schemas.site_config import SiteConfigPayload
+from app.schemas.website_version import WebsiteVersionSummary
 from app.services.business_service import BusinessNotFoundError, BusinessService, SlugConflictError
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
@@ -400,6 +414,141 @@ def deactivate_business_website(
     try:
         return unpublish_website(session=session, tenant_id=tenant_id, business_id=business_id, publisher=publisher)
     except WebsitePublishError as exc:
+        raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.get("/{business_id}/production-readiness", response_model=ProductionReadinessReport)
+def get_business_production_readiness(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> ProductionReadinessReport:
+    """A read-only checklist (app.publishing.readiness.
+    get_production_readiness) synthesizing signals this API already
+    computes elsewhere — never a new gate. Only `website_config` and
+    `hosting_provider` can ever mark `blocking: true`; every other line
+    is informational and must never be treated as something that should
+    stop a publish attempt."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    return get_production_readiness(session=session, tenant_id=tenant_id, business_id=business_id)
+
+
+@router.get("/{business_id}/website/versions", response_model=list[WebsiteVersionSummary])
+def list_business_website_versions(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> list[WebsiteVersionSummary]:
+    """Every successful publish this business has ever made, most recent
+    first (app.publishing.versions.list_website_versions) — never
+    touches the hosting provider. Empty list (not an error) when this
+    business has never published."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    return list_website_versions(session=session, tenant_id=tenant_id, business_id=business_id)
+
+
+@router.post("/{business_id}/website/versions/{version_id}/rollback", response_model=WebsiteStateResult)
+def rollback_business_website(
+    business_id: UUID,
+    version_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    publisher: WebsitePublisher = Depends(get_website_publisher),
+) -> WebsiteStateResult:
+    """Republishes this business's site exactly as it was at a previous
+    successful publish (app.publishing.versions.rollback_to_version) —
+    a real republish through the same path POST .../website/publish
+    uses, not a local status flip. A failed rollback leaves the
+    currently-live site reported live, the same guarantee a normal
+    failed publish already has; no version is ever deleted, whatever
+    the outcome."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    try:
+        return rollback_to_version(
+            session=session,
+            tenant_id=tenant_id,
+            business_id=business_id,
+            version_id=version_id,
+            publisher=publisher,
+            n8n_base_url=settings.n8n_base_url,
+        )
+    except WebsitePublishError as exc:
+        raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.get("/{business_id}/website/domain", response_model=CustomDomainState | None)
+def get_business_custom_domain(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> CustomDomainState | None:
+    """Provider-neutral read of this business's *persisted* custom-domain
+    state (app.db.models.custom_domain.CustomDomain) — never touches
+    Cloudflare. Returns null (200, not an error) when no custom domain
+    has ever been attached, the same convention GET .../website uses."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    return get_custom_domain_state(session=session, tenant_id=tenant_id, business_id=business_id)
+
+
+@router.post("/{business_id}/website/domain", response_model=CustomDomainState)
+def attach_business_custom_domain(
+    business_id: UUID,
+    payload: CustomDomainCreateRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    provider: DomainProvider = Depends(get_domain_provider),
+) -> CustomDomainState:
+    """Attaches a domain the business already owns to its live website
+    (app.publishing.domains.attach_custom_domain) — this app never
+    purchases or registers a domain itself; `payload.domain` must
+    already be pointed at this account by the human, at their own DNS
+    provider, using the `cname_target` this call returns. Requires the
+    website to already be LIVE (there is no Cloudflare Pages project to
+    attach a domain to otherwise)."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    try:
+        return attach_custom_domain(
+            session=session, tenant_id=tenant_id, business_id=business_id, domain=payload.domain, provider=provider
+        )
+    except CustomDomainError as exc:
+        raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.post("/{business_id}/website/domain/refresh", response_model=CustomDomainState)
+def refresh_business_custom_domain(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    provider: DomainProvider = Depends(get_domain_provider),
+) -> CustomDomainState:
+    """Re-checks Cloudflare for real (app.publishing.domains.
+    refresh_custom_domain_status) — what a human calls after adding the
+    CNAME record attach's response told them to, rather than this
+    codebase polling on its own."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    try:
+        return refresh_custom_domain_status(
+            session=session, tenant_id=tenant_id, business_id=business_id, provider=provider
+        )
+    except CustomDomainError as exc:
+        raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.delete("/{business_id}/website/domain", response_model=CustomDomainState)
+def detach_business_custom_domain(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    provider: DomainProvider = Depends(get_domain_provider),
+) -> CustomDomainState:
+    """Removes the domain from Cloudflare for real (app.publishing.
+    domains.detach_custom_domain) — never just a local status flip. The
+    business's *.pages.dev URL is unaffected; this only ever touches the
+    custom domain itself."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    try:
+        return detach_custom_domain(session=session, tenant_id=tenant_id, business_id=business_id, provider=provider)
+    except CustomDomainError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
 

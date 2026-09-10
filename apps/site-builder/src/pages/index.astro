@@ -1,6 +1,6 @@
 ---
 /**
- * The one page this app builds: an arbitrary SiteConfig — read from a
+ * The homepage: an arbitrary SiteConfig's `path: "/"` page — read from a
  * JSON file at the path SITE_CONFIG_PATH points to — rendered through
  * the real @generate-web-ai/renderer/blocks pipeline, the exact same
  * PageRenderer apps/clients/* use. `astro build` (invoked by apps/api's
@@ -8,24 +8,18 @@
  * SITE_CONFIG_PATH/--outDir) produces this page's real, production
  * HTML/CSS/asset output — never a second, simplified renderer.
  *
- * Falls back to @generate-web-ai/site-config's own exampleSiteConfig
- * when SITE_CONFIG_PATH isn't set — the same "validation fixture, not a
- * client site" role apps/site-template's example.astro plays — so a
- * bare `pnpm build`/`turbo run build` across the whole monorepo still
- * succeeds for this app instead of only working when invoked from the
- * publishing pipeline.
+ * Every other page in the SiteConfig (e.g. the legal pages
+ * packages/website-generator always adds) is built by [...slug].astro,
+ * not here — this file is homepage-only.
  */
-import fs from "node:fs";
-import type { SiteConfig } from "@generate-web-ai/site-config";
-import { exampleSiteConfig } from "@generate-web-ai/site-config";
 import { PageRenderer } from "@generate-web-ai/renderer";
 import Layout from "../components/Layout.astro";
+import { loadSiteConfig } from "../lib/loadSiteConfig.ts";
 
-const configPath = process.env.SITE_CONFIG_PATH;
-const siteConfig: SiteConfig = configPath ? JSON.parse(fs.readFileSync(configPath, "utf-8")) : exampleSiteConfig;
-const page = siteConfig.pages[0];
+const siteConfig = loadSiteConfig();
+const page = siteConfig.pages.find((candidate) => candidate.path === "/");
 if (!page) {
-  throw new Error("This SiteConfig has no pages to render.");
+  throw new Error("This SiteConfig has no page at \"/\" to render.");
 }
 ---
 

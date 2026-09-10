@@ -555,3 +555,82 @@ dd {
   margin-top: 0.5rem;
   font-size: 0.9rem;
 }
+
+.custom-domain-panel__attach-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.custom-domain-panel__pending {
+  border: 1px solid light-dark(#e2e2e2, #333);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
+}
+
+.custom-domain-panel__pending code {
+  font-size: 0.85rem;
+}
+
+.website-versions-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.website-versions-panel__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid light-dark(#e2e2e2, #333);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background-color: light-dark(#dcfce7, #14532d);
+  color: light-dark(#166534, #bbf7d0);
+}
+
+.production-readiness-panel__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.production-readiness-panel__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.badge--ready {
+  background-color: light-dark(#dcfce7, #14532d);
+  color: light-dark(#166534, #bbf7d0);
+}
+
+.badge--blocked {
+  background-color: light-dark(#fee2e2, #7f1d1d);
+  color: light-dark(#991b1b, #fecaca);
+}
+
+.badge--info {
+  background-color: light-dark(#e5e7eb, #374151);
+  color: light-dark(#374151, #e5e7eb);
+}

@@ -123,6 +123,56 @@ def test_contact_form_renders_the_injected_webhook_action_and_predictable_field_
     assert 'name="phone"' in html
 
 
+def test_build_produces_the_legal_pages_and_the_footer_links_to_them(reforma_artifact, reforma_html):
+    # generateSiteConfig() always adds these three (see
+    # packages/website-generator/src/legal.ts) — this proves apps/site-
+    # builder's [...slug].astro actually builds them as real routes, not
+    # just that they exist in the SiteConfig.
+    assert "privacy/index.html" in reforma_artifact.files
+    assert "terms/index.html" in reforma_artifact.files
+    assert "cookies/index.html" in reforma_artifact.files
+
+    assert 'href="/privacy"' in reforma_html
+    assert 'href="/terms"' in reforma_html
+    assert 'href="/cookies"' in reforma_html
+
+
+def test_legal_pages_carry_the_not_legal_advice_disclaimer(reforma_artifact):
+    privacy_html = reforma_artifact.files["privacy/index.html"].decode("utf-8")
+    terms_html = reforma_artifact.files["terms/index.html"].decode("utf-8")
+    cookies_html = reforma_artifact.files["cookies/index.html"].decode("utf-8")
+
+    for html in (privacy_html, terms_html, cookies_html):
+        assert "not legal advice" in html
+        assert "not been reviewed by a lawyer" in html
+
+
+def test_cookie_consent_banner_renders_on_every_page_with_no_preselected_optional_consent(reforma_html):
+    assert 'id="gwa-consent-banner"' in reforma_html
+    assert "Reject non-essential" in reforma_html
+    assert "Accept all" in reforma_html
+    # Every optional-category checkbox must render unchecked; only the
+    # always-on "Necessary" one is checked (P0's "never preselect
+    # optional consent as accepted" constraint). Matches the actual
+    # <input> elements (attribute value quoted with "), not the bundled
+    # script's own `[data-consent-category]` selector string.
+    checkbox_matches = re.findall(r'<input type="checkbox"[^>]*data-consent-category="(\w+)"[^>]*>', reforma_html)
+    assert sorted(checkbox_matches) == ["analytics", "marketing", "preferences"]
+    for category in ("analytics", "marketing", "preferences"):
+        assert f'checked data-consent-category="{category}"' not in reforma_html
+
+
+def test_the_consent_banners_inline_script_is_allow_listed_in_the_generated_csp(reforma_artifact):
+    headers_file = reforma_artifact.files["_headers"].decode("utf-8")
+    assert "script-src 'self'" in headers_file
+    # A real sha256- hash was computed for at least one inline script
+    # (the consent banner's own toggle/storage logic) — proves
+    # app.publishing.build._inline_script_hashes actually found and
+    # allow-listed it, not that the CSP silently fell back to
+    # 'unsafe-inline' or blocked the banner from working.
+    assert "'sha256-" in headers_file
+
+
 def test_build_failure_raises_a_clear_error_not_a_silent_empty_artifact():
     from app.publishing.build import SiteBuildError
     from app.schemas.site_config import SiteBlockPayload

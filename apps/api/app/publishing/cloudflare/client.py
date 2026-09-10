@@ -19,11 +19,27 @@ client's role shrank to what the REST API is actually reliable for:
 project existence/creation and reading back status after the fact.
 """
 
+import re
 from typing import Any
 
 import httpx
 
 from app.publishing.errors import WebsitePublisherError
+
+# Shared by CloudflarePagesPublisher (engine.py) and
+# CloudflarePagesDomainProvider (domain.py) — both key their Cloudflare
+# calls off the same Pages project name, so the one validation rule
+# belongs at this client tier rather than duplicated in each caller.
+_PROJECT_NAME_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]{0,56}$")
+
+
+def validate_project_name(site_id: str) -> str:
+    if not _PROJECT_NAME_PATTERN.match(site_id):
+        raise WebsitePublisherError(
+            f"{site_id!r} is not a valid Cloudflare Pages project name "
+            "(lowercase letters, digits, hyphens; 1-57 chars; can't start with a hyphen)."
+        )
+    return site_id
 
 
 class CloudflareApiError(WebsitePublisherError):
@@ -76,6 +92,49 @@ class CloudflarePagesClient:
             f"/accounts/{self._account_id}/pages/projects/{project_name}", headers=self._auth_headers
         )
         return response.status_code == 200
+
+    def add_domain(self, project_name: str, domain: str) -> dict[str, Any]:
+        """POST .../pages/projects/{project_name}/domains — registers
+        `domain` against the project. Not idempotent on its own (a
+        second call for an already-attached domain is a Cloudflare-side
+        error); CloudflarePagesDomainProvider.attach is what makes the
+        overall attach operation idempotent, the same check-first shape
+        ensure_project already uses."""
+        return self._request(
+            "POST", f"/accounts/{self._account_id}/pages/projects/{project_name}/domains", json={"name": domain}
+        )
+
+    def get_domain(self, project_name: str, domain: str) -> dict[str, Any] | None:
+        """Returns None (not an error) when this domain isn't attached
+        to the project — same "check first" role _project_exists plays
+        for ensure_project/delete_project."""
+        response = self._client.get(
+            f"/accounts/{self._account_id}/pages/projects/{project_name}/domains/{domain}",
+            headers=self._auth_headers,
+        )
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise CloudflareApiError(
+                f"Cloudflare returned {response.status_code} for GET domain {domain!r}: {response.text}",
+                status_code=response.status_code,
+            )
+        body = response.json()
+        if not body.get("success", False):
+            raise CloudflareApiError(
+                f"Cloudflare reported failure for GET domain {domain!r}: {body.get('errors')}",
+                status_code=response.status_code,
+            )
+        return body.get("result") or {}
+
+    def delete_domain(self, project_name: str, domain: str) -> None:
+        """Idempotent, same shape as delete_project: a domain that's
+        already detached (or never attached) is a no-op, not an error —
+        a caller retrying a failed detach must be able to call this
+        again safely."""
+        if self.get_domain(project_name, domain) is None:
+            return
+        self._request("DELETE", f"/accounts/{self._account_id}/pages/projects/{project_name}/domains/{domain}")
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         # Deliberately no logging of `kwargs` or of headers (holds the

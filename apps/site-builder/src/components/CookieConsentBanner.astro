@@ -1,0 +1,216 @@
+---
+/**
+ * A real consent mechanism, not a decorative banner (P0 Phase 16-19):
+ * NECESSARY is always on and never shown as a toggle; ANALYTICS/
+ * MARKETING/PREFERENCES default to withheld and are only granted by an
+ * explicit, never-preselected visitor choice. The choice persists in
+ * localStorage and is exposed via `window.gwaConsent.isGranted(category)`
+ * — the gate a future non-essential script (analytics, a marketing
+ * pixel, a reviews widget) must check before it loads anything, the
+ * same way this codebase currently has nothing non-necessary to gate
+ * (see docs/legal-and-consent.md). Absence of a stored decision reads
+ * as "not granted" for every optional category, so a script checking
+ * the gate before the visitor has chosen anything stays blocked by
+ * construction — there is no fail-open path here.
+ *
+ * No dark patterns: "Reject non-essential", "Save preferences", and
+ * "Accept all" render with equal visual weight; dismissing the banner
+ * without choosing is not offered as an "accept" action — the banner
+ * stays until an explicit choice is made.
+ */
+---
+
+<div id="gwa-consent-banner" class="consent-banner" hidden>
+  <div class="consent-banner__panel">
+    <p class="consent-banner__text">
+      This site uses cookies. Necessary cookies are always on. Everything else stays off unless you choose to
+      allow it.
+    </p>
+    <div class="consent-banner__categories">
+      <label class="consent-banner__category">
+        <input type="checkbox" checked disabled />
+        Necessary (always on)
+      </label>
+      <label class="consent-banner__category">
+        <input type="checkbox" data-consent-category="analytics" />
+        Analytics
+      </label>
+      <label class="consent-banner__category">
+        <input type="checkbox" data-consent-category="marketing" />
+        Marketing
+      </label>
+      <label class="consent-banner__category">
+        <input type="checkbox" data-consent-category="preferences" />
+        Preferences
+      </label>
+    </div>
+    <div class="consent-banner__actions">
+      <button type="button" id="gwa-consent-reject">Reject non-essential</button>
+      <button type="button" id="gwa-consent-save">Save preferences</button>
+      <button type="button" id="gwa-consent-accept">Accept all</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  type ConsentCategory = "analytics" | "marketing" | "preferences";
+
+  interface ConsentRecord {
+    necessary: true;
+    analytics: boolean;
+    marketing: boolean;
+    preferences: boolean;
+    updatedAt: string;
+  }
+
+  declare global {
+    interface Window {
+      gwaConsent: {
+        isGranted(category: "necessary" | ConsentCategory): boolean;
+        open(): void;
+      };
+    }
+  }
+
+  const STORAGE_KEY = "gwa-consent";
+
+  function readStoredConsent(): ConsentRecord | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as ConsentRecord) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function writeConsent(categories: Partial<Record<ConsentCategory, boolean>>): ConsentRecord {
+    const record: ConsentRecord = {
+      necessary: true,
+      analytics: false,
+      marketing: false,
+      preferences: false,
+      ...categories,
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(record));
+    } catch {
+      // Storage unavailable (private browsing, quota) — the choice still
+      // applies for this page view via the in-memory gate below; it
+      // simply won't persist across a reload.
+    }
+    window.dispatchEvent(new CustomEvent("gwa-consent-change", { detail: record }));
+    return record;
+  }
+
+  let currentConsent = readStoredConsent();
+
+  window.gwaConsent = {
+    isGranted(category) {
+      if (category === "necessary") return true;
+      return Boolean(currentConsent && currentConsent[category]);
+    },
+    open() {
+      openBanner();
+    },
+  };
+
+  const banner = document.getElementById("gwa-consent-banner");
+  const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>("[data-consent-category]"));
+
+  function openBanner() {
+    if (!banner) return;
+    for (const checkbox of checkboxes) {
+      const category = checkbox.dataset.consentCategory as ConsentCategory | undefined;
+      checkbox.checked = Boolean(currentConsent && category && currentConsent[category]);
+    }
+    banner.hidden = false;
+  }
+
+  function applyAndClose(categories: Partial<Record<ConsentCategory, boolean>>) {
+    currentConsent = writeConsent(categories);
+    if (banner) banner.hidden = true;
+  }
+
+  document.getElementById("gwa-consent-accept")?.addEventListener("click", () => {
+    applyAndClose({ analytics: true, marketing: true, preferences: true });
+  });
+  document.getElementById("gwa-consent-reject")?.addEventListener("click", () => {
+    applyAndClose({ analytics: false, marketing: false, preferences: false });
+  });
+  document.getElementById("gwa-consent-save")?.addEventListener("click", () => {
+    const chosen: Partial<Record<ConsentCategory, boolean>> = {};
+    for (const checkbox of checkboxes) {
+      const category = checkbox.dataset.consentCategory as ConsentCategory | undefined;
+      if (category) chosen[category] = checkbox.checked;
+    }
+    applyAndClose(chosen);
+  });
+
+  if (!currentConsent) {
+    banner && (banner.hidden = false);
+  }
+
+  document.querySelectorAll("[data-open-consent-preferences]").forEach((trigger) => {
+    trigger.addEventListener("click", (event) => {
+      event.preventDefault();
+      openBanner();
+    });
+  });
+</script>
+
+<style>
+  .consent-banner {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 1000;
+    padding: 1rem;
+    background-color: var(--ui-color-bg, #ffffff);
+    border-top: 1px solid var(--ui-color-border, #e5e7eb);
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  .consent-banner__panel {
+    max-width: 60rem;
+    margin-inline: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .consent-banner__text {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  .consent-banner__categories {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    font-size: 0.85rem;
+  }
+
+  .consent-banner__category {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .consent-banner__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .consent-banner__actions button {
+    font: inherit;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--ui-radius, 0.375rem);
+    border: 1px solid var(--ui-color-border, #e5e7eb);
+    background-color: transparent;
+    color: var(--ui-color-fg, #111827);
+    cursor: pointer;
+  }
+</style>

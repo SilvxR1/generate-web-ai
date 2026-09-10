@@ -439,6 +439,159 @@ export function ProposalReview({
         />
       </fieldset>
 
+      <fieldset className="form-section">
+        <legend>Legal profile</legend>
+        <p className="field-hint">
+          Used to fill in this business's generated Privacy Policy, Terms of Service, and Cookie Policy pages. Every
+          field is optional — anything left blank shows as "Not provided" on those pages rather than being
+          invented. This app never purchases, registers, or verifies these facts on your behalf.
+        </p>
+
+        <label className="field-label" htmlFor="legal-name">
+          Legal name
+        </label>
+        <input
+          id="legal-name"
+          type="text"
+          placeholder={draft.name || "e.g. the registered company name"}
+          value={draft.legalProfile.legalName}
+          onChange={(event) => {
+            const legalName = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, legalName } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-registration-number">
+          Registration number
+        </label>
+        <input
+          id="legal-registration-number"
+          type="text"
+          value={draft.legalProfile.registrationNumber}
+          onChange={(event) => {
+            const registrationNumber = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, registrationNumber } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-tax-id">
+          Tax ID
+        </label>
+        <input
+          id="legal-tax-id"
+          type="text"
+          value={draft.legalProfile.taxId}
+          onChange={(event) => {
+            const taxId = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, taxId } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-street-address">
+          Registered address — street
+        </label>
+        <input
+          id="legal-street-address"
+          type="text"
+          value={draft.legalProfile.address.streetAddress}
+          onChange={(event) => {
+            const streetAddress = event.target.value;
+            onChange((prev) => ({
+              ...prev,
+              legalProfile: { ...prev.legalProfile, address: { ...prev.legalProfile.address, streetAddress } },
+            }));
+          }}
+        />
+        <label className="field-label" htmlFor="legal-locality">
+          Registered address — city
+        </label>
+        <input
+          id="legal-locality"
+          type="text"
+          value={draft.legalProfile.address.locality}
+          onChange={(event) => {
+            const locality = event.target.value;
+            onChange((prev) => ({
+              ...prev,
+              legalProfile: { ...prev.legalProfile, address: { ...prev.legalProfile.address, locality } },
+            }));
+          }}
+        />
+        <label className="field-label" htmlFor="legal-region">
+          Registered address — region
+        </label>
+        <input
+          id="legal-region"
+          type="text"
+          value={draft.legalProfile.address.region}
+          onChange={(event) => {
+            const region = event.target.value;
+            onChange((prev) => ({
+              ...prev,
+              legalProfile: { ...prev.legalProfile, address: { ...prev.legalProfile.address, region } },
+            }));
+          }}
+        />
+        <label className="field-label" htmlFor="legal-postal-code">
+          Registered address — postal code
+        </label>
+        <input
+          id="legal-postal-code"
+          type="text"
+          value={draft.legalProfile.address.postalCode}
+          onChange={(event) => {
+            const postalCode = event.target.value;
+            onChange((prev) => ({
+              ...prev,
+              legalProfile: { ...prev.legalProfile, address: { ...prev.legalProfile.address, postalCode } },
+            }));
+          }}
+        />
+        <label className="field-label" htmlFor="legal-country">
+          Registered address — country (2-letter code)
+        </label>
+        <input
+          id="legal-country"
+          type="text"
+          maxLength={2}
+          value={draft.legalProfile.address.country}
+          onChange={(event) => {
+            const country = event.target.value;
+            onChange((prev) => ({
+              ...prev,
+              legalProfile: { ...prev.legalProfile, address: { ...prev.legalProfile.address, country } },
+            }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-privacy-contact-email">
+          Privacy contact email
+        </label>
+        <input
+          id="legal-privacy-contact-email"
+          type="text"
+          placeholder={draft.contact.email || undefined}
+          value={draft.legalProfile.privacyContactEmail}
+          onChange={(event) => {
+            const privacyContactEmail = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, privacyContactEmail } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-data-processors">
+          Third-party data processors (comma-separated, e.g. "Resend (email), Cloudflare (hosting)")
+        </label>
+        <input
+          id="legal-data-processors"
+          type="text"
+          value={draft.legalProfile.dataProcessors}
+          onChange={(event) => {
+            const dataProcessors = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, dataProcessors } }));
+          }}
+        />
+      </fieldset>
+
       <details className="json-preview">
         <summary>Technical preview (raw proposal JSON)</summary>
         <pre>{JSON.stringify(analysis.proposed_config, null, 2)}</pre>

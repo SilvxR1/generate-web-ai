@@ -17,6 +17,7 @@ from app.dependencies import (
     get_session,
     get_storage_provider,
     get_website_publisher,
+    rate_limit_dependency,
 )
 from app.domain.business_config import BusinessConfig, CreativeConfig
 from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, CreativeProviderName
@@ -167,6 +168,9 @@ def upload_business_asset(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     storage: StorageProvider = Depends(get_storage_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="asset_upload", limit_attr="asset_upload_rate_limit_per_minute")
+    ),
 ) -> BusinessAsset:
     """Real file ingestion (Phase 3) — the counterpart to POST .../assets
     above, for a file the caller has on hand rather than one already

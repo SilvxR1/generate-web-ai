@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.automation.n8n import lead_submitted_webhook_url
 from app.db.models.website import Website
+from app.db.models.website_version import WebsiteVersion
 from app.db.models.workflow import Workflow
 from app.domain.enums import DeployTarget, WebsiteStatus, WorkflowStatus
 from app.publishing.build import build_site
@@ -60,6 +61,15 @@ class WebsiteStateResult(BaseModel):
     deployment_id: str | None
     deployed_at: datetime | None
     updated_at: datetime | None
+
+
+def website_project_name(business_id: UUID) -> str:
+    """The Cloudflare Pages project name (WebsitePublisher's `site_id`)
+    a business's website lives under — computed once here so
+    app.publishing.domains (which needs the same identifier to attach a
+    custom domain to the right project) never derives its own, possibly
+    drifting, copy of this format."""
+    return f"site-{business_id.hex}"
 
 
 def _to_state_result(website: Website) -> WebsiteStateResult:
@@ -128,7 +138,7 @@ def publish_website(
     website = repo.get_by_business(tenant_id, business_id)
     workflow = WorkflowRepository(session).get_for_business(tenant_id, business_id)
     _inject_lead_capture_webhook_url(site_config, workflow=workflow, n8n_base_url=n8n_base_url)
-    site_id = f"site-{business_id.hex}"
+    site_id = website_project_name(business_id)
 
     try:
         artifact = build_site(site_config)
@@ -162,6 +172,34 @@ def publish_website(
     website.provider_deployment_id = published.deployment_id
     website.deployed_at = datetime.now(UTC)
     website.config = site_config.model_dump(mode="json")
+
+    # One immutable, append-only snapshot per successful publish (P0
+    # Phase 20-22) — including a republish a rollback itself performs
+    # (app.publishing.versions.rollback_to_version calls this same
+    # function), so version history accumulates through the one publish
+    # path rather than a second, parallel bookkeeping mechanism.
+    #
+    # Flushed as its own isolated unit (`flush([version])`, not a plain
+    # `flush()`) so this new row is immediately queryable by a caller in
+    # the same session/transaction (e.g. list_website_versions called
+    # right after publish_website in a test) without also flushing
+    # `website`'s own still-pending UPDATE — TimestampMixin.updated_at's
+    # `onupdate=func.now()` makes a flush of that row trigger a refresh
+    # of its attributes from the DB, and SQLite's DateTime(timezone=True)
+    # doesn't actually round-trip tzinfo, which would silently turn the
+    # aware `website.deployed_at` this function just set into a naive
+    # one before this function even returns.
+    version = WebsiteVersion(
+        tenant_id=tenant_id,
+        business_id=business_id,
+        website_id=website.id,
+        site_config=site_config.model_dump(mode="json"),
+        deploy_url=str(published.url),
+        provider_deployment_id=published.deployment_id,
+        published_at=website.deployed_at,
+    )
+    session.add(version)
+    session.flush([version])
 
     return _to_state_result(website)
 

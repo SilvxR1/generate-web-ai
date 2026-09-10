@@ -10,7 +10,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "check": "turbo run check"
+    "check": "turbo run check",
+    "test": "turbo run test"
   },
   "devDependencies": {
     "turbo": "2.10.11"

@@ -3,6 +3,7 @@
     BusinessConfig
     ├── business_profile   (required — everything else has defaults)
     ├── brand
+    ├── legal_profile       real legal-entity facts, never fabricated — see legal.py
     ├── website             intent/preferences, not generated content — see website.py
     ├── creative            strategy/level intent — see creative.py
     ├── lead_management
@@ -29,6 +30,7 @@ from app.domain.business_config.communication import CommunicationConfig
 from app.domain.business_config.creative import CreativeConfig
 from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
+from app.domain.business_config.legal import LegalProfile
 from app.domain.business_config.website import WebsiteConfig
 from app.domain.enums import LeadSource
 
@@ -41,6 +43,7 @@ class BusinessConfig(BaseModel):
     schema_version: int = CURRENT_BUSINESS_CONFIG_SCHEMA_VERSION
     business_profile: BusinessProfile
     brand: BrandConfig | None = None
+    legal_profile: LegalProfile | None = None
     website: WebsiteConfig = Field(default_factory=WebsiteConfig)
     creative: CreativeConfig = Field(default_factory=CreativeConfig)
     lead_management: LeadManagementConfig = Field(default_factory=LeadManagementConfig)

@@ -1,18 +1,24 @@
 ---
 /**
  * Layout — the generic page shell: <head>/SEO wiring, theme application,
- * and a minimal brand header around whatever page content is passed via
- * <slot />. Mirrors the same role apps/clients/*'s own Layout.astro plays
- * (see that docstring) — packages/renderer deliberately leaves theme
- * application and page chrome to the consuming app; this is that piece
- * for the generic, any-business build engine.
+ * a minimal brand header, and a footer + cookie consent banner around
+ * whatever page content is passed via <slot />. Mirrors the same role
+ * apps/clients/*'s own Layout.astro plays (see that docstring) —
+ * packages/renderer deliberately leaves theme application and page
+ * chrome to the consuming app; this is that piece for the generic,
+ * any-business build engine.
  *
  * Deliberately minimal compared to a hand-authored client's Layout: no
- * navigation, no footer, no extra derived color roles — those were
- * legitimate for one curated client but aren't principled generic
- * defaults for an arbitrary AI-proposed business, so they're left out
- * rather than guessed at. Only the five ThemeConfig color roles + fonts
- * + radius get wired, straight from SiteConfig, no invention.
+ * navigation, no extra derived color roles — those were legitimate for
+ * one curated client but aren't principled generic defaults for an
+ * arbitrary AI-proposed business, so they're left out rather than
+ * guessed at. The footer and consent banner are the one addition to
+ * that original minimalism (P0 Phase 16-19): every generated site now
+ * always has legal pages (packages/website-generator's legal.ts) and a
+ * real consent mechanism (CookieConsentBanner.astro), so this shell is
+ * the one principled place to surface both on every page, not something
+ * being invented per business. Only the five ThemeConfig color roles +
+ * fonts + radius get wired, straight from SiteConfig, no invention.
  *
  * Theme values are business-supplied, free-form strings (BrandColors
  * explicitly isn't restricted to hex — see app/domain/business_config/
@@ -22,6 +28,7 @@
  * `</style>` break out of the tag and inject real markup.
  */
 import type { SiteConfig } from "@generate-web-ai/site-config";
+import CookieConsentBanner from "./CookieConsentBanner.astro";
 import "../styles/global.css";
 
 export interface Props {
@@ -29,7 +36,19 @@ export interface Props {
 }
 
 const { siteConfig } = Astro.props;
-const { theme, seo, brand } = siteConfig;
+const { theme, seo, brand, pages } = siteConfig;
+
+// Only linked when the SiteConfig actually has that page — never a
+// dead link guessed at for a business that (in principle, even though
+// packages/website-generator always adds all three today) doesn't have
+// one.
+const LEGAL_LINKS: ReadonlyArray<{ path: string; label: string }> = [
+  { path: "/privacy", label: "Privacy Policy" },
+  { path: "/terms", label: "Terms of Service" },
+  { path: "/cookies", label: "Cookie Policy" },
+];
+const legalLinks = LEGAL_LINKS.filter((link) => pages.some((page) => page.path === link.path));
+const currentYear = new Date().getFullYear();
 
 const themeStyle: Record<string, string> = {
   "--ui-font-sans": theme.fonts.sans,
@@ -60,6 +79,20 @@ if (theme.fonts.display) {
     <main>
       <slot />
     </main>
+    <footer class="site-footer">
+      <p class="site-footer__copyright">&copy; {currentYear} {brand.name}</p>
+      {legalLinks.length > 0 && (
+        <nav class="site-footer__links" aria-label="Legal">
+          {legalLinks.map((link) => (
+            <a href={link.path}>{link.label}</a>
+          ))}
+          <button type="button" data-open-consent-preferences class="site-footer__consent-link">
+            Manage cookie preferences
+          </button>
+        </nav>
+      )}
+    </footer>
+    <CookieConsentBanner />
   </body>
 </html>
 
@@ -86,5 +119,41 @@ if (theme.fonts.display) {
   .site-header__tagline {
     margin: 0.25rem 0 0;
     opacity: 0.75;
+  }
+
+  .site-footer {
+    padding: 1.5rem;
+    border-top: 1px solid var(--ui-color-border, #e5e7eb);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    opacity: 0.85;
+  }
+
+  .site-footer__copyright {
+    margin: 0;
+  }
+
+  .site-footer__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .site-footer__links a {
+    color: inherit;
+  }
+
+  .site-footer__consent-link {
+    font: inherit;
+    font-size: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    text-decoration: underline;
+    cursor: pointer;
   }
 </style>

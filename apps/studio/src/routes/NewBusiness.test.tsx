@@ -217,6 +217,9 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
     const user = userEvent.setup();
     renderPage();
 
@@ -230,7 +233,7 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(10));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as { name: string; slug: string };
     expect(body.name).toBe("Cafe del Sol");
@@ -254,6 +257,9 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
     const user = userEvent.setup();
     renderPage();
 
@@ -272,7 +278,7 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(10));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as {
       config: { automation: { follow_up: { enabled: boolean; delay_hours: number } } };
@@ -418,6 +424,9 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
     const user = userEvent.setup();
     renderPage();
 
@@ -500,6 +509,9 @@ describe("NewBusiness preview step", () => {
     automationStateBody: unknown = null,
     websiteStateBody: unknown = null,
     leadsBody: unknown = [],
+    customDomainBody: unknown = null,
+    websiteVersionsBody: unknown = [],
+    productionReadinessBody: unknown = { checks: [], has_blocking_issues: false },
   ) {
     fetchMock.mockResolvedValueOnce(minimalAnalysis(exampleReformaValenciaConfig));
     fetchMock.mockResolvedValueOnce(automationRecommendationResponse()); // auto-fetched once ProposalReview mounts
@@ -517,6 +529,9 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, automationStateBody)); // automation state, defaults to "never activated"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteStateBody)); // website state, defaults to "never published"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, leadsBody)); // leads, defaults to "none captured yet"
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, customDomainBody)); // custom domain, defaults to "never attached"
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteVersionsBody)); // website versions, defaults to "none yet"
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, productionReadinessBody)); // production readiness
 
     renderPage();
     await analyze(user);
@@ -852,6 +867,9 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
     const user = userEvent.setup();
     renderPage();
 
@@ -884,6 +902,9 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
 
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText(/created/);
@@ -1141,6 +1162,9 @@ describe("NewBusiness reopening an existing business (Studio dashboard's Open ac
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state: never activated
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state: never published
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads: none captured yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
 
     renderReopenPage("biz-reforma-pepe");
 

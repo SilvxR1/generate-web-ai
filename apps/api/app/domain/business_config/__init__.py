@@ -15,6 +15,7 @@ from app.domain.business_config.creative import CreativeConfig
 from app.domain.business_config.examples import EXAMPLE_REFORMA_VALENCIA_CONFIG
 from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
+from app.domain.business_config.legal import LegalProfile
 from app.domain.business_config.website import SEOPreferences, WebsiteConfig
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "FollowUpConfig",
     "IntegrationPreferences",
     "LeadManagementConfig",
+    "LegalProfile",
     "Location",
     "NotificationPreferences",
     "PostalAddress",

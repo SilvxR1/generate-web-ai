@@ -11,6 +11,7 @@ export { default as Testimonials } from "./components/Testimonials.astro";
 export { default as FAQ } from "./components/FAQ.astro";
 export { default as CTA } from "./components/CTA.astro";
 export { default as Contact } from "./components/Contact.astro";
+export { default as LegalText } from "./components/LegalText.astro";
 
 export type { HeroContent, HeroStat } from "./components/Hero.astro";
 export type { ServicesContent, ServiceItem } from "./components/Services.astro";
@@ -27,5 +28,6 @@ export type {
   ContactFormField,
   ContactFormFieldOption,
 } from "./components/Contact.astro";
+export type { LegalTextContent, LegalSection } from "./components/LegalText.astro";
 
 export type { BlockAction, BlockImage } from "./types";

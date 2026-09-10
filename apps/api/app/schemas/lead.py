@@ -16,6 +16,9 @@ class LeadRead(BaseModel):
     email: str | None
     phone: str | None
     message: str | None
+    subject: str | None
+    source_url: str | None
+    consent_given: bool
     status: LeadStatus
     created_at: datetime
 

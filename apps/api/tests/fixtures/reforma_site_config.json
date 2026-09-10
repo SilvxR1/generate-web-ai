@@ -3,136 +3,144 @@
     "name": "Reforma Casa Valencia",
     "tagline": "Reformas con seguimiento profesional, de principio a fin."
   },
-  "theme": {
-    "colors": {
-      "accent": "#f59e0b",
-      "background": "#ffffff",
-      "foreground": "#111827",
-      "primary": "#b45309",
-      "secondary": "#0f766e"
+  "business": {
+    "address": {
+      "addressCountry": "ES",
+      "addressLocality": "Valencia",
+      "addressRegion": "Comunidad Valenciana",
+      "postalCode": "46004",
+      "streetAddress": "Carrer de Colon 1"
     },
-    "fonts": {
-      "sans": "Inter, system-ui, sans-serif",
-      "display": "Fraunces, serif"
-    },
-    "radius": {
-      "base": "0.5rem",
-      "lg": "0.75rem"
-    }
+    "email": "info@reformacasavalencia.example",
+    "openingHours": [
+      {
+        "closes": "18:00",
+        "dayOfWeek": [
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday"
+        ],
+        "opens": "09:00"
+      }
+    ],
+    "telephone": "+34 960 00 00 00"
+  },
+  "features": {
+    "booking": false,
+    "chatbot": false,
+    "contactForm": true
   },
   "pages": [
     {
-      "path": "/",
       "blocks": [
         {
-          "type": "hero",
-          "id": "hero",
           "content": {
             "eyebrow": "Valencia",
             "heading": "Reforma Casa Valencia",
-            "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
             "primaryAction": {
-              "label": "Contactar",
-              "href": "#contact"
+              "href": "#contact",
+              "label": "Contactar"
             },
             "secondaryAction": {
-              "label": "Ver servicios",
-              "href": "#services"
-            }
-          }
+              "href": "#services",
+              "label": "Ver servicios"
+            },
+            "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda."
+          },
+          "id": "hero",
+          "type": "hero"
         },
         {
-          "type": "services",
-          "id": "services",
           "content": {
             "heading": "Nuestros servicios",
             "items": [
               {
-                "title": "Reforma integral",
                 "description": "Reforma completa de vivienda, de principio a fin.",
-                "featured": true
+                "featured": true,
+                "title": "Reforma integral"
               },
               {
-                "title": "Cocinas",
                 "description": "Diseno y reforma de cocinas a medida.",
-                "featured": false
+                "featured": false,
+                "title": "Cocinas"
               },
               {
-                "title": "Banos",
                 "description": "Renovacion completa de cuartos de bano.",
-                "featured": false
+                "featured": false,
+                "title": "Banos"
               },
               {
-                "title": "Electricidad y fontaneria",
                 "description": "Instalaciones electricas y de fontaneria.",
-                "featured": false
+                "featured": false,
+                "title": "Electricidad y fontaneria"
               },
               {
-                "title": "Pintura",
                 "description": "Pintura interior y exterior.",
-                "featured": false
+                "featured": false,
+                "title": "Pintura"
               },
               {
-                "title": "Diseno y planificacion",
                 "description": "Diseno de espacios y planificacion de obra.",
-                "featured": false
+                "featured": false,
+                "title": "Diseno y planificacion"
               }
             ]
-          }
+          },
+          "id": "services",
+          "type": "services"
         },
         {
-          "type": "features",
-          "id": "about",
           "content": {
             "heading": "Sobre nosotros",
-            "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
             "items": [
               {
-                "title": "Zona de servicio",
-                "description": "Valencia, Benimaclet, Ruzafa, Patraix, Campanar, Pla del Real, Eixample"
+                "description": "Valencia, Benimaclet, Ruzafa, Patraix, Campanar, Pla del Real, Eixample",
+                "title": "Zona de servicio"
               },
               {
-                "title": "¿Para quién?",
-                "description": "Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional."
+                "description": "Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional.",
+                "title": "¿Para quién?"
               }
-            ]
-          }
+            ],
+            "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda."
+          },
+          "id": "about",
+          "type": "features"
         },
         {
-          "type": "cta",
-          "id": "cta",
           "content": {
             "heading": "¿Listo para empezar tu proyecto?",
             "primaryAction": {
-              "label": "Solicitar presupuesto",
-              "href": "#contact"
+              "href": "#contact",
+              "label": "Solicitar presupuesto"
             },
             "secondaryAction": {
-              "label": "Llamar ahora",
-              "href": "tel:+34960000000"
+              "href": "tel:+34960000000",
+              "label": "Llamar ahora"
             }
-          }
+          },
+          "id": "cta",
+          "type": "cta"
         },
         {
-          "type": "contact",
-          "id": "contact",
           "content": {
-            "heading": "Contacto",
             "details": [
               {
+                "href": "tel:+34960000000",
                 "label": "Teléfono",
-                "value": "+34 960 00 00 00",
-                "href": "tel:+34960000000"
+                "value": "+34 960 00 00 00"
               },
               {
+                "href": "mailto:info@reformacasavalencia.example",
                 "label": "Email",
-                "value": "info@reformacasavalencia.example",
-                "href": "mailto:info@reformacasavalencia.example"
+                "value": "info@reformacasavalencia.example"
               },
               {
+                "href": "https://wa.me/34600000000",
                 "label": "WhatsApp",
-                "value": "+34 600 00 00 00",
-                "href": "https://wa.me/34600000000"
+                "value": "+34 600 00 00 00"
               },
               {
                 "label": "Dirección",
@@ -142,22 +150,20 @@
             "form": {
               "fields": [
                 {
-                  "name": "name",
                   "label": "Nombre",
-                  "type": "text",
-                  "required": true
-                },
-                {
-                  "name": "phone",
-                  "label": "Teléfono",
-                  "type": "tel",
-                  "required": true
-                },
-                {
-                  "name": "service",
-                  "label": "Servicio",
-                  "type": "select",
+                  "name": "name",
                   "required": true,
+                  "type": "text"
+                },
+                {
+                  "label": "Teléfono",
+                  "name": "phone",
+                  "required": true,
+                  "type": "tel"
+                },
+                {
+                  "label": "Servicio",
+                  "name": "service",
                   "options": [
                     {
                       "label": "Reforma integral",
@@ -183,47 +189,131 @@
                       "label": "Diseno y planificacion",
                       "value": "diseno-planificacion"
                     }
-                  ]
+                  ],
+                  "required": true,
+                  "type": "select"
                 }
               ],
               "submitLabel": "Enviar solicitud"
-            }
-          }
+            },
+            "heading": "Contacto"
+          },
+          "id": "contact",
+          "type": "contact"
         }
-      ]
+      ],
+      "path": "/"
+    },
+    {
+      "blocks": [
+        {
+          "content": {
+            "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+            "heading": "Privacy Policy",
+            "sections": [
+              {
+                "body": "Reforma Casa Valencia operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: info@reformacasavalencia.example",
+                "heading": "Who we are"
+              },
+              {
+                "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site.",
+                "heading": "Information we collect"
+              },
+              {
+                "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner.",
+                "heading": "Cookies"
+              },
+              {
+                "body": "No third-party data processors have been listed for this business.",
+                "heading": "Third parties we work with"
+              },
+              {
+                "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at info@reformacasavalencia.example.",
+                "heading": "Your rights"
+              },
+              {
+                "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy.",
+                "heading": "Changes to this policy"
+              }
+            ]
+          },
+          "type": "legal_text"
+        }
+      ],
+      "path": "/privacy"
+    },
+    {
+      "blocks": [
+        {
+          "content": {
+            "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+            "heading": "Terms of Service",
+            "sections": [
+              {
+                "body": "By using this website, you agree to these terms. This website is operated by Reforma Casa Valencia.",
+                "heading": "Acceptance of these terms"
+              },
+              {
+                "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else.",
+                "heading": "Use of this website"
+              },
+              {
+                "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law.",
+                "heading": "No warranty"
+              },
+              {
+                "body": "Questions about these terms can be sent to info@reformacasavalencia.example.",
+                "heading": "Contact"
+              }
+            ]
+          },
+          "type": "legal_text"
+        }
+      ],
+      "path": "/terms"
+    },
+    {
+      "blocks": [
+        {
+          "content": {
+            "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+            "heading": "Cookie Policy",
+            "sections": [
+              {
+                "body": "Reforma Casa Valencia's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected.",
+                "heading": "How this site uses cookies"
+              },
+              {
+                "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer.",
+                "heading": "Managing your preferences"
+              }
+            ]
+          },
+          "type": "legal_text"
+        }
+      ],
+      "path": "/cookies"
     }
   ],
-  "features": {
-    "contactForm": true,
-    "chatbot": false,
-    "booking": false
-  },
   "seo": {
-    "title": "Reforma Casa Valencia | Reformas integrales en Valencia",
-    "description": "Reformas integrales, cocinas y banos en Valencia con seguimiento profesional de principio a fin."
+    "description": "Reformas integrales, cocinas y banos en Valencia con seguimiento profesional de principio a fin.",
+    "title": "Reforma Casa Valencia | Reformas integrales en Valencia"
   },
-  "business": {
-    "telephone": "+34 960 00 00 00",
-    "email": "info@reformacasavalencia.example",
-    "address": {
-      "streetAddress": "Carrer de Colon 1",
-      "addressLocality": "Valencia",
-      "addressRegion": "Comunidad Valenciana",
-      "postalCode": "46004",
-      "addressCountry": "ES"
+  "theme": {
+    "colors": {
+      "accent": "#f59e0b",
+      "background": "#ffffff",
+      "foreground": "#111827",
+      "primary": "#b45309",
+      "secondary": "#0f766e"
     },
-    "openingHours": [
-      {
-        "dayOfWeek": [
-          "Monday",
-          "Tuesday",
-          "Wednesday",
-          "Thursday",
-          "Friday"
-        ],
-        "opens": "09:00",
-        "closes": "18:00"
-      }
-    ]
+    "fonts": {
+      "display": "Fraunces, serif",
+      "sans": "Inter, system-ui, sans-serif"
+    },
+    "radius": {
+      "base": "0.5rem",
+      "lg": "0.75rem"
+    }
   }
 }

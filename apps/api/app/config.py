@@ -110,5 +110,12 @@ class Settings(BaseSettings):
     # quota.
     max_upload_size_bytes: int = 10 * 1024 * 1024
 
+    # InMemoryRateLimiter (app.security.rate_limit) budgets for the two
+    # abuse-sensitive endpoints identified in the P0 security pass:
+    # anonymous public lead submission and asset upload. Real defaults —
+    # not credentials — safe to ship as-is; override per deployment.
+    public_lead_rate_limit_per_minute: int = 10
+    asset_upload_rate_limit_per_minute: int = 20
+
 
 settings = Settings()

@@ -1,10 +1,10 @@
 import hmac
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, Header
+from fastapi import Depends, Header, Request
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -20,9 +20,11 @@ from app.errors import AppError
 from app.notifications.resend import ResendNotificationSender
 from app.notifications.sender import NotificationSender
 from app.notifications.smtp import SmtpNotificationSender
-from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesPublisher
+from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesDomainProvider, CloudflarePagesPublisher
+from app.publishing.domain_provider import DomainProvider
 from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
+from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.storage import LocalStorageProvider, StorageProvider
 
 # Module-level: one engine/pool for the process lifetime, per SQLAlchemy's
@@ -31,6 +33,13 @@ from app.storage import LocalStorageProvider, StorageProvider
 # dependency_overrides rather than reaching into these globals directly.
 engine: Engine = make_engine(settings.database_url)
 _session_factory = make_session_factory(engine)
+
+# One rate limiter for the process lifetime — an InMemoryRateLimiter's
+# whole point is per-process state (see its own docstring), so unlike
+# get_session above, this is a real singleton, not just a pooled
+# resource. Tests override get_rate_limiter via FastAPI's
+# dependency_overrides, same as every other dependency here.
+_rate_limiter: RateLimiter = InMemoryRateLimiter()
 
 
 def get_engine() -> Engine:
@@ -141,6 +150,21 @@ def get_website_publisher() -> WebsitePublisher:
     )
 
 
+def get_domain_provider() -> DomainProvider:
+    """Same shape as get_website_publisher above — the same Cloudflare
+    account/token already required to publish a website is what custom-
+    domain attachment needs too, so this fails the same clean, loud way
+    when unconfigured rather than a second, separate "not set up" path."""
+    if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
+        raise AppError(
+            "Custom domains are not configured on this server.",
+            code="domain_provider_not_configured",
+            status_code=503,
+        )
+    client = CloudflarePagesClient(settings.cloudflare_account_id, settings.cloudflare_api_token)
+    return CloudflarePagesDomainProvider(client)
+
+
 def get_optional_notification_sender() -> NotificationSender | None:
     """Unlike get_website_publisher/get_n8n_client above, this never
     raises for "not configured" — returns None instead. Website publish
@@ -224,6 +248,34 @@ def get_optional_higgsfield_provider() -> CreativeProvider | None:
     if not settings.higgsfield_api_key or not settings.higgsfield_base_url:
         return None
     return get_higgsfield_provider()
+
+
+def get_rate_limiter() -> RateLimiter:
+    return _rate_limiter
+
+
+def rate_limit_dependency(*, key_prefix: str, limit_attr: str, window_seconds: float = 60.0) -> Callable[..., None]:
+    """Builds a FastAPI dependency enforcing a sliding-window rate limit,
+    keyed by `key_prefix` + the caller's IP. `limit_attr` names a
+    `Settings` field read *at call time* (not when the route is defined)
+    so tests can monkeypatch it and a deployment can tune it via env vars
+    without a code change — see app.config.Settings'
+    public_lead_rate_limit_per_minute/asset_upload_rate_limit_per_minute.
+    """
+
+    def _dependency(request: Request, limiter: RateLimiter = Depends(get_rate_limiter)) -> None:
+        limit = getattr(settings, limit_attr)
+        client_host = request.client.host if request.client else "unknown"
+        try:
+            limiter.check(f"{key_prefix}:{client_host}", limit=limit, window_seconds=window_seconds)
+        except RateLimitExceededError as exc:
+            raise AppError(
+                "Too many requests — please try again shortly.",
+                code="rate_limited",
+                status_code=429,
+            ) from exc
+
+    return _dependency
 
 
 def verify_internal_automation_token(

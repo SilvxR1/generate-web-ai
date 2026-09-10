@@ -24,12 +24,19 @@ import {
   buildServicesBlock,
 } from "./blocks.ts";
 import { buildBusiness } from "./business.ts";
+import { buildLegalPages } from "./legal.ts";
 import { getPreset } from "./presets.ts";
 import { buildSeo } from "./seo.ts";
 import { DEFAULT_THEME } from "./theme.ts";
 
 export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
-  const { business_profile: profile, brand, website, lead_management: leadManagement } = businessConfig;
+  const {
+    business_profile: profile,
+    brand,
+    website,
+    lead_management: leadManagement,
+    legal_profile: legalProfile,
+  } = businessConfig;
   const preset = getPreset(profile.industry);
 
   const blocks: BlockConfig[] = [buildHeroBlock(profile, preset)];
@@ -46,6 +53,7 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
   if (contactBlock) blocks.push(contactBlock);
 
   const page: PageConfig = { path: "/", blocks };
+  const legalPages = buildLegalPages(profile, legalProfile ?? undefined, Boolean(contactBlock?.content.form));
   const business = buildBusiness(profile);
 
   return {
@@ -67,7 +75,7 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
           radius: DEFAULT_THEME.radius,
         }
       : DEFAULT_THEME,
-    pages: [page],
+    pages: [page, ...legalPages],
     features: {
       contactForm: Boolean(contactBlock?.content.form),
       chatbot: false,
