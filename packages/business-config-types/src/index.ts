@@ -10,6 +10,7 @@ export type {
   BusinessVertical,
   CommunicationConfig,
   ContactInfo,
+  CreativeConfig,
   FollowUpConfig,
   IntegrationPreferences,
   IntegrationProvider,

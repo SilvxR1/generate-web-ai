@@ -148,3 +148,148 @@ class LeadStatus(StrEnum):
     CONTACTED = "contacted"
     WON = "won"
     LOST = "lost"
+
+
+class BrandStrategy(StrEnum):
+    """How much of a business's existing visual identity a creative
+    generation request should preserve versus reimagine. A typed domain
+    concept per the Creative Orchestrator brief (Section 5) rather than
+    an arbitrary string scattered across CreativeConfig/CreativeBrief/
+    CreativeProvider — every layer that branches on strategy branches on
+    one of exactly these three values."""
+
+    # Keep logo, brand colors, photography, recognizable visual identity;
+    # improve layout, UX, typography, hierarchy, responsiveness, motion.
+    PRESERVE = "preserve"
+    # Preserve brand recognition while allowing color system, typography,
+    # layout, art direction and visual language to evolve.
+    EVOLVE = "evolve"
+    # Use business information as context but allow a substantially new
+    # creative direction; real business facts must still stay accurate.
+    NEW_DIRECTION = "new_direction"
+
+
+class CreativeLevel(StrEnum):
+    """How premium a creative generation request is — what
+    CreativeOrchestrator.select_provider (app.creative.orchestrator) uses
+    to route between InternalCreativeProvider and a premium provider like
+    Higgsfield. No pricing is encoded here (Section 12: "do not hardcode
+    pricing yet") — this is purely a capability/routing signal."""
+
+    BASIC = "basic"
+    PROFESSIONAL = "professional"
+    PREMIUM = "premium"
+    CINEMATIC = "cinematic"
+
+
+class CreativeProviderName(StrEnum):
+    """Which CreativeProvider implementation (app.creative.provider)
+    produced or should produce a CreativeGeneration. Stored via str_enum
+    (native_enum=False, see app.db.models.columns) rather than a native DB
+    enum specifically so a future provider (OpenAI, Replicate, Flux — see
+    the master context's Section 8 provider list) is addable here without
+    a migration, the same reasoning app.db.models.integration.Integration
+    already relies on for IntegrationProvider."""
+
+    INTERNAL = "internal"
+    HIGGSFIELD = "higgsfield"
+
+
+class CreativeGenerationType(StrEnum):
+    """What kind of creative output a CreativeGeneration request targets
+    — mirrors CreativeProvider's five capability methods (Section 8) minus
+    generate_concept/generate_website's overlap: WEBSITE_CONCEPT is a
+    cheap early-stage art-direction pass, WEBSITE the full generation."""
+
+    WEBSITE_CONCEPT = "website_concept"
+    WEBSITE = "website"
+    IMAGE = "image"
+    VIDEO = "video"
+    VISUAL_ASSET = "visual_asset"
+
+
+class CreativeGenerationStatus(StrEnum):
+    """A CreativeGeneration's lifecycle (Section 19 of the master
+    context). Mirrors ExecutionStatus's shape plus CANCELLED — an
+    external creative provider call, unlike an internal Execution, can be
+    a long-running job a caller explicitly cancels. Never regresses from
+    a terminal state (COMPLETED/FAILED/CANCELLED) back to PENDING/
+    RUNNING; enforced by app.creative.orchestrator, not a DB constraint."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class AssetKind(StrEnum):
+    """The physical media type of a BusinessAsset row (Section 2)."""
+
+    LOGO = "logo"
+    IMAGE = "image"
+    VIDEO = "video"
+    DOCUMENT = "document"
+
+
+class AssetCategory(StrEnum):
+    """What a BusinessAsset depicts/is for — Section 3's classification
+    taxonomy. Every asset starts as OTHER until classified (by a human in
+    Studio today; app.creative.classification's AssetClassifier interface
+    is the clean boundary Section 3 asks for once automatic classification
+    exists) — LOW_QUALITY marks an asset a classifier or human has flagged
+    as unsuitable for use, never silently excluded any other way."""
+
+    LOGO = "logo"
+    PROJECT = "project"
+    TEAM = "team"
+    FACILITY = "facility"
+    PRODUCT = "product"
+    BEFORE = "before"
+    AFTER = "after"
+    HERO_CANDIDATE = "hero_candidate"
+    GALLERY = "gallery"
+    OTHER = "other"
+    LOW_QUALITY = "low_quality"
+
+
+class AssetOrigin(StrEnum):
+    """Where a BusinessAsset actually came from — the provenance Section
+    1's "real business content > generated content" rule depends on:
+    CreativeBrief construction (app.domain.creative.brief) prefers
+    UPLOADED/IMPORTED assets over GENERATED ones for the same category."""
+
+    UPLOADED = "uploaded"
+    IMPORTED = "imported"
+    GENERATED = "generated"
+
+
+class WebsiteDraftStatus(StrEnum):
+    """A generated website's safe pre-publish lifecycle — the "safe draft/
+    version" this task's Phase 6/7 asks for, kept entirely separate from
+    `WebsiteStatus` (the *live*, already-published site's own status).
+    `PUBLISHED` here only ever follows `APPROVED`: nothing in this
+    codebase transitions a draft straight from BUILD_FAILED/READY to
+    PUBLISHED, so "generation alone never publishes" holds by construction
+    in the state machine itself, not only by convention."""
+
+    DRAFT = "draft"
+    BUILDING = "building"
+    # Built successfully (a real `astro build` succeeded) — safe to
+    # preview and approve. May still carry non-blocking `validation_issues`
+    # (app.qa.validate) for a human to weigh before approving.
+    READY = "ready"
+    BUILD_FAILED = "build_failed"
+    APPROVED = "approved"
+    PUBLISHED = "published"
+
+
+class ReviewSource(StrEnum):
+    """Where a BusinessReview was obtained from (Section 4). GOOGLE is
+    the target integration; MANUAL covers a review entered by hand today
+    since no live Google Reviews API credential/integration exists yet in
+    this codebase."""
+
+    GOOGLE = "google"
+    MANUAL = "manual"
+    OTHER = "other"

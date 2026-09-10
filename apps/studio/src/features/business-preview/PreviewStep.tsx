@@ -18,6 +18,7 @@ import {
   type LeadStatus,
   type WebsiteState,
 } from "../../lib/api";
+import { CreativeSection } from "../business-creative/CreativeSection";
 import { LeadsList } from "./LeadsList";
 import { SiteConfigPreview } from "./SiteConfigPreview";
 import { WebsitePublish } from "./WebsitePublish";
@@ -62,6 +63,13 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
   const [website, setWebsite] = useState<WebsiteStateFetch>({ state: null, isLoading: true });
   const [leads, setLeads] = useState<LeadsFetch>({ leads: null, isLoading: true, error: null });
   const [reloadToken, setReloadToken] = useState(0);
+  // CreativeSection fetches its own data (creative-config/assets/reviews/
+  // generations) independently of the four calls above — mounting it
+  // only once a user actually opens it, rather than unconditionally
+  // alongside this step, keeps those extra requests from firing (and
+  // racing with these) for the common case of a user who never touches
+  // brand/content tools during this visit.
+  const [showCreative, setShowCreative] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,6 +177,15 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
           })
         }
       />
+
+      <h2>Creative</h2>
+      {showCreative ? (
+        <CreativeSection business={business} tenantId={tenantId} reloadToken={reloadToken} />
+      ) : (
+        <button type="button" onClick={() => setShowCreative(true)}>
+          Show brand, content & generation tools
+        </button>
+      )}
 
       <h2>Leads</h2>
       <LeadsList

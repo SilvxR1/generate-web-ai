@@ -88,5 +88,27 @@ class Settings(BaseSettings):
     resend_api_key: str | None = None
     resend_from_address: str | None = None
 
+    # HiggsfieldCreativeProvider (app.creative.higgsfield) — no defaults,
+    # same shape as every other provider credential above: a server
+    # without them still starts up fine; premium creative generation only
+    # fails, loudly and with a clean 503, the first time it's actually
+    # attempted (see app.dependencies.get_higgsfield_provider). No real
+    # Higgsfield integration exists yet regardless of these being set —
+    # see app.creative.higgsfield.provider's own docstring.
+    higgsfield_api_key: str | None = None
+    higgsfield_base_url: str | None = None
+
+    # LocalStorageProvider (app.storage.local) — the dev-only asset
+    # storage backend (Phase 3 of the Creative Orchestrator work). Unlike
+    # every credential above, this has a real default: local storage
+    # needs no account/credentials of any kind, and must work out of the
+    # box the same way sqlite:///./dev.db does for the database.
+    # Relative to wherever the API process runs (apps/api in dev).
+    local_storage_dir: str = "var/uploads"
+    # Max upload size for a single business asset — a plain safety limit
+    # (Phase 3: "reasonable size limits"), not tied to any provider's own
+    # quota.
+    max_upload_size_bytes: int = 10 * 1024 * 1024
+
 
 settings = Settings()

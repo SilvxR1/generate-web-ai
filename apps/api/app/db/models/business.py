@@ -9,18 +9,23 @@ from app.db.models.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryK
 from app.domain.enums import BusinessStatus, BusinessVertical
 
 if TYPE_CHECKING:
+    from app.db.models.business_asset import BusinessAsset
+    from app.db.models.business_review import BusinessReview
+    from app.db.models.creative_generation import CreativeGeneration
     from app.db.models.execution import Execution
     from app.db.models.integration import Integration
     from app.db.models.internal_notification import InternalNotification
     from app.db.models.lead import Lead
     from app.db.models.tenant import Tenant
     from app.db.models.website import Website
+    from app.db.models.website_draft import WebsiteDraft
     from app.db.models.workflow import Workflow
 
 
 class Business(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     """The central entity: everything else (Website, Workflow,
-    Integration, Execution) hangs off a Business.
+    Integration, Execution, BusinessAsset, BusinessReview,
+    CreativeGeneration) hangs off a Business.
 
     `name`/`vertical`/`slug` are relational columns even though the same
     facts also live inside `config.business_profile` (name/industry/slug)
@@ -61,5 +66,13 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     executions: Mapped[list["Execution"]] = relationship(back_populates="business", cascade="all, delete-orphan")
     leads: Mapped[list["Lead"]] = relationship(back_populates="business", cascade="all, delete-orphan")
     internal_notifications: Mapped[list["InternalNotification"]] = relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
+    assets: Mapped[list["BusinessAsset"]] = relationship(back_populates="business", cascade="all, delete-orphan")
+    reviews: Mapped[list["BusinessReview"]] = relationship(back_populates="business", cascade="all, delete-orphan")
+    creative_generations: Mapped[list["CreativeGeneration"]] = relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
+    website_drafts: Mapped[list["WebsiteDraft"]] = relationship(
         back_populates="business", cascade="all, delete-orphan"
     )

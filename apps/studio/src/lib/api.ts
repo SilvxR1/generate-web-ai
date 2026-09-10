@@ -1,4 +1,4 @@
-import type { BusinessConfig, BusinessVertical } from "@generate-web-ai/business-config-types";
+import type { BusinessConfig, BusinessVertical, CreativeConfig } from "@generate-web-ai/business-config-types";
 import type { SiteConfig } from "@generate-web-ai/site-config";
 import type { WorkflowConfig } from "@generate-web-ai/workflow-config-types";
 
@@ -360,6 +360,326 @@ export function updateLeadStatus(
   return requestJson<Lead>(
     `/businesses/${businessId}/leads/${leadId}/status`,
     { method: "PATCH", body: JSON.stringify({ status }) },
+    tenantId,
+  );
+}
+
+// --- Creative: brand assets, reviews, strategy/level, generations -------
+//
+// The Creative Orchestrator layer (apps/api's app.creative +
+// app.routers.creative): a business's reusable asset library (Section 2),
+// real/imported reviews (Section 4, never fabricated), its creative
+// strategy/level (Section 5/12), and its generation history (Section 13).
+// Every write here is scoped to one business/tenant exactly like leads
+// above — the backend, not this file, is what actually enforces that.
+
+export type AssetKind = "logo" | "image" | "video" | "document";
+export type AssetCategory =
+  | "logo"
+  | "project"
+  | "team"
+  | "facility"
+  | "product"
+  | "before"
+  | "after"
+  | "hero_candidate"
+  | "gallery"
+  | "other"
+  | "low_quality";
+export type AssetOrigin = "uploaded" | "imported" | "generated";
+
+export interface BusinessAsset {
+  id: string;
+  business_id: string;
+  kind: AssetKind;
+  category: AssetCategory;
+  origin: AssetOrigin;
+  storage_url: string;
+  original_filename: string | null;
+  alt_text: string | null;
+  generation_id: string | null;
+  created_at: string;
+}
+
+export interface CreateAssetPayload {
+  kind: AssetKind;
+  category?: AssetCategory;
+  origin: AssetOrigin;
+  storage_url: string;
+  original_filename?: string | null;
+  alt_text?: string | null;
+}
+
+export function listBusinessAssets(businessId: string, tenantId: string): Promise<BusinessAsset[]> {
+  return requestJson<BusinessAsset[]>(`/businesses/${businessId}/assets`, { method: "GET" }, tenantId);
+}
+
+export function createBusinessAsset(
+  businessId: string,
+  payload: CreateAssetPayload,
+  tenantId: string,
+): Promise<BusinessAsset> {
+  return requestJson<BusinessAsset>(
+    `/businesses/${businessId}/assets`,
+    { method: "POST", body: JSON.stringify(payload) },
+    tenantId,
+  );
+}
+
+export function updateBusinessAsset(
+  businessId: string,
+  assetId: string,
+  payload: { category?: AssetCategory; alt_text?: string | null },
+  tenantId: string,
+): Promise<BusinessAsset> {
+  return requestJson<BusinessAsset>(
+    `/businesses/${businessId}/assets/${assetId}`,
+    { method: "PATCH", body: JSON.stringify(payload) },
+    tenantId,
+  );
+}
+
+export function deleteBusinessAsset(businessId: string, assetId: string, tenantId: string): Promise<void> {
+  return requestVoid(`/businesses/${businessId}/assets/${assetId}`, { method: "DELETE" }, tenantId);
+}
+
+export type ReviewSource = "google" | "manual" | "other";
+
+export interface BusinessReview {
+  id: string;
+  business_id: string;
+  source: ReviewSource;
+  source_review_id: string | null;
+  author_name: string | null;
+  rating: number | null;
+  body: string;
+  review_url: string | null;
+  published_at: string | null;
+  imported_at: string;
+}
+
+export interface CreateReviewPayload {
+  source?: ReviewSource;
+  source_review_id?: string | null;
+  author_name?: string | null;
+  rating?: number | null;
+  body: string;
+  review_url?: string | null;
+  published_at?: string | null;
+}
+
+export function listBusinessReviews(businessId: string, tenantId: string): Promise<BusinessReview[]> {
+  return requestJson<BusinessReview[]>(`/businesses/${businessId}/reviews`, { method: "GET" }, tenantId);
+}
+
+export function createBusinessReview(
+  businessId: string,
+  payload: CreateReviewPayload,
+  tenantId: string,
+): Promise<BusinessReview> {
+  return requestJson<BusinessReview>(
+    `/businesses/${businessId}/reviews`,
+    { method: "POST", body: JSON.stringify(payload) },
+    tenantId,
+  );
+}
+
+export function deleteBusinessReview(businessId: string, reviewId: string, tenantId: string): Promise<void> {
+  return requestVoid(`/businesses/${businessId}/reviews/${reviewId}`, { method: "DELETE" }, tenantId);
+}
+
+// CreativeConfig itself comes from @generate-web-ai/business-config-types
+// (generated from apps/api's Pydantic model, same bridge as
+// BusinessConfig) — no hand-mirrored shape here to drift from it.
+
+export function getCreativeConfig(businessId: string, tenantId: string): Promise<CreativeConfig> {
+  return requestJson<CreativeConfig>(`/businesses/${businessId}/creative-config`, { method: "GET" }, tenantId);
+}
+
+export function updateCreativeConfig(
+  businessId: string,
+  payload: CreativeConfig,
+  tenantId: string,
+): Promise<CreativeConfig> {
+  return requestJson<CreativeConfig>(
+    `/businesses/${businessId}/creative-config`,
+    { method: "PUT", body: JSON.stringify(payload) },
+    tenantId,
+  );
+}
+
+export type CreativeGenerationType = "website_concept" | "website" | "image" | "video" | "visual_asset";
+export type CreativeGenerationStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type CreativeProviderName = "internal" | "higgsfield";
+
+export interface CreativeGeneration {
+  id: string;
+  business_id: string;
+  provider: CreativeProviderName;
+  generation_type: CreativeGenerationType;
+  creative_level: string;
+  status: CreativeGenerationStatus;
+  external_reference: string | null;
+  credits_used: number | null;
+  estimated_cost: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  created_at: string;
+}
+
+export function listCreativeGenerations(businessId: string, tenantId: string): Promise<CreativeGeneration[]> {
+  return requestJson<CreativeGeneration[]>(
+    `/businesses/${businessId}/creative-generations`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+/** Triggers one CreativeOrchestrator run (apps/api's
+ * app.creative.orchestrator) — generate, regenerate, and "generate a
+ * variation" are all this same call (Section 16); the currently
+ * published website is never touched by it. Resolves once the provider
+ * call has finished (COMPLETED or FAILED) — there is no separate polling
+ * step in this phase. */
+export function createCreativeGeneration(
+  businessId: string,
+  generationType: CreativeGenerationType,
+  tenantId: string,
+): Promise<CreativeGeneration> {
+  return requestJson<CreativeGeneration>(
+    `/businesses/${businessId}/creative-generations`,
+    { method: "POST", body: JSON.stringify({ generation_type: generationType }) },
+    tenantId,
+  );
+}
+
+// --- Real file upload (Phase 3) -----------------------------------------
+//
+// The counterpart to createBusinessAsset (a URL the caller already has
+// hosted somewhere) — this sends an actual file. Deliberately bypasses
+// requestJson/sendRequest above: those always set Content-Type:
+// application/json, which would break multipart/form-data (the browser
+// must set that header itself, boundary included).
+
+export function uploadBusinessAsset(
+  businessId: string,
+  file: File,
+  options: { kind: AssetKind; category?: AssetCategory; altText?: string | null },
+  tenantId: string,
+): Promise<BusinessAsset> {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("kind", options.kind);
+  if (options.category) form.set("category", options.category);
+  if (options.altText) form.set("alt_text", options.altText);
+
+  return fetch(`${API_URL}/businesses/${businessId}/assets/upload`, {
+    method: "POST",
+    headers: { "X-Tenant-Id": tenantId },
+    body: form,
+  })
+    .catch((cause: unknown) => {
+      throw new NetworkError(cause);
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        let body: { error?: { code?: string; message?: string; details?: unknown } } = {};
+        try {
+          body = await response.json();
+        } catch {
+          // Non-JSON error body — fall through to the generic message.
+        }
+        throw new ApiError(body.error?.message ?? `Request failed with status ${response.status}.`, {
+          code: body.error?.code ?? "http_error",
+          status: response.status,
+          details: body.error?.details,
+        });
+      }
+      return response.json() as Promise<BusinessAsset>;
+    });
+}
+
+// --- Creative provider availability (Phase 13) ---------------------------
+
+export interface CreativeProviderAvailability {
+  provider: CreativeProviderName;
+  available: boolean;
+  capabilities: CreativeGenerationType[];
+  unavailable_reason: string | null;
+}
+
+export function listCreativeProviders(
+  businessId: string,
+  tenantId: string,
+): Promise<CreativeProviderAvailability[]> {
+  return requestJson<CreativeProviderAvailability[]>(
+    `/businesses/${businessId}/creative-providers`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+// --- Website drafts: safe generate -> build -> validate -> preview ->
+// --- approve -> publish (Phase 6/7/9/10) ----------------------------------
+//
+// Distinct from WebsiteState above (the currently *published* site) —
+// see app.db.models.website_draft.WebsiteDraft's own docstring on the
+// backend for why these are two separate models. Publishing a draft
+// (publishWebsiteDraft) reuses the exact same publish machinery as
+// publishWebsite above; it just requires an APPROVED draft first.
+
+export type WebsiteDraftStatus = "draft" | "building" | "ready" | "build_failed" | "approved" | "published";
+
+export interface WebsiteDraft {
+  id: string;
+  business_id: string;
+  creative_generation_id: string | null;
+  site_config: SiteConfig;
+  status: WebsiteDraftStatus;
+  build_error: string | null;
+  validation_issues: string[] | null;
+  approved_at: string | null;
+  published_at: string | null;
+  published_website_id: string | null;
+  created_at: string;
+}
+
+export function createWebsiteDraft(
+  businessId: string,
+  siteConfig: SiteConfig,
+  creativeGenerationId: string | null,
+  tenantId: string,
+): Promise<WebsiteDraft> {
+  return requestJson<WebsiteDraft>(
+    `/businesses/${businessId}/website-drafts`,
+    {
+      method: "POST",
+      body: JSON.stringify({ site_config: siteConfig, creative_generation_id: creativeGenerationId }),
+    },
+    tenantId,
+  );
+}
+
+export function listWebsiteDrafts(businessId: string, tenantId: string): Promise<WebsiteDraft[]> {
+  return requestJson<WebsiteDraft[]>(`/businesses/${businessId}/website-drafts`, { method: "GET" }, tenantId);
+}
+
+export function approveWebsiteDraft(businessId: string, draftId: string, tenantId: string): Promise<WebsiteDraft> {
+  return requestJson<WebsiteDraft>(
+    `/businesses/${businessId}/website-drafts/${draftId}/approve`,
+    { method: "POST" },
+    tenantId,
+  );
+}
+
+/** Requires an APPROVED draft (the backend 409s otherwise) — the one
+ * call that actually goes live, reusing the exact same publish machinery
+ * publishWebsite above uses. */
+export function publishWebsiteDraft(businessId: string, draftId: string, tenantId: string): Promise<WebsiteState> {
+  return requestJson<WebsiteState>(
+    `/businesses/${businessId}/website-drafts/${draftId}/publish`,
+    { method: "POST" },
     tenantId,
   );
 }

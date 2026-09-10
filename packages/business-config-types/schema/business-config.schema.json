@@ -139,6 +139,15 @@
       ],
       "type": "object"
     },
+    "BrandStrategy": {
+      "description": "How much of a business's existing visual identity a creative\ngeneration request should preserve versus reimagine. A typed domain\nconcept per the Creative Orchestrator brief (Section 5) rather than\nan arbitrary string scattered across CreativeConfig/CreativeBrief/\nCreativeProvider \u2014 every layer that branches on strategy branches on\none of exactly these three values.",
+      "enum": [
+        "preserve",
+        "evolve",
+        "new_direction"
+      ],
+      "type": "string"
+    },
     "BrandTypography": {
       "additionalProperties": false,
       "description": "Mirrors ThemeFontConfig: `sans` required, `display` optional\n(falls back to `sans` when omitted, same as the TypeScript side).",
@@ -383,6 +392,42 @@
         }
       },
       "type": "object"
+    },
+    "CreativeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/CreativeLevel",
+          "default": "basic"
+        },
+        "preferred_provider": {
+          "anyOf": [
+            {
+              "maxLength": 50,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "strategy": {
+          "$ref": "#/$defs/BrandStrategy",
+          "default": "evolve"
+        }
+      },
+      "type": "object"
+    },
+    "CreativeLevel": {
+      "description": "How premium a creative generation request is \u2014 what\nCreativeOrchestrator.select_provider (app.creative.orchestrator) uses\nto route between InternalCreativeProvider and a premium provider like\nHiggsfield. No pricing is encoded here (Section 12: \"do not hardcode\npricing yet\") \u2014 this is purely a capability/routing signal.",
+      "enum": [
+        "basic",
+        "professional",
+        "premium",
+        "cinematic"
+      ],
+      "type": "string"
     },
     "FollowUpConfig": {
       "additionalProperties": false,
@@ -831,6 +876,9 @@
     },
     "communications": {
       "$ref": "#/$defs/CommunicationConfig"
+    },
+    "creative": {
+      "$ref": "#/$defs/CreativeConfig"
     },
     "integrations": {
       "$ref": "#/$defs/IntegrationPreferences"

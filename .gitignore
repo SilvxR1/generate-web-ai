@@ -15,6 +15,10 @@ __pycache__/
 *.pyc
 apps/api/dev.db
 
+# LocalStorageProvider's (app.storage.local) dev-only saved uploads —
+# machine-local runtime state, same category as dev.db above.
+apps/api/var/
+
 # apps/api's app.publishing.build shells out to `astro build` here, once
 # per publish attempt, with a fresh temp SITE_CONFIG_PATH/--outDir under
 # this directory — cleaned up after each build, but ignored defensively

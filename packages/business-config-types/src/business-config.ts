@@ -46,6 +46,7 @@ export interface BusinessConfig {
   brand?: BrandConfig | null;
   business_profile: BusinessProfile;
   communications?: CommunicationConfig;
+  creative?: CreativeConfig;
   integrations?: IntegrationPreferences;
   lead_management?: LeadManagementConfig;
   schema_version?: number;
@@ -210,6 +211,26 @@ export interface NotificationPreferences {
   email?: boolean;
   slack?: boolean;
   whatsapp?: boolean;
+}
+export interface CreativeConfig {
+  /**
+   * How premium a creative generation request is — what
+   * CreativeOrchestrator.select_provider (app.creative.orchestrator) uses
+   * to route between InternalCreativeProvider and a premium provider like
+   * Higgsfield. No pricing is encoded here (Section 12: "do not hardcode
+   * pricing yet") — this is purely a capability/routing signal.
+   */
+  level?: "basic" | "professional" | "premium" | "cinematic";
+  preferred_provider?: string | null;
+  /**
+   * How much of a business's existing visual identity a creative
+   * generation request should preserve versus reimagine. A typed domain
+   * concept per the Creative Orchestrator brief (Section 5) rather than
+   * an arbitrary string scattered across CreativeConfig/CreativeBrief/
+   * CreativeProvider — every layer that branches on strategy branches on
+   * one of exactly these three values.
+   */
+  strategy?: "preserve" | "evolve" | "new_direction";
 }
 export interface IntegrationPreferences {
   crm?: IntegrationProvider | null;

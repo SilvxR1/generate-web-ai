@@ -4,6 +4,7 @@
     ├── business_profile   (required — everything else has defaults)
     ├── brand
     ├── website             intent/preferences, not generated content — see website.py
+    ├── creative            strategy/level intent — see creative.py
     ├── lead_management
     ├── communications
     ├── integrations        preferences, never credentials — see integrations.py
@@ -25,6 +26,7 @@ from app.domain.business_config.automation import AutomationConfig
 from app.domain.business_config.brand import BrandConfig
 from app.domain.business_config.business_profile import BusinessProfile
 from app.domain.business_config.communication import CommunicationConfig
+from app.domain.business_config.creative import CreativeConfig
 from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
 from app.domain.business_config.website import WebsiteConfig
@@ -40,6 +42,7 @@ class BusinessConfig(BaseModel):
     business_profile: BusinessProfile
     brand: BrandConfig | None = None
     website: WebsiteConfig = Field(default_factory=WebsiteConfig)
+    creative: CreativeConfig = Field(default_factory=CreativeConfig)
     lead_management: LeadManagementConfig = Field(default_factory=LeadManagementConfig)
     communications: CommunicationConfig = Field(default_factory=CommunicationConfig)
     integrations: IntegrationPreferences = Field(default_factory=IntegrationPreferences)

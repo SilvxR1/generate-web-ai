@@ -152,6 +152,11 @@
     "phone_enabled": true,
     "whatsapp_enabled": true
   },
+  "creative": {
+    "level": "basic",
+    "preferred_provider": null,
+    "strategy": "evolve"
+  },
   "integrations": {
     "crm": null,
     "email": "gmail",

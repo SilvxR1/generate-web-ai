@@ -1,11 +1,15 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.routers.businesses import business_summaries_router
 from app.routers.businesses import router as businesses_router
+from app.routers.creative import router as creative_router
 from app.routers.health import router as health_router
 from app.routers.internal_automation import router as internal_automation_router
 
@@ -27,7 +31,16 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(businesses_router)
     app.include_router(business_summaries_router)
+    app.include_router(creative_router)
     app.include_router(internal_automation_router)
+
+    # Serves whatever LocalStorageProvider (app.storage.local) has saved
+    # under settings.local_storage_dir — the dev-only asset storage
+    # backend (Phase 3). Directory is created up front so this mount
+    # never fails at startup just because nothing's been uploaded yet.
+    upload_dir = Path(settings.local_storage_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
     return app
 

@@ -1,5 +1,6 @@
 import hmac
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
@@ -11,6 +12,9 @@ from app.analysis.analyzer import BusinessAnalyzer
 from app.analysis.claude.engine import business_analyzer_from_settings
 from app.automation.n8n import N8nClient
 from app.config import settings
+from app.creative.higgsfield import HiggsfieldClient, HiggsfieldCreativeProvider
+from app.creative.internal import InternalCreativeProvider
+from app.creative.provider import CreativeProvider
 from app.db.session import make_engine, make_session_factory
 from app.errors import AppError
 from app.notifications.resend import ResendNotificationSender
@@ -19,6 +23,7 @@ from app.notifications.smtp import SmtpNotificationSender
 from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesPublisher
 from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
+from app.storage import LocalStorageProvider, StorageProvider
 
 # Module-level: one engine/pool for the process lifetime, per SQLAlchemy's
 # own recommendation (an Engine is meant to be created once, not per
@@ -170,6 +175,55 @@ def get_optional_notification_sender() -> NotificationSender | None:
         username=settings.smtp_username,
         password=settings.smtp_password,
     )
+
+
+def get_internal_creative_provider() -> InternalCreativeProvider:
+    """Unlike every other provider factory in this module, InternalCreativeProvider
+    needs no credentials and is always available — it wraps this
+    codebase's own existing generation pipeline (see
+    app.creative.internal's docstring), never an external service."""
+    return InternalCreativeProvider()
+
+
+def get_higgsfield_provider() -> HiggsfieldCreativeProvider:
+    """Built fresh per request, same shape as get_website_publisher
+    above: a server without HIGGSFIELD_API_KEY/HIGGSFIELD_BASE_URL
+    configured still starts up fine — premium creative generation only
+    fails, loudly and with a clean 503, the first time it's actually
+    attempted. Configuring these does not make Higgsfield generation
+    actually work yet — see app.creative.higgsfield.provider's own
+    docstring for why every call still raises until a real API contract
+    is wired in."""
+    if not settings.higgsfield_api_key or not settings.higgsfield_base_url:
+        raise AppError(
+            "Higgsfield is not configured on this server.",
+            code="higgsfield_not_configured",
+            status_code=503,
+        )
+    client = HiggsfieldClient(settings.higgsfield_api_key, settings.higgsfield_base_url)
+    return HiggsfieldCreativeProvider(client)
+
+
+def get_storage_provider() -> StorageProvider:
+    """Unlike every provider factory above, this needs no credentials and
+    is always available — LocalStorageProvider (app.storage.local) writes
+    to a local directory (settings.local_storage_dir), which has a real
+    default so asset upload works out of the box in dev without any
+    account/configuration, the same way sqlite:///./dev.db does."""
+    return LocalStorageProvider(root_dir=Path(settings.local_storage_dir))
+
+
+def get_optional_higgsfield_provider() -> CreativeProvider | None:
+    """Like get_higgsfield_provider above, but returns None instead of
+    raising when Higgsfield isn't configured — for
+    app.creative.orchestrator.select_provider, where a BASIC/PROFESSIONAL
+    generation request never needs Higgsfield at all, and a business
+    that never configured it must still be able to generate at those
+    levels. A route that specifically requires Higgsfield should use
+    get_higgsfield_provider instead."""
+    if not settings.higgsfield_api_key or not settings.higgsfield_base_url:
+        return None
+    return get_higgsfield_provider()
 
 
 def verify_internal_automation_token(
