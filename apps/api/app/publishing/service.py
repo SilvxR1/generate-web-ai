@@ -138,6 +138,12 @@ def publish_website(
     website = repo.get_by_business(tenant_id, business_id)
     workflow = WorkflowRepository(session).get_for_business(tenant_id, business_id)
     _inject_lead_capture_webhook_url(site_config, workflow=workflow, n8n_base_url=n8n_base_url)
+    # Same "the generated static site needs to know its own business id"
+    # reasoning as app.publishing.drafts.create_website_draft — set again
+    # here (idempotent if already set) so a direct publish that never
+    # went through the draft flow still gets it. Never trusted from the
+    # payload itself.
+    site_config.businessId = str(business_id)
     site_id = website_project_name(business_id)
 
     try:

@@ -151,6 +151,106 @@ def test_reviews_never_leak_across_tenants(client: TestClient, tenant: Tenant, o
     assert response.status_code == 404
 
 
+def test_new_review_defaults_to_visible(client: TestClient, tenant: Tenant):
+    business = _create_business(client, tenant.id)
+
+    created = client.post(
+        f"/businesses/{business['id']}/reviews", json={"body": "Great service."}, headers=_headers(tenant.id)
+    )
+
+    assert created.json()["is_visible"] is True
+
+
+def test_review_visibility_can_be_hidden_and_shown_without_losing_provenance(client: TestClient, tenant: Tenant):
+    business = _create_business(client, tenant.id)
+    body_text = "Reliable and transparent pricing throughout."
+    created = client.post(
+        f"/businesses/{business['id']}/reviews",
+        json={"source": "google", "source_review_id": "g-123", "author_name": "Ana", "rating": 5, "body": body_text},
+        headers=_headers(tenant.id),
+    ).json()
+
+    hidden = client.patch(
+        f"/businesses/{business['id']}/reviews/{created['id']}/visibility",
+        json={"is_visible": False},
+        headers=_headers(tenant.id),
+    )
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["is_visible"] is False
+    # Provenance untouched by hiding.
+    assert hidden.json()["body"] == body_text
+    assert hidden.json()["source"] == "google"
+    assert hidden.json()["source_review_id"] == "g-123"
+
+    shown_again = client.patch(
+        f"/businesses/{business['id']}/reviews/{created['id']}/visibility",
+        json={"is_visible": True},
+        headers=_headers(tenant.id),
+    )
+    assert shown_again.json()["is_visible"] is True
+
+    # Still present in the list either way — hiding never deletes it.
+    listed = client.get(f"/businesses/{business['id']}/reviews", headers=_headers(tenant.id)).json()
+    assert len(listed) == 1
+
+
+def test_review_visibility_rejects_unknown_review(client: TestClient, tenant: Tenant):
+    business = _create_business(client, tenant.id)
+
+    response = client.patch(
+        f"/businesses/{business['id']}/reviews/{uuid.uuid4()}/visibility",
+        json={"is_visible": False},
+        headers=_headers(tenant.id),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "business_review_not_found"
+
+
+def test_review_visibility_never_crosses_tenants(client: TestClient, tenant: Tenant, other_tenant: Tenant):
+    business = _create_business(client, tenant.id)
+    review = client.post(
+        f"/businesses/{business['id']}/reviews", json={"body": "Secret review."}, headers=_headers(tenant.id)
+    ).json()
+
+    response = client.patch(
+        f"/businesses/{business['id']}/reviews/{review['id']}/visibility",
+        json={"is_visible": False},
+        headers=_headers(other_tenant.id),
+    )
+
+    assert response.status_code == 404
+
+
+def test_review_providers_reports_manual_available_and_google_unavailable(client: TestClient, tenant: Tenant):
+    business = _create_business(client, tenant.id)
+
+    response = client.get(f"/businesses/{business['id']}/review-providers", headers=_headers(tenant.id))
+
+    assert response.status_code == 200
+    by_provider = {row["provider"]: row for row in response.json()}
+    assert by_provider["manual"]["available"] is True
+    assert by_provider["manual"]["unavailable_reason"] is None
+    assert by_provider["google"]["available"] is False
+    assert by_provider["google"]["unavailable_reason"]
+
+
+def test_review_providers_reports_google_available_when_configured(
+    client: TestClient, tenant: Tenant, monkeypatch: pytest.MonkeyPatch
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "google_reviews_api_key", "fake-key")
+    monkeypatch.setattr(settings, "google_reviews_place_id", "fake-place-id")
+    business = _create_business(client, tenant.id)
+
+    response = client.get(f"/businesses/{business['id']}/review-providers", headers=_headers(tenant.id))
+
+    by_provider = {row["provider"]: row for row in response.json()}
+    assert by_provider["google"]["available"] is True
+    assert by_provider["google"]["unavailable_reason"] is None
+
+
 # --- Creative config ---------------------------------------------------------
 
 

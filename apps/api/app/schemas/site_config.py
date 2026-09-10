@@ -96,3 +96,23 @@ class SiteConfigPayload(BaseModel):
     # Opaque passthrough — see this module's docstring.
     business: dict[str, Any] | None = None
     features: dict[str, Any] | None = None
+    # Set server-side (never trusted from Studio's payload) by
+    # app.publishing.drafts.create_website_draft / app.publishing.service.
+    # publish_website right before the real build — the generated static
+    # site's only way to know which business it belongs to, needed by
+    # its analytics beacon and its direct (no-n8n) lead-submission
+    # fallback. Absent from a request body has no effect (Studio never
+    # sends this); a client-sent value is silently overwritten, never
+    # trusted. camelCase (not business_id) to mirror site-config's
+    # SiteConfig.businessId verbatim, same convention as ogImage above —
+    # this backend never converts casing between the two sides.
+    businessId: str | None = None  # noqa: N815
+    # P1.1: WhatsAppConfig (packages/site-config) — opaque passthrough for
+    # the same reason as business/features above: only
+    # @generate-web-ai/site-builder's Layout/floating-button component
+    # interprets this shape, never this backend. Declared explicitly (not
+    # left to model_config's extra="ignore") specifically because that
+    # setting *drops* unrecognized top-level fields on serialization —
+    # without this, a real business's WhatsApp config would silently
+    # vanish between Studio's preview and the actual `astro build`.
+    whatsapp: dict[str, Any] | None = None

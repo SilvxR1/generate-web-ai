@@ -17,6 +17,7 @@ from app.domain.business_config.integrations import IntegrationPreferences
 from app.domain.business_config.lead_management import LeadManagementConfig
 from app.domain.business_config.legal import LegalProfile
 from app.domain.business_config.website import SEOPreferences, WebsiteConfig
+from app.domain.business_config.whatsapp import WhatsAppConfig
 
 __all__ = [
     "SLUG_PATTERN",
@@ -43,4 +44,5 @@ __all__ = [
     "SEOPreferences",
     "ServiceOffering",
     "WebsiteConfig",
+    "WhatsAppConfig",
 ]

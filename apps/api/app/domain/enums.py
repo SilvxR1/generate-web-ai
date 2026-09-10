@@ -324,6 +324,24 @@ class DomainStatus(StrEnum):
     REMOVED = "removed"
 
 
+class NotificationDeliveryStatus(StrEnum):
+    """The outcome of one email-delivery attempt (P1.2) — used by both
+    InternalNotification.status (the business's own team) and Lead.
+    acknowledgement_status (the visitor's confirmation email), never
+    conflated with Lead.status (app.domain.enums.LeadStatus), which is
+    the lead's own follow-up pipeline state, a completely different
+    concept. NOT_CONFIGURED and PENDING are both non-failure states —
+    the distinction is deliberate: NOT_CONFIGURED means no attempt was
+    made because no provider/recipient/consent existed, PENDING means an
+    attempt hasn't happened yet at all (the row's transient initial
+    value before the same request's delivery attempt runs)."""
+
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    NOT_CONFIGURED = "not_configured"
+
+
 class ReviewSource(StrEnum):
     """Where a BusinessReview was obtained from (Section 4). GOOGLE is
     the target integration; MANUAL covers a review entered by hand today
@@ -333,3 +351,44 @@ class ReviewSource(StrEnum):
     GOOGLE = "google"
     MANUAL = "manual"
     OTHER = "other"
+
+
+class AnalyticsEventType(StrEnum):
+    """P1.7's fixed event taxonomy — a closed vocabulary, never a
+    free-text event name a caller could invent, so aggregation
+    (app.analytics_events.metrics) never has to guess what a given event
+    means. PAGE_VIEW/CTA_CLICK/WHATSAPP_CLICK/LEAD_FORM_STARTED/
+    PHONE_CLICK/EMAIL_CLICK are all client-side visitor-behavior events,
+    gated on ConsentCategory.ANALYTICS before a generated site ever fires
+    one (see apps/site-builder's analytics script). LEAD_SUBMITTED is
+    the one exception worth naming explicitly: it exists here only for
+    optional client-side funnel context (page_view -> cta_click ->
+    lead_form_started -> lead_submitted); the *authoritative* count of
+    real leads is always app.db.models.lead.Lead itself — a functional,
+    consent-independent record of a requested service, never gated on
+    analytics consent the way this event is."""
+
+    PAGE_VIEW = "page_view"
+    CTA_CLICK = "cta_click"
+    WHATSAPP_CLICK = "whatsapp_click"
+    LEAD_FORM_STARTED = "lead_form_started"
+    LEAD_SUBMITTED = "lead_submitted"
+    PHONE_CLICK = "phone_click"
+    EMAIL_CLICK = "email_click"
+
+
+class HealthStatus(StrEnum):
+    """A single vocabulary for both one sub-check's outcome (HTTP, DNS,
+    TLS, deployment, contact form) and WebsiteHealthCheck's own overall
+    rollup (P1.4) — deliberately the same four values at both levels
+    rather than two separate enums, since "the overall state is the
+    worst of its parts" is simplest to express when both sides speak the
+    same vocabulary. UNKNOWN means "not (yet) checked, or the business
+    has nothing to check yet (no published website)" — never conflated
+    with HEALTHY; a caller must never render UNKNOWN as if it were a
+    passing check."""
+
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    DOWN = "down"
+    UNKNOWN = "unknown"

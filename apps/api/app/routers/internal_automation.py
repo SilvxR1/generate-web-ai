@@ -177,6 +177,12 @@ def send_lead_acknowledgement_email(
             lead=lead, business_name=business.name, business_config=business_config, sender=sender
         )
     except LeadAcknowledgementEmailError as exc:
+        # Same "commit the real outcome before the request fails" reasoning
+        # as ingest_notification's own except block above —
+        # lead.acknowledgement_status was just set to FAILED in-memory
+        # (app.notifications.service) and would otherwise be silently
+        # discarded by get_session's rollback-on-exception.
+        session.commit()
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
     return LeadAcknowledgementEmailResponse(sent=sent)
@@ -220,7 +226,13 @@ def ingest_notification(
         # The notification row above is already committed, so this
         # request failing (get_session's own rollback-on-exception,
         # app.dependencies) can't lose it — only `delivered` stays
-        # False, exactly reflecting reality.
+        # False, exactly reflecting reality. `status` was just flipped
+        # to FAILED in-memory (app.notifications.service) though, and
+        # that mutation is NOT yet committed — get_session's rollback
+        # would silently discard it, leaving the row stuck at PENDING
+        # forever instead of recording the real outcome, so it's
+        # committed explicitly here before the request fails.
+        session.commit()
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
     return notification

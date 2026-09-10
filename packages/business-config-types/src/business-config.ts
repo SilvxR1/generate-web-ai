@@ -52,6 +52,7 @@ export interface BusinessConfig {
   legal_profile?: LegalProfile | null;
   schema_version?: number;
   website?: WebsiteConfig;
+  whatsapp?: WhatsAppConfig;
 }
 export interface AutomationConfig {
   customer_acknowledgement?: boolean;
@@ -268,4 +269,12 @@ export interface SEOPreferences {
   description?: string | null;
   og_image?: AssetRef | null;
   title?: string | null;
+}
+export interface WhatsAppConfig {
+  default_message?: string | null;
+  enabled?: boolean;
+  phone_number?: string | null;
+  show_contact_cta?: boolean;
+  show_floating_button?: boolean;
+  tracking_enabled?: boolean;
 }

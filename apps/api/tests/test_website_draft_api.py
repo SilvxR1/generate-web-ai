@@ -9,9 +9,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.models.tenant import Tenant
-from app.dependencies import get_session
+from app.dependencies import get_session, get_website_publisher
 from app.main import app
-from app.publishing.publisher import PublishedSite, WebsiteArtifact
+from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
+
+
+class _DefaultFakePublisher(WebsitePublisher):
+    """Registered for every test in this file so route behavior never
+    depends on whether CLOUDFLARE_ACCOUNT_ID/CLOUDFLARE_API_TOKEN happen
+    to be set in the ambient environment — the same reason build_site is
+    monkeypatched below instead of shelling out to a real astro build.
+    Without this, get_website_publisher's own 503 (app.dependencies) can
+    short-circuit a request before a test's actual assertion (e.g. an
+    approval-status check) is ever reached, making the test's outcome
+    depend on the developer's local .env rather than the code under
+    test."""
+
+    def publish(self, *, site_id, artifact):
+        return PublishedSite(deployment_id="test-deployment", url="https://example.pages.dev", live=True)
+
+    def get_status(self, deployment_id):
+        raise NotImplementedError
+
+    def unpublish(self, deployment_id):
+        pass
 
 
 @pytest.fixture()
@@ -27,10 +48,12 @@ def client(session, monkeypatch: pytest.MonkeyPatch):
     )
 
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_website_publisher] = _DefaultFakePublisher
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_website_publisher, None)
 
 
 def _headers(tenant_id: uuid.UUID) -> dict:

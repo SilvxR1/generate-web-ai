@@ -22,6 +22,7 @@ import {
   buildCtaBlock,
   buildHeroBlock,
   buildServicesBlock,
+  buildWhatsAppConfig,
 } from "./blocks.ts";
 import { buildBusiness } from "./business.ts";
 import { buildLegalPages } from "./legal.ts";
@@ -36,6 +37,7 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
     website,
     lead_management: leadManagement,
     legal_profile: legalProfile,
+    whatsapp: whatsappConfig,
   } = businessConfig;
   const preset = getPreset(profile.industry);
 
@@ -49,8 +51,10 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
 
   blocks.push(buildCtaBlock(profile, preset));
 
-  const contactBlock = buildContactBlock(profile, leadManagement, preset);
+  const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig);
   if (contactBlock) blocks.push(contactBlock);
+
+  const siteWhatsappConfig = buildWhatsAppConfig(whatsappConfig);
 
   const page: PageConfig = { path: "/", blocks };
   const legalPages = buildLegalPages(profile, legalProfile ?? undefined, Boolean(contactBlock?.content.form));
@@ -83,5 +87,6 @@ export function generateSiteConfig(businessConfig: BusinessConfig): SiteConfig {
     },
     seo: buildSeo(profile, website),
     ...(business ? { business } : {}),
+    ...(siteWhatsappConfig ? { whatsapp: siteWhatsappConfig } : {}),
   };
 }

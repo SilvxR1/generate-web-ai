@@ -12,7 +12,9 @@ from app.db.models.business_asset import BusinessAsset
 from app.db.models.business_review import BusinessReview
 from app.dependencies import (
     get_current_tenant_id,
+    get_google_review_provider,
     get_internal_creative_provider,
+    get_manual_review_provider,
     get_optional_higgsfield_provider,
     get_session,
     get_storage_provider,
@@ -34,15 +36,18 @@ from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.business_review import BusinessReviewRepository
 from app.repositories.creative_generation import CreativeGenerationRepository
 from app.repositories.website_draft import WebsiteDraftRepository
+from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.schemas.creative import (
     BusinessAssetCreateRequest,
     BusinessAssetRead,
     BusinessAssetUpdateRequest,
     BusinessReviewCreateRequest,
     BusinessReviewRead,
+    BusinessReviewVisibilityUpdateRequest,
     CreativeGenerationRead,
     CreativeGenerationRequest,
     CreativeProviderAvailability,
+    ReviewProviderAvailability,
 )
 from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
 from app.services.business_service import BusinessNotFoundError, BusinessService
@@ -314,6 +319,50 @@ def delete_business_review(
     if repo.get_for_business(tenant_id, business_id, review_id) is None:
         raise _review_not_found()
     repo.delete(tenant_id, review_id)
+
+
+@router.patch("/reviews/{review_id}/visibility", response_model=BusinessReviewRead)
+def update_business_review_visibility(
+    business_id: UUID,
+    review_id: UUID,
+    payload: BusinessReviewVisibilityUpdateRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> BusinessReview:
+    """P1.6: show/hide a review on the generated website without
+    deleting it — provenance (source/body/rating/raw_payload) is
+    untouched either way."""
+    _get_business(session, tenant_id, business_id)
+    repo = BusinessReviewRepository(session)
+    review = repo.get_for_business(tenant_id, business_id, review_id)
+    if review is None:
+        raise _review_not_found()
+    review.is_visible = payload.is_visible
+    session.flush()
+    return review
+
+
+@router.get("/review-providers", response_model=list[ReviewProviderAvailability])
+def list_review_provider_availability(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    manual_provider: ManualReviewProvider = Depends(get_manual_review_provider),
+    google_provider: GoogleReviewProvider = Depends(get_google_review_provider),
+) -> list[ReviewProviderAvailability]:
+    """Honest, real-config-backed provider availability (P1.6/P1.12) —
+    same shape as GET .../creative-providers above. This response is
+    identical for every business a tenant owns."""
+    del business_id, tenant_id
+    return [
+        ReviewProviderAvailability(
+            provider=manual_provider.source, available=manual_provider.is_available(), unavailable_reason=None
+        ),
+        ReviewProviderAvailability(
+            provider=google_provider.source,
+            available=google_provider.is_available(),
+            unavailable_reason=google_provider.unavailable_reason(),
+        ),
+    ]
 
 
 # --- Creative strategy/level config (Section 5/12) ----------------------

@@ -1,0 +1,66 @@
+---
+/**
+ * Site-wide floating WhatsApp button (P1.1) — one of two configurable
+ * WhatsApp CTA placements (the other is Contact.astro's whatsappCta, a
+ * prominent button in the contact section). Only rendered when the
+ * caller has already confirmed WhatsAppConfig.enabled &&
+ * showFloatingButton (see Layout.astro) — this component itself has no
+ * opinion on whether it should appear, only how it renders once told to.
+ * Click tracking is handled generically by Analytics.astro's href-based
+ * click delegation (this link matches its wa.me/floating-placement
+ * check via the `data-whatsapp-floating` attribute below), not here.
+ */
+export interface Props {
+  href: string;
+  label?: string;
+}
+
+const { href, label = "Hablar por WhatsApp" } = Astro.props;
+---
+
+<a class="whatsapp-floating-button" href={href} aria-label={label} title={label} data-whatsapp-floating>
+  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path
+      fill="currentColor"
+      d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.33 4.95L2 22l5.29-1.39a9.9 9.9 0 0 0 4.75 1.21h.01c5.46 0 9.9-4.45 9.9-9.91C21.96 6.45 17.5 2 12.04 2Zm5.8 14.06c-.24.68-1.4 1.3-1.94 1.38-.5.08-1.12.11-1.81-.11-.42-.13-.95-.3-1.64-.6-2.88-1.24-4.76-4.13-4.9-4.32-.14-.19-1.17-1.56-1.17-2.98 0-1.42.75-2.11 1.01-2.4.27-.29.58-.36.78-.36.19 0 .39 0 .56.01.18.01.42-.07.65.5.24.58.82 2 .89 2.14.07.14.12.31.02.5-.1.19-.15.31-.3.48-.14.17-.3.37-.43.5-.14.14-.29.29-.13.57.17.29.74 1.22 1.59 1.98 1.09.98 2.01 1.28 2.29 1.43.29.14.46.12.63-.07.17-.19.72-.84.92-1.13.19-.29.39-.24.65-.14.27.1 1.69.8 1.98.94.29.14.48.22.55.34.07.12.07.71-.17 1.39Z"
+    ></path>
+  </svg>
+</a>
+
+<style>
+  .whatsapp-floating-button {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 900;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 999px;
+    background-color: #25d366;
+    color: #ffffff;
+    box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.35);
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .whatsapp-floating-button svg {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .whatsapp-floating-button:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+    .whatsapp-floating-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 22px -4px rgba(0, 0, 0, 0.4);
+    }
+  }
+</style>

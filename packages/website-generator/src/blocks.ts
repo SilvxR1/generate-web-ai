@@ -1,16 +1,19 @@
 import type {
   BusinessProfile,
   LeadManagementConfig,
+  WhatsAppConfig as BusinessWhatsAppConfig,
 } from "@generate-web-ai/business-config-types";
 import type {
   ContactBlockConfig,
   ContactDetailConfig,
   ContactFormConfig,
   ContactFormFieldConfig,
+  ContactWhatsAppCtaConfig,
   CTABlockConfig,
   FeaturesBlockConfig,
   HeroBlockConfig,
   ServicesBlockConfig,
+  WhatsAppConfig,
 } from "@generate-web-ai/site-config";
 import type { WebsiteGeneratorPreset } from "./presets.ts";
 
@@ -18,8 +21,36 @@ function toTelHref(phone: string): string {
   return `tel:${phone.replace(/[\s()-]/g, "")}`;
 }
 
-function toWhatsAppHref(whatsapp: string): string {
-  return `https://wa.me/${whatsapp.replace(/\D/g, "")}`;
+/** `message` is prefilled text the visitor sees in the WhatsApp compose
+ * box before sending — never invented here, always exactly whatever the
+ * caller passed (a real BusinessConfig.whatsapp.default_message, or
+ * none). */
+function toWhatsAppHref(whatsapp: string, message?: string): string {
+  const digits = whatsapp.replace(/\D/g, "");
+  return message ? `https://wa.me/${digits}?text=${encodeURIComponent(message)}` : `https://wa.me/${digits}`;
+}
+
+/**
+ * BusinessConfig.whatsapp (Python-mirrored, snake_case) ->
+ * site-config's WhatsAppConfig (camelCase) — the same kind of field-
+ * rename bridge buildSeo/buildBusiness already do elsewhere in this
+ * package. Returns undefined for every "nothing to render" state
+ * (config absent, disabled, or enabled with no real phone number — the
+ * last of which BusinessConfig's own validator already refuses to
+ * persist, but this stays defensive rather than assuming that always
+ * held true upstream) so callers never need a second enabled-check.
+ */
+export function buildWhatsAppConfig(whatsappConfig: BusinessWhatsAppConfig | undefined): WhatsAppConfig | undefined {
+  if (!whatsappConfig?.enabled || !whatsappConfig.phone_number) return undefined;
+
+  return {
+    enabled: true,
+    phoneNumber: whatsappConfig.phone_number,
+    ...(whatsappConfig.default_message ? { defaultMessage: whatsappConfig.default_message } : {}),
+    showFloatingButton: Boolean(whatsappConfig.show_floating_button),
+    showContactCta: Boolean(whatsappConfig.show_contact_cta),
+    trackingEnabled: whatsappConfig.tracking_enabled !== false,
+  };
 }
 
 /**
@@ -170,18 +201,31 @@ function buildContactDetails(profile: BusinessProfile): ContactDetailConfig[] {
   return details;
 }
 
-/** Only generated when there's at least a real contact detail or a
- * real lead-capture form to show — never an empty shell. */
+/** Only present when WhatsAppConfig.show_contact_cta is explicitly set —
+ * P1.1's "do NOT force all three [placements]; configuration should
+ * decide" applies here as much as to the floating button. */
+function buildContactWhatsAppCta(whatsappConfig: BusinessWhatsAppConfig | undefined): ContactWhatsAppCtaConfig | undefined {
+  if (!whatsappConfig?.enabled || !whatsappConfig.show_contact_cta || !whatsappConfig.phone_number) return undefined;
+  return {
+    href: toWhatsAppHref(whatsappConfig.phone_number, whatsappConfig.default_message ?? undefined),
+    label: "Hablar por WhatsApp",
+  };
+}
+
+/** Only generated when there's at least a real contact detail, a real
+ * lead-capture form, or a WhatsApp CTA to show — never an empty shell. */
 export function buildContactBlock(
   profile: BusinessProfile,
   leadManagement: LeadManagementConfig | undefined,
   preset: WebsiteGeneratorPreset,
+  whatsappConfig?: BusinessWhatsAppConfig,
 ): ContactBlockConfig | null {
   const details = buildContactDetails(profile);
   const wantsForm = Boolean(leadManagement?.enabled && (leadManagement.sources ?? []).includes("website_form"));
   const form = wantsForm && leadManagement ? buildLeadForm(profile, leadManagement, preset) : undefined;
+  const whatsappCta = buildContactWhatsAppCta(whatsappConfig);
 
-  if (details.length === 0 && !form) return null;
+  if (details.length === 0 && !form && !whatsappCta) return null;
 
   return {
     type: "contact",
@@ -190,6 +234,7 @@ export function buildContactBlock(
       heading: preset.contactHeading,
       ...(details.length > 0 ? { details } : {}),
       ...(form ? { form } : {}),
+      ...(whatsappCta ? { whatsappCta } : {}),
     },
   };
 }

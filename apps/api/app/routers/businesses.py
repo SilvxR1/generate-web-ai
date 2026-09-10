@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.analysis.analyzer import BusinessAnalysisResult, BusinessAnalyzer
@@ -16,6 +16,7 @@ from app.automation.n8n import N8nClient
 from app.config import settings
 from app.db.models.business import Business
 from app.db.models.lead import Lead
+from app.db.models.lead_note import LeadNote
 from app.db.models.workflow import Workflow
 from app.dependencies import (
     get_business_analyzer,
@@ -27,7 +28,7 @@ from app.dependencies import (
     get_website_publisher,
 )
 from app.domain.business_config import BusinessConfig, Location
-from app.domain.enums import BusinessVertical, WorkflowStatus
+from app.domain.enums import BusinessVertical, LeadStatus, WorkflowStatus
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
 from app.publishing.domain_provider import DomainProvider
@@ -49,6 +50,7 @@ from app.publishing.service import (
 )
 from app.publishing.versions import list_website_versions, rollback_to_version
 from app.repositories.lead import LeadRepository
+from app.repositories.lead_note import LeadNoteRepository
 from app.repositories.website import WebsiteRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.business import (
@@ -61,7 +63,8 @@ from app.schemas.business import (
 )
 from app.schemas.business_analysis import BusinessAnalysisRequest
 from app.schemas.domain import CustomDomainCreateRequest, CustomDomainState
-from app.schemas.lead import LeadRead, LeadStatusUpdateRequest
+from app.schemas.lead import LeadNoteCreateRequest, LeadNoteRead, LeadRead, LeadStatusUpdateRequest
+from app.schemas.providers import OperationalProviderAvailability
 from app.schemas.readiness import ProductionReadinessReport
 from app.schemas.site_config import SiteConfigPayload
 from app.schemas.website_version import WebsiteVersionSummary
@@ -310,6 +313,9 @@ def get_business_website(
 @router.get("/{business_id}/leads", response_model=list[LeadRead])
 def list_business_leads(
     business_id: UUID,
+    status_filter: LeadStatus | None = Query(default=None, alias="status"),
+    source: str | None = Query(default=None, max_length=50),
+    search: str | None = Query(default=None, max_length=200),
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
 ) -> list[Lead]:
@@ -318,9 +324,14 @@ def list_business_leads(
     Tenant- and business-scoped through LeadRepository, same as every
     other tenant-scoped read in this router — a tenant can never see
     another tenant's leads, even for a business id they happen to know.
+    `status`/`source`/`search` (P1.3) are optional query params — Studio's
+    LeadsList filter/search bar; omitting all three is the original
+    "every lead" behavior.
     """
     _ensure_business_exists(session, tenant_id, business_id)
-    return LeadRepository(session).list_for_business(tenant_id, business_id)
+    return LeadRepository(session).list_for_business(
+        tenant_id, business_id, status=status_filter, source=source, search=search
+    )
 
 
 @router.patch("/{business_id}/leads/{lead_id}/status", response_model=LeadRead)
@@ -350,6 +361,45 @@ def update_lead_status(
     lead.status = payload.status
     session.flush()
     return lead
+
+
+def _get_lead_or_404(session: Session, tenant_id: UUID, business_id: UUID, lead_id: UUID) -> Lead:
+    lead = LeadRepository(session).get_for_business(tenant_id, business_id, lead_id)
+    if lead is None:
+        raise AppError("Lead not found.", code="lead_not_found", status_code=status.HTTP_404_NOT_FOUND)
+    return lead
+
+
+@router.get("/{business_id}/leads/{lead_id}/notes", response_model=list[LeadNoteRead])
+def list_lead_notes(
+    business_id: UUID,
+    lead_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> list[LeadNote]:
+    """Every internal note left on this lead so far, oldest first (P1.3)
+    — not a CRM timeline, a flat list. Scoped the same three-way way as
+    update_lead_status: a lead from a different business (even the same
+    tenant's) 404s rather than leaking its notes."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    _get_lead_or_404(session, tenant_id, business_id, lead_id)
+    return LeadNoteRepository(session).list_for_lead(tenant_id, business_id, lead_id)
+
+
+@router.post(
+    "/{business_id}/leads/{lead_id}/notes", response_model=LeadNoteRead, status_code=status.HTTP_201_CREATED
+)
+def create_lead_note(
+    business_id: UUID,
+    lead_id: UUID,
+    payload: LeadNoteCreateRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> LeadNote:
+    _ensure_business_exists(session, tenant_id, business_id)
+    _get_lead_or_404(session, tenant_id, business_id, lead_id)
+    note = LeadNote(tenant_id=tenant_id, business_id=business_id, lead_id=lead_id, body=payload.body)
+    return LeadNoteRepository(session).add(note)
 
 
 @router.post("/{business_id}/website/publish", response_model=WebsiteStateResult)
@@ -415,6 +465,39 @@ def deactivate_business_website(
         return unpublish_website(session=session, tenant_id=tenant_id, business_id=business_id, publisher=publisher)
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+@router.get("/{business_id}/operational-providers", response_model=list[OperationalProviderAvailability])
+def list_operational_provider_availability(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> list[OperationalProviderAvailability]:
+    """Honest, real-settings-backed availability for email notifications
+    and n8n automation (P1.12) — the same shape as GET
+    .../creative-providers and GET .../review-providers. This response is
+    identical for every business a tenant owns, same reasoning as those
+    two."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    resend_configured = bool(settings.resend_api_key and settings.resend_from_address)
+    smtp_configured = bool(settings.smtp_host and settings.smtp_from_address)
+    email_available = resend_configured or smtp_configured
+    email_provider = "resend" if resend_configured else "smtp"
+    n8n_available = bool(settings.n8n_base_url and settings.n8n_api_key)
+    return [
+        OperationalProviderAvailability(
+            category="email",
+            provider=email_provider,
+            available=email_available,
+            unavailable_reason=None if email_available else "No email provider is configured on this server.",
+        ),
+        OperationalProviderAvailability(
+            category="automation",
+            provider="n8n",
+            available=n8n_available,
+            unavailable_reason=None if n8n_available else "n8n is not configured on this server.",
+        ),
+    ]
 
 
 @router.get("/{business_id}/production-readiness", response_model=ProductionReadinessReport)

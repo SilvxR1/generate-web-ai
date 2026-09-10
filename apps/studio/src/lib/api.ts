@@ -420,6 +420,7 @@ export function detachCustomDomain(businessId: string, tenantId: string): Promis
 // scoping as the read.
 
 export type LeadStatus = "new" | "contacted" | "qualified" | "won" | "lost";
+export type NotificationDeliveryStatus = "pending" | "sent" | "failed" | "not_configured";
 
 export interface Lead {
   id: string;
@@ -433,11 +434,44 @@ export interface Lead {
   source_url: string | null;
   consent_given: boolean;
   status: LeadStatus;
+  acknowledgement_status: NotificationDeliveryStatus;
   created_at: string;
 }
 
-export function getLeads(businessId: string, tenantId: string): Promise<Lead[]> {
-  return requestJson<Lead[]>(`/businesses/${businessId}/leads`, { method: "GET" }, tenantId);
+export interface LeadFilters {
+  search?: string;
+  status?: LeadStatus;
+  source?: string;
+}
+
+export function getLeads(businessId: string, tenantId: string, filters: LeadFilters = {}): Promise<Lead[]> {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  if (filters.status) params.set("status", filters.status);
+  if (filters.source) params.set("source", filters.source);
+  const query = params.toString();
+  return requestJson<Lead[]>(`/businesses/${businessId}/leads${query ? `?${query}` : ""}`, { method: "GET" }, tenantId);
+}
+
+// --- Lead notes (P1.3) — simple internal notes, oldest first ------------
+
+export interface LeadNote {
+  id: string;
+  lead_id: string;
+  body: string;
+  created_at: string;
+}
+
+export function getLeadNotes(businessId: string, leadId: string, tenantId: string): Promise<LeadNote[]> {
+  return requestJson<LeadNote[]>(`/businesses/${businessId}/leads/${leadId}/notes`, { method: "GET" }, tenantId);
+}
+
+export function createLeadNote(businessId: string, leadId: string, body: string, tenantId: string): Promise<LeadNote> {
+  return requestJson<LeadNote>(
+    `/businesses/${businessId}/leads/${leadId}/notes`,
+    { method: "POST", body: JSON.stringify({ body }) },
+    tenantId,
+  );
 }
 
 // --- Automation recommendation -----------------------------------------
@@ -569,6 +603,7 @@ export interface BusinessReview {
   review_url: string | null;
   published_at: string | null;
   imported_at: string;
+  is_visible: boolean;
 }
 
 export interface CreateReviewPayload {
@@ -599,6 +634,109 @@ export function createBusinessReview(
 
 export function deleteBusinessReview(businessId: string, reviewId: string, tenantId: string): Promise<void> {
   return requestVoid(`/businesses/${businessId}/reviews/${reviewId}`, { method: "DELETE" }, tenantId);
+}
+
+/** Show/hide a review on the generated website without deleting it
+ * (P1.6) — provenance untouched either way. */
+export function updateBusinessReviewVisibility(
+  businessId: string,
+  reviewId: string,
+  isVisible: boolean,
+  tenantId: string,
+): Promise<BusinessReview> {
+  return requestJson<BusinessReview>(
+    `/businesses/${businessId}/reviews/${reviewId}/visibility`,
+    { method: "PATCH", body: JSON.stringify({ is_visible: isVisible }) },
+    tenantId,
+  );
+}
+
+export interface ProviderAvailability {
+  provider: string;
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
+/** GET .../review-providers (P1.6/P1.12) — honest Manual/Google
+ * availability, never a hardcoded "coming soon". */
+export function listReviewProviders(businessId: string, tenantId: string): Promise<ProviderAvailability[]> {
+  return requestJson<ProviderAvailability[]>(`/businesses/${businessId}/review-providers`, { method: "GET" }, tenantId);
+}
+
+export interface OperationalProviderAvailability extends ProviderAvailability {
+  category: string;
+}
+
+/** GET .../operational-providers (P1.12) — honest email/n8n
+ * availability. */
+export function listOperationalProviders(
+  businessId: string,
+  tenantId: string,
+): Promise<OperationalProviderAvailability[]> {
+  return requestJson<OperationalProviderAvailability[]>(
+    `/businesses/${businessId}/operational-providers`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+// --- Website Health (P1.4/P1.5) ------------------------------------------
+
+export type HealthStatus = "healthy" | "degraded" | "down" | "unknown";
+
+export interface WebsiteHealth {
+  id: string;
+  business_id: string;
+  checked_at: string;
+  checked_url: string | null;
+  overall_status: HealthStatus;
+  http_status: HealthStatus;
+  http_status_code: number | null;
+  http_latency_ms: number | null;
+  dns_status: HealthStatus;
+  tls_status: HealthStatus;
+  tls_expires_at: string | null;
+  tls_days_remaining: number | null;
+  deployment_status: HealthStatus;
+  deployment_last_deployed_at: string | null;
+  form_status: HealthStatus;
+  error_summary: string | null;
+}
+
+export function getWebsiteHealth(businessId: string, tenantId: string): Promise<WebsiteHealth | null> {
+  return requestJson<WebsiteHealth | null>(`/businesses/${businessId}/website-health`, { method: "GET" }, tenantId);
+}
+
+/** Runs a real HTTP/DNS/TLS/deployment/form check right now — Studio's
+ * "Check now" button. Rate-limited server-side. */
+export function checkWebsiteHealthNow(businessId: string, tenantId: string): Promise<WebsiteHealth> {
+  return requestJson<WebsiteHealth>(`/businesses/${businessId}/website-health/check`, { method: "POST" }, tenantId);
+}
+
+// --- Business metrics (P1.8) ---------------------------------------------
+
+export type MetricsWindow = "7d" | "30d" | "90d";
+
+export interface BusinessMetrics {
+  window_days: number;
+  website_visits: number | null;
+  whatsapp_clicks: number | null;
+  phone_clicks: number | null;
+  email_clicks: number | null;
+  form_leads: number;
+  lead_conversion_rate: number | null;
+}
+
+export function getBusinessMetrics(
+  businessId: string,
+  tenantId: string,
+  window: MetricsWindow = "30d",
+): Promise<BusinessMetrics> {
+  return requestJson<BusinessMetrics>(
+    `/businesses/${businessId}/metrics?window=${window}`,
+    { method: "GET" },
+    tenantId,
+  );
 }
 
 // CreativeConfig itself comes from @generate-web-ai/business-config-types

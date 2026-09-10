@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.analysis.analyzer import BusinessAnalyzer
 from app.analysis.claude.engine import business_analyzer_from_settings
+from app.analytics_events.provider import AnalyticsProvider, InternalAnalyticsProvider
 from app.automation.n8n import N8nClient
 from app.config import settings
 from app.creative.higgsfield import HiggsfieldClient, HiggsfieldCreativeProvider
@@ -24,6 +25,7 @@ from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesDoma
 from app.publishing.domain_provider import DomainProvider
 from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
+from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.storage import LocalStorageProvider, StorageProvider
 
@@ -228,6 +230,21 @@ def get_higgsfield_provider() -> HiggsfieldCreativeProvider:
     return HiggsfieldCreativeProvider(client)
 
 
+def get_manual_review_provider() -> ManualReviewProvider:
+    """Always available — manual review import needs no credentials at
+    all (same shape as get_internal_creative_provider above)."""
+    return ManualReviewProvider()
+
+
+def get_google_review_provider() -> GoogleReviewProvider:
+    """Unlike get_higgsfield_provider above, this never raises — nothing
+    in this codebase actually calls Google's API yet (see
+    app.reviews.provider's own docstring), so there is no "fails loud
+    when used" moment to guard; the provider's own is_available()/
+    unavailable_reason() are what GET .../review-providers reads."""
+    return GoogleReviewProvider(api_key=settings.google_reviews_api_key, place_id=settings.google_reviews_place_id)
+
+
 def get_storage_provider() -> StorageProvider:
     """Unlike every provider factory above, this needs no credentials and
     is always available — LocalStorageProvider (app.storage.local) writes
@@ -235,6 +252,14 @@ def get_storage_provider() -> StorageProvider:
     default so asset upload works out of the box in dev without any
     account/configuration, the same way sqlite:///./dev.db does."""
     return LocalStorageProvider(root_dir=Path(settings.local_storage_dir))
+
+
+def get_analytics_provider(session: Session = Depends(get_session)) -> AnalyticsProvider:
+    """Always available, like get_storage_provider above — the internal
+    event collector needs no external account/credentials (see
+    app.analytics_events.provider's own docstring for why this is
+    deliberately the only AnalyticsProvider implementation today)."""
+    return InternalAnalyticsProvider(session)
 
 
 def get_optional_higgsfield_provider() -> CreativeProvider | None:

@@ -17,7 +17,7 @@
  * text/email/tel/select fields pair up. This is content-shape-driven, not
  * tied to any particular field's name, so it stays generic across clients.
  */
-import { Container, Heading, Link, Text } from "@generate-web-ai/ui";
+import { Button, Container, Heading, Link, Text } from "@generate-web-ai/ui";
 
 export interface ContactDetail {
   /** e.g. "Phone", "Email", "Address". */
@@ -25,6 +25,18 @@ export interface ContactDetail {
   value: string;
   /** e.g. "tel:+1..." or "mailto:...". Renders the value as a link when set. */
   href?: string;
+}
+
+/** A prominent WhatsApp CTA button in the info panel, distinct from a
+ * plain WhatsApp `ContactDetail` row — see @generate-web-ai/site-config's
+ * ContactWhatsAppCtaConfig, which this mirrors field-for-field. Clicks on
+ * this (and on any tel:/mailto:/wa.me link anywhere on the page) are
+ * tracked by apps/site-builder's site-wide analytics script, inferred
+ * purely from each link's `href` scheme — no `data-*` attribute needed
+ * here (see that script's own docstring). */
+export interface ContactWhatsAppCta {
+  href: string;
+  label: string;
 }
 
 export interface ContactFormFieldOption {
@@ -92,6 +104,7 @@ export interface ContactContent {
   subheading?: string;
   details?: ContactDetail[];
   form?: ContactForm;
+  whatsappCta?: ContactWhatsAppCta;
 }
 
 export interface Props {
@@ -106,7 +119,7 @@ export interface Props {
 }
 
 const { content, id, background = "base", reveal = true, class: className } = Astro.props;
-const { heading, subheading, details, form } = content;
+const { heading, subheading, details, form, whatsappCta } = content;
 const formIdPrefix = id ?? "contact";
 
 // Full-width field types (their content doesn't suit a half-width column);
@@ -147,6 +160,11 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
             </div>
           ))}
         </dl>
+      )}
+      {whatsappCta && (
+        <Button href={whatsappCta.href} variant="solid">
+          {whatsappCta.label}
+        </Button>
       )}
     </div>
 
@@ -237,6 +255,47 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
           );
         })}
         </div>
+        {
+          /**
+           * Anti-spam fields (P1 Part B) — transport/spam-boundary
+           * concerns of this specific submission path, not business
+           * content, so they're never part of `form.fields`
+           * (ContactFormConfig, @generate-web-ai/site-config).
+           *
+           * Honeypot: a real visitor — sighted or using assistive tech —
+           * never interacts with this field, so it's hidden from *both*
+           * (aria-hidden + tabindex="-1" removes it from every
+           * accessibility tree and the tab order; autocomplete="off" and
+           * a name unrelated to any real autofill category keep a
+           * browser from filling it in on a real visitor's behalf). It's
+           * a plain visible `<input type="text">` under the hood —
+           * `type="hidden"` is deliberately avoided, since some bots
+           * skip hidden inputs entirely, which would defeat the whole
+           * point. Positioned off-screen via CSS rather than
+           * `display:none`/`visibility:hidden`, for the same reason.
+           * The backend (app.leads.spam.is_spam) treats any non-empty
+           * value here as spam.
+           */
+        }
+        <input
+          type="text"
+          name="hp_field"
+          class="block-contact__honeypot"
+          tabindex={-1}
+          autocomplete="off"
+          aria-hidden="true"
+        />
+        {
+          /**
+           * Submission timing: populated client-side (see the script
+           * below) with the timestamp this form was actually rendered —
+           * the backend (app.leads.spam.is_spam) treats a submission
+           * arriving less than ~2s after this moment as spam (faster
+           * than a human can plausibly read and fill the form). A
+           * visitor never sees or edits this field.
+           */
+        }
+        <input type="hidden" name="rendered_at" />
         <button type="submit" class="block-contact__submit">
           {form.submitLabel ?? "Send message"}
         </button>
@@ -276,18 +335,32 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
    * letting the browser's default submission proceed would just reload
    * the current page with the fields appended as query params. Instead,
    * treat that specifically as "not wired to a backend yet" and emit a
-   * neutral `lead.submitted` event with the field data, for whatever
-   * site/app-level code (now or later) wants to act on it. A form that
-   * *does* have a real `action` is left entirely alone — it submits
-   * exactly as HTML already specifies.
+   * neutral `lead.submitted` event carrying the raw field data (plus the
+   * form element itself, so a listener can map a <select>'s chosen
+   * label rather than just its slug `value` — see
+   * apps/site-builder/src/lib/leadPayload.ts) for whatever site/app-level
+   * code wants to act on it — today, apps/site-builder's
+   * LeadSubmission.astro, which is what actually calls the platform's
+   * public Lead API (POST /public/businesses/{id}/leads). A form that
+   * *does* have a real `action` (an active n8n automation, see
+   * app.publishing.service._inject_lead_capture_webhook_url on the
+   * backend) is left entirely alone here — it submits exactly as HTML
+   * already specifies, and this block never dispatches `lead.submitted`
+   * for it, so it's never double-posted to both systems.
    */
   document.querySelectorAll<HTMLFormElement>(".block-contact__form").forEach((form) => {
     if (form.getAttribute("action")) return;
 
+    // The submission-timing anti-spam field (see the hidden
+    // `rendered_at` input above) — set once, as close to "this form
+    // became interactive" as this script runs, never updated again.
+    const renderedAtField = form.querySelector<HTMLInputElement>('input[name="rendered_at"]');
+    if (renderedAtField) renderedAtField.value = new Date().toISOString();
+
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const fields = Object.fromEntries(new FormData(form).entries());
-      form.dispatchEvent(new CustomEvent("lead.submitted", { detail: { fields }, bubbles: true }));
+      form.dispatchEvent(new CustomEvent("lead.submitted", { detail: { fields, form }, bubbles: true }));
     });
   });
 </script>
@@ -430,6 +503,22 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
     font-size: 1rem;
     color: var(--ui-color-fg, #111827);
     cursor: pointer;
+  }
+
+  /* Off-screen, not display:none/visibility:hidden (some bots skip
+     those) and not visible-to-screen-readers-only (the opposite mistake
+     — that would surface it to assistive tech, which a sighted-hiding
+     trick like clip/sr-only patterns is meant to avoid for *content*
+     but is exactly wrong for a honeypot). aria-hidden + tabindex="-1" on
+     the element itself (see the template above) is what actually keeps
+     assistive tech away from it; this only keeps it out of sighted
+     view. */
+  .block-contact__honeypot {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
   }
 
   .block-contact__submit {

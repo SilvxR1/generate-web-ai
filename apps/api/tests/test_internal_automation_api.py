@@ -19,6 +19,7 @@ from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.db.models.tenant import Tenant
 from app.dependencies import get_optional_notification_sender, get_session
+from app.domain.enums import NotificationDeliveryStatus
 from app.main import app
 from app.notifications.errors import NotificationSenderError
 from app.notifications.sender import NotificationEmail, NotificationSender
@@ -784,6 +785,35 @@ def test_provider_failure_returns_502_but_keeps_the_notification_persisted_as_un
         notifications = session.query(InternalNotification).filter_by(business_id=business.id).all()
         assert len(notifications) == 1
         assert notifications[0].delivered is False
+        # Regression: status must be persisted as FAILED, not left at its
+        # PENDING default — a naive `except: raise` here would let
+        # get_session's rollback-on-exception silently discard the
+        # in-memory FAILED mutation, since it was never flushed after the
+        # earlier successful commit.
+        assert notifications[0].status is NotificationDeliveryStatus.FAILED
+    finally:
+        app.dependency_overrides.pop(get_optional_notification_sender, None)
+
+
+def test_acknowledgement_email_provider_failure_persists_failed_status(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    failing_sender = _FakeNotificationSender(fail=True)
+    app.dependency_overrides[get_optional_notification_sender] = lambda: failing_sender
+    try:
+        lead_id = client.post(
+            "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+        ).json()["id"]
+
+        response = _send_acknowledgement_email(client, lead_id, tenant, business)
+        assert response.status_code == 502
+
+        # Same regression as the internal-notification case above: the
+        # FAILED mutation must survive this request's own rollback.
+        lead = session.query(Lead).filter_by(id=uuid.UUID(lead_id)).one()
+        assert lead.acknowledgement_status is NotificationDeliveryStatus.FAILED
     finally:
         app.dependency_overrides.pop(get_optional_notification_sender, None)
 

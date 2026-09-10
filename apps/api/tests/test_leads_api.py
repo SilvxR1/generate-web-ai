@@ -125,3 +125,69 @@ def test_list_leads_requires_a_tenant_header(client: TestClient, business: Busin
     response = client.get(f"/businesses/{business.id}/leads")
 
     assert response.status_code == 422
+
+
+# --- search/filter (P1.3) -------------------------------------------------
+
+
+def test_list_leads_filters_by_status(client: TestClient, session, tenant: Tenant, business: Business):
+    now = datetime.now(UTC)
+    kwargs = {"session": session, "tenant_id": tenant.id, "business_id": business.id}
+    new_lead = _add_lead(**kwargs, created_at=now, name="New One")
+    contacted = _add_lead(**kwargs, created_at=now, name="Contacted One")
+    contacted.status = "contacted"
+    session.flush()
+
+    response = _list_leads(client, business.id, tenant.id)
+    assert {item["id"] for item in response.json()} == {str(new_lead.id), str(contacted.id)}
+
+    filtered = client.get(
+        f"/businesses/{business.id}/leads",
+        params={"status": "contacted"},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert [item["id"] for item in filtered.json()] == [str(contacted.id)]
+
+
+def test_list_leads_filters_by_source(client: TestClient, session, tenant: Tenant, business: Business):
+    fields = {"tenant_id": tenant.id, "business_id": business.id, "created_at": datetime.now(UTC)}
+    whatsapp_lead = Lead(source="whatsapp", **fields)
+    session.add(whatsapp_lead)
+    _add_lead(session=session, **fields, name="Form lead")
+    session.flush()
+
+    response = client.get(
+        f"/businesses/{business.id}/leads",
+        params={"source": "whatsapp"},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+
+    assert [item["id"] for item in response.json()] == [str(whatsapp_lead.id)]
+
+
+def test_list_leads_search_matches_name_email_and_message(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    kwargs = {"session": session, "tenant_id": tenant.id, "business_id": business.id, "created_at": datetime.now(UTC)}
+    match = _add_lead(**kwargs, name="Ana García", email="someone@example.com", message="hola")
+    _add_lead(**kwargs, name="Luis Ruiz", email="luis@example.com", message="otra cosa")
+
+    response = client.get(
+        f"/businesses/{business.id}/leads", params={"search": "garcía"}, headers={"X-Tenant-Id": str(tenant.id)}
+    )
+
+    assert [item["id"] for item in response.json()] == [str(match.id)]
+
+
+def test_list_leads_search_is_case_insensitive_substring(
+    client: TestClient, session, tenant: Tenant, business: Business
+):
+    match = _add_lead(
+        session, tenant_id=tenant.id, business_id=business.id, created_at=datetime.now(UTC), email="Juan@Example.com"
+    )
+
+    response = client.get(
+        f"/businesses/{business.id}/leads", params={"search": "juan@example"}, headers={"X-Tenant-Id": str(tenant.id)}
+    )
+
+    assert [item["id"] for item in response.json()] == [str(match.id)]

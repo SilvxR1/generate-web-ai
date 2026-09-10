@@ -1,0 +1,127 @@
+---
+/**
+ * Site-wide analytics beacon (P1.7) — the client half of apps/api's
+ * AnalyticsProvider. Every event is gated on ConsentCategory.ANALYTICS
+ * (window.gwaConsent.isGranted("analytics"), see CookieConsentBanner.astro)
+ * before it's ever sent: an event fired before consent is granted is
+ * held in an in-memory queue (never persisted, never sent) and only
+ * flushed if/when the visitor later grants it via the
+ * "gwa-consent-change" event that banner dispatches — there is no
+ * fail-open path. `whatsappTrackingEnabled === false` additionally
+ * suppresses whatsapp_click specifically, independent of visitor
+ * consent (a business-level opt-out — see BusinessConfig.whatsapp.
+ * tracking_enabled).
+ *
+ * Needs `businessId` (apps/api's app.publishing.drafts/service inject
+ * it server-side into SiteConfig.businessId at build/publish time — see
+ * that schema's own docstring) to know which business's events endpoint
+ * to call; without it (e.g. a local `astro build` run outside the real
+ * publishing pipeline), every track() call is a safe no-op, never a
+ * thrown error or a blocked page load. `apiBaseUrl` is a build-time
+ * constant (PUBLIC_API_BASE_URL, apps/site-builder's own env — see
+ * .env.example), the same backend every generated site's client JS
+ * calls; unset in local/preview builds where nothing should be sent.
+ */
+export interface Props {
+  businessId?: string;
+  whatsappTrackingEnabled?: boolean;
+}
+
+const { businessId, whatsappTrackingEnabled = true } = Astro.props;
+const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "";
+---
+
+<script is:inline define:vars={{ businessId, whatsappTrackingEnabled, apiBaseUrl }}>
+  (function () {
+    /** @typedef {"page_view"|"cta_click"|"whatsapp_click"|"lead_form_started"|"lead_submitted"|"phone_click"|"email_click"} AnalyticsEventType */
+
+    var eventsUrl = businessId && apiBaseUrl ? apiBaseUrl + "/public/businesses/" + businessId + "/events" : null;
+    /** @type {[string, Record<string,string>|undefined][]} */
+    var queue = [];
+
+    function consentGranted() {
+      return Boolean(window.gwaConsent && window.gwaConsent.isGranted("analytics"));
+    }
+
+    function send(eventType, metadata) {
+      if (!eventsUrl) return;
+      var body = { event_type: eventType, source_page: window.location.pathname };
+      if (metadata) body.metadata = metadata;
+      try {
+        fetch(eventsUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          keepalive: true,
+        }).catch(function () {});
+      } catch {
+        // Never let a beacon failure affect the page itself.
+      }
+    }
+
+    /** @param {AnalyticsEventType} eventType */
+    function track(eventType, metadata) {
+      if (eventType === "whatsapp_click" && !whatsappTrackingEnabled) return;
+      if (!consentGranted()) {
+        queue.push([eventType, metadata]);
+        return;
+      }
+      send(eventType, metadata);
+    }
+
+    window.gwaAnalytics = { track: track };
+
+    window.addEventListener("gwa-consent-change", function () {
+      if (!consentGranted()) return;
+      var pending = queue;
+      queue = [];
+      pending.forEach(function (entry) {
+        send(entry[0], entry[1]);
+      });
+    });
+
+    track("page_view");
+
+    // Click delegation for tel:/mailto:/wa.me links anywhere on the
+    // page — infers the event purely from the href scheme, so this
+    // works for the Contact block's own detail links and the WhatsApp
+    // floating button without either needing a data-* attribute.
+    document.addEventListener("click", function (event) {
+      var target = /** @type {Element|null} */ (event.target);
+      var link = target && target.closest ? target.closest("a[href]") : null;
+      if (!link) return;
+      var href = link.getAttribute("href") || "";
+      if (href.indexOf("tel:") === 0) {
+        track("phone_click");
+      } else if (href.indexOf("mailto:") === 0) {
+        track("email_click");
+      } else if (href.indexOf("wa.me") !== -1) {
+        var placement = link.closest("[data-whatsapp-floating]") ? "floating" : "contact_section";
+        track("whatsapp_click", { placement: placement });
+      }
+    });
+
+    // lead_form_started — once per form, on its first real interaction.
+    var startedForms = new WeakSet();
+    document.querySelectorAll(".block-contact__form").forEach(function (form) {
+      form.addEventListener(
+        "focusin",
+        function () {
+          if (startedForms.has(form)) return;
+          startedForms.add(form);
+          track("lead_form_started");
+        },
+        { once: true },
+      );
+    });
+
+    // lead_submitted is fired by LeadSubmission.astro instead of here —
+    // it fires only once a real submission attempt against the public
+    // Lead API has actually happened (see that component's own
+    // docstring), not merely whenever the local `lead.submitted` DOM
+    // event fires (a form with a configured n8n `action` never even
+    // reaches this script for that event, but also never needs to: its
+    // own native submission is the completion signal there, not
+    // anything this beacon tracks).
+  })();
+</script>

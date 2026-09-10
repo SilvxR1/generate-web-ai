@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     higgsfield_api_key: str | None = None
     higgsfield_base_url: str | None = None
 
+    # GoogleReviewProvider (app.reviews.provider) — no defaults, same
+    # shape as every other optional provider credential above: reviews
+    # import stays fully manual (already real and working) until a real
+    # Google Places/Business Profile API credential is configured.
+    google_reviews_api_key: str | None = None
+    google_reviews_place_id: str | None = None
+
     # LocalStorageProvider (app.storage.local) — the dev-only asset
     # storage backend (Phase 3 of the Creative Orchestrator work). Unlike
     # every credential above, this has a real default: local storage
@@ -116,6 +123,15 @@ class Settings(BaseSettings):
     # not credentials — safe to ship as-is; override per deployment.
     public_lead_rate_limit_per_minute: int = 10
     asset_upload_rate_limit_per_minute: int = 20
+    # "Check now" (app.routers.website_health) makes real outbound HTTP/
+    # DNS/TLS calls — cheap for a human clicking a button occasionally,
+    # not something to leave uncapped.
+    website_health_rate_limit_per_minute: int = 6
+    # POST /public/businesses/{id}/events (app.routers.analytics, P1.7) —
+    # anonymous, same abuse-sensitivity shape as public_lead above, but a
+    # higher budget since a single real page view fires several distinct
+    # events (page_view, several *_click events) in quick succession.
+    public_analytics_rate_limit_per_minute: int = 60
 
 
 settings = Settings()

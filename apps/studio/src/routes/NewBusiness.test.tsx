@@ -220,6 +220,18 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics: no data yet
     const user = userEvent.setup();
     renderPage();
 
@@ -233,7 +245,7 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(10));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(12));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as { name: string; slug: string };
     expect(body.name).toBe("Cafe del Sol");
@@ -260,6 +272,18 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics: no data yet
     const user = userEvent.setup();
     renderPage();
 
@@ -278,7 +302,7 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(10));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(12));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as {
       config: { automation: { follow_up: { enabled: boolean; delay_hours: number } } };
@@ -427,6 +451,18 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics: no data yet
     const user = userEvent.setup();
     renderPage();
 
@@ -532,6 +568,18 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, customDomainBody)); // custom domain, defaults to "never attached"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteVersionsBody)); // website versions, defaults to "none yet"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, productionReadinessBody)); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health, defaults to "never checked"
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics, defaults to "no data yet"
 
     renderPage();
     await analyze(user);
@@ -870,6 +918,18 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics: no data yet
     const user = userEvent.setup();
     renderPage();
 
@@ -1040,7 +1100,7 @@ describe("NewBusiness preview step", () => {
       },
     ]);
     await screen.findByText("Juan Perez");
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    const select = screen.getByRole("combobox", { name: /^Status:/ }) as HTMLSelectElement;
     expect(select.value).toBe("new");
 
     fetchMock.mockResolvedValueOnce(
@@ -1083,7 +1143,7 @@ describe("NewBusiness preview step", () => {
       },
     ]);
     await screen.findByText("Juan Perez");
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
+    const select = screen.getByRole("combobox", { name: /^Status:/ }) as HTMLSelectElement;
 
     fetchMock.mockResolvedValueOnce(
       jsonResponse(404, { error: { code: "lead_not_found", message: "Lead not found." } }),

@@ -26,7 +26,7 @@ state — only for a real, configured provider call that itself failed.
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.domain.business_config import BusinessConfig
-from app.domain.enums import LeadStatus
+from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 from app.notifications.errors import NotificationSenderError
 from app.notifications.sender import NotificationEmail, NotificationSender
 
@@ -60,11 +60,14 @@ def deliver_internal_notification(
     raise NotificationDeliveryError.
     """
     if sender is None or business_config is None:
+        notification.status = NotificationDeliveryStatus.NOT_CONFIGURED
         return
     if not business_config.communications.internal_notifications.email:
+        notification.status = NotificationDeliveryStatus.NOT_CONFIGURED
         return
     contact = business_config.business_profile.contact
     if contact is None or not contact.email:
+        notification.status = NotificationDeliveryStatus.NOT_CONFIGURED
         return
 
     try:
@@ -76,6 +79,7 @@ def deliver_internal_notification(
             )
         )
     except NotificationSenderError as exc:
+        notification.status = NotificationDeliveryStatus.FAILED
         raise NotificationDeliveryError(
             f"Failed to deliver the internal notification email: {exc}",
             code="notification_delivery_failed",
@@ -83,6 +87,7 @@ def deliver_internal_notification(
         ) from exc
 
     notification.delivered = True
+    notification.status = NotificationDeliveryStatus.SENT
 
 
 class LeadAcknowledgementEmailError(Exception):
@@ -133,10 +138,13 @@ def deliver_lead_acknowledgement_email(
     to send.
     """
     if sender is None or business_config is None:
+        lead.acknowledgement_status = NotificationDeliveryStatus.NOT_CONFIGURED
         return False
     if not business_config.communications.customer_notifications.email:
+        lead.acknowledgement_status = NotificationDeliveryStatus.NOT_CONFIGURED
         return False
     if not lead.email:
+        lead.acknowledgement_status = NotificationDeliveryStatus.NOT_CONFIGURED
         return False
 
     greeting = f"Hola {lead.name}," if lead.name else "Hola,"
@@ -153,12 +161,14 @@ def deliver_lead_acknowledgement_email(
             )
         )
     except NotificationSenderError as exc:
+        lead.acknowledgement_status = NotificationDeliveryStatus.FAILED
         raise LeadAcknowledgementEmailError(
             f"Failed to deliver the lead acknowledgement email: {exc}",
             code="lead_acknowledgement_email_failed",
             status_code=502,
         ) from exc
 
+    lead.acknowledgement_status = NotificationDeliveryStatus.SENT
     return True
 
 

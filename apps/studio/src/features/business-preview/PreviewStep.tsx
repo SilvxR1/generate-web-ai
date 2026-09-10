@@ -6,12 +6,15 @@ import type { CategorizedError } from "../business-analysis/errors";
 import {
   activateAutomation,
   attachCustomDomain,
+  checkWebsiteHealthNow,
   deactivateAutomation,
   detachCustomDomain,
   getAutomationState,
+  getBusinessMetrics,
   getCustomDomain,
   getLeads,
   getProductionReadiness,
+  getWebsiteHealth,
   getWebsiteState,
   getWebsiteVersions,
   getWorkflowPreview,
@@ -20,19 +23,25 @@ import {
   rollbackToWebsiteVersion,
   updateLeadStatus,
   type AutomationState,
+  type BusinessMetrics,
   type CreatedBusiness,
   type CustomDomainState,
   type Lead,
+  type LeadFilters,
   type LeadStatus,
+  type MetricsWindow,
   type ProductionReadinessReport,
+  type WebsiteHealth,
   type WebsiteState,
   type WebsiteVersionSummary,
 } from "../../lib/api";
+import { BusinessMetricsPanel } from "./BusinessMetricsPanel";
 import { CreativeSection } from "../business-creative/CreativeSection";
 import { CustomDomainPanel } from "./CustomDomainPanel";
 import { LeadsList } from "./LeadsList";
 import { ProductionReadinessPanel } from "./ProductionReadinessPanel";
 import { SiteConfigPreview } from "./SiteConfigPreview";
+import { WebsiteHealthPanel } from "./WebsiteHealthPanel";
 import { WebsitePublish } from "./WebsitePublish";
 import { WebsiteVersionsPanel } from "./WebsiteVersionsPanel";
 import { WorkflowPreview } from "./WorkflowPreview";
@@ -81,6 +90,16 @@ interface LeadsFetch {
   error: string | null;
 }
 
+interface WebsiteHealthFetch {
+  health: WebsiteHealth | null;
+  isLoading: boolean;
+}
+
+interface BusinessMetricsFetch {
+  metrics: BusinessMetrics | null;
+  isLoading: boolean;
+}
+
 export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: PreviewStepProps) {
   const [workflowState, setWorkflowState] = useState<WorkflowPreviewState>({
     workflow: null,
@@ -93,6 +112,10 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
   const [websiteVersions, setWebsiteVersions] = useState<WebsiteVersionsFetch>({ versions: null, isLoading: true });
   const [readiness, setReadiness] = useState<ProductionReadinessFetch>({ report: null, isLoading: true });
   const [leads, setLeads] = useState<LeadsFetch>({ leads: null, isLoading: true, error: null });
+  const [leadFilters, setLeadFilters] = useState<LeadFilters>({});
+  const [health, setHealth] = useState<WebsiteHealthFetch>({ health: null, isLoading: true });
+  const [metricsWindow, setMetricsWindow] = useState<MetricsWindow>("30d");
+  const [metrics, setMetrics] = useState<BusinessMetricsFetch>({ metrics: null, isLoading: true });
   const [reloadToken, setReloadToken] = useState(0);
   // CreativeSection fetches its own data (creative-config/assets/reviews/
   // generations) independently of the four calls above — mounting it
@@ -143,7 +166,7 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         if (!cancelled) setWebsite({ state: null, isLoading: false });
       });
 
-    getLeads(business.id, tenantId)
+    getLeads(business.id, tenantId, leadFilters)
       .then((fetched) => {
         if (!cancelled) setLeads({ leads: fetched, isLoading: false, error: null });
       })
@@ -189,7 +212,37 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
     return () => {
       cancelled = true;
     };
+  }, [business.id, tenantId, reloadToken, leadFilters]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHealth((prev) => ({ ...prev, isLoading: true }));
+    getWebsiteHealth(business.id, tenantId)
+      .then((fetched) => {
+        if (!cancelled) setHealth({ health: fetched, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setHealth({ health: null, isLoading: false });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [business.id, tenantId, reloadToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setMetrics((prev) => ({ ...prev, isLoading: true }));
+    getBusinessMetrics(business.id, tenantId, metricsWindow)
+      .then((fetched) => {
+        if (!cancelled) setMetrics({ metrics: fetched, isLoading: false });
+      })
+      .catch(() => {
+        if (!cancelled) setMetrics({ metrics: null, isLoading: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [business.id, tenantId, reloadToken, metricsWindow]);
 
   // Generated from the config exactly as the backend persisted it (see
   // CreatedBusiness.config's docstring) — the same generateSiteConfig()
@@ -208,6 +261,26 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
 
       <h2>Production readiness</h2>
       <ProductionReadinessPanel report={readiness.report} isLoading={readiness.isLoading} />
+
+      <h2>Website health</h2>
+      <WebsiteHealthPanel
+        health={health.health}
+        isLoading={health.isLoading}
+        onCheckNow={() =>
+          checkWebsiteHealthNow(business.id, tenantId).then((fetched) => {
+            setHealth({ health: fetched, isLoading: false });
+            return fetched;
+          })
+        }
+      />
+
+      <h2>Business metrics</h2>
+      <BusinessMetricsPanel
+        metrics={metrics.metrics}
+        isLoading={metrics.isLoading}
+        window={metricsWindow}
+        onWindowChange={setMetricsWindow}
+      />
 
       <h2>Website preview</h2>
       {siteConfig ? (
@@ -300,6 +373,10 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         leads={leads.leads}
         isLoading={leads.isLoading}
         error={leads.error}
+        businessId={business.id}
+        tenantId={tenantId}
+        filters={leadFilters}
+        onFiltersChange={setLeadFilters}
         onUpdateStatus={(leadId: string, status: LeadStatus) =>
           updateLeadStatus(business.id, leadId, status, tenantId).then((updated) => {
             setLeads((prev) => ({
