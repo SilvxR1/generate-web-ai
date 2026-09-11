@@ -8,11 +8,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.db.models.columns import str_enum
 from app.db.models.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
-from app.domain.enums import WebsiteDraftStatus
+from app.domain.enums import GenerationEngine, WebsiteDraftStatus
 
 if TYPE_CHECKING:
     from app.db.models.business import Business
     from app.db.models.creative_generation import CreativeGeneration
+    from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
     from app.db.models.website import Website
 
 
@@ -39,6 +40,18 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     anyway (app.publishing.build.build_site, called again by
     publish_website) — storing a stale copy of transient build output
     would be exactly the kind of over-engineering Phase 6 warns against.
+
+    P2 extension: `engine` (GenerationEngine) decides which of
+    `site_config`/`generative_artifact` is populated for this draft —
+    `DETERMINISTIC` (the default, and the only value every pre-P2 row
+    has) always carries `site_config`; `GENERATIVE` always carries a
+    linked GenerativeWebsiteArtifact instead (`site_config` stays null —
+    see app.creative.frontend_engine for how a GENERATIVE draft is
+    created). The state machine itself
+    (DRAFT->BUILDING->READY|BUILD_FAILED->APPROVED->PUBLISHED) is
+    identical either way; only *how* READY was reached differs. This is
+    still one lifecycle, not two — see app.publishing.drafts's own
+    docstring for how the two engines share it.
     """
 
     __tablename__ = "website_drafts"
@@ -53,7 +66,17 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     creative_generation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("creative_generations.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    site_config: Mapped[dict] = mapped_column(JSON, nullable=False)
+    engine: Mapped[GenerationEngine] = mapped_column(
+        str_enum(GenerationEngine, 20), nullable=False, default=GenerationEngine.DETERMINISTIC
+    )
+    # Nullable as of P2: null exactly when engine is GENERATIVE (see this
+    # model's own docstring) — never both null and un-linked to a
+    # GenerativeWebsiteArtifact, enforced in app.publishing.drafts /
+    # app.creative.frontend_engine, not by a DB constraint (SQLite's
+    # limited CHECK/cross-column support is the same reason
+    # WebsiteDraftStatus's terminal-state rule isn't a DB constraint
+    # either — see that enum's own docstring).
+    site_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     status: Mapped[WebsiteDraftStatus] = mapped_column(
         str_enum(WebsiteDraftStatus, 20), nullable=False, default=WebsiteDraftStatus.DRAFT
     )
@@ -76,3 +99,6 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     business: Mapped["Business"] = relationship(back_populates="website_drafts")
     creative_generation: Mapped["CreativeGeneration | None"] = relationship()
     published_website: Mapped["Website | None"] = relationship()
+    generative_artifact: Mapped["GenerativeWebsiteArtifact | None"] = relationship(
+        back_populates="website_draft", uselist=False, cascade="all, delete-orphan"
+    )

@@ -11,9 +11,11 @@ from app.domain.enums import BusinessStatus, BusinessVertical
 if TYPE_CHECKING:
     from app.db.models.business_asset import BusinessAsset
     from app.db.models.business_review import BusinessReview
+    from app.db.models.creative_direction import CreativeDirection
     from app.db.models.creative_generation import CreativeGeneration
     from app.db.models.custom_domain import CustomDomain
     from app.db.models.execution import Execution
+    from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
     from app.db.models.integration import Integration
     from app.db.models.internal_notification import InternalNotification
     from app.db.models.lead import Lead
@@ -78,5 +80,11 @@ class Business(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
         back_populates="business", cascade="all, delete-orphan"
     )
     website_drafts: Mapped[list["WebsiteDraft"]] = relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
+    creative_directions: Mapped[list["CreativeDirection"]] = relationship(
+        back_populates="business", cascade="all, delete-orphan"
+    )
+    generative_website_artifacts: Mapped[list["GenerativeWebsiteArtifact"]] = relationship(
         back_populates="business", cascade="all, delete-orphan"
     )
