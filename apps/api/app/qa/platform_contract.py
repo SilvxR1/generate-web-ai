@@ -139,7 +139,14 @@ def _check_lead_capture(
         ]
 
     has_action = any('form' in html and 'action="http' in html for html in html_files.values())
-    is_wired = bool(_LEAD_WIRING_MARKER.search(script_text)) or has_action
+    # Astro inlines a small enough client <script> directly into the
+    # HTML rather than always externalizing it to a .js chunk (verified
+    # against a real generative build) — the wiring evidence can live in
+    # either place, so both html_files and script_text must be searched.
+    combined_html = "\n".join(html_files.values())
+    is_wired = (
+        bool(_LEAD_WIRING_MARKER.search(script_text)) or bool(_LEAD_WIRING_MARKER.search(combined_html)) or has_action
+    )
     if not is_wired:
         return [
             PlatformContractFinding(
