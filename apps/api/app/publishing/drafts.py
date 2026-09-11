@@ -19,11 +19,13 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.db.models.website_draft import WebsiteDraft
+from app.domain.business_config import BusinessConfig
 from app.domain.enums import WebsiteDraftStatus
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsitePublisher
 from app.publishing.service import WebsiteStateResult, publish_website
+from app.qa.platform_contract import validate_platform_contract
 from app.qa.validate import validate_site_config
 from app.repositories.website import WebsiteRepository
 from app.repositories.website_draft import WebsiteDraftRepository
@@ -49,6 +51,7 @@ def create_website_draft(
     business_id: UUID,
     site_config: SiteConfigPayload,
     creative_generation_id: UUID | None = None,
+    business_config: BusinessConfig | None = None,
 ) -> WebsiteDraft:
     """Persists `site_config` as a new draft, then runs the real build
     (app.publishing.build.build_site — the same `astro build` subprocess
@@ -59,6 +62,18 @@ def create_website_draft(
     READY, so the caller (a router) always has something to show/persist.
     The build's own artifact (HTML/CSS bytes) is intentionally discarded —
     see WebsiteDraft's own docstring for why.
+
+    P2: when `business_config` is provided (the real call path — see
+    app.routers.creative.create_website_draft_route), the same build's
+    transient file output is also scanned by
+    app.qa.platform_contract.validate_platform_contract *before* being
+    discarded — the identical, engine-agnostic contract GENERATIVE drafts
+    are held to (app.creative.frontend_engine). A BLOCKING violation
+    (P2.8: a dead CTA, a disconnected lead form, ...) demotes this draft
+    to BUILD_FAILED exactly like a real build failure — never READY, so
+    it can never reach APPROVED. `business_config` stays optional (not
+    required) only so existing callers/tests that predate P2 keep working
+    unchanged; every real router call path passes it.
     """
     # The generated static site has no other way to learn its own
     # business id — needed client-side for the analytics beacon and the
@@ -78,14 +93,26 @@ def create_website_draft(
     WebsiteDraftRepository(session).add(draft)
 
     try:
-        build_site(site_config)
+        artifact = build_site(site_config)
     except WebsitePublisherError as exc:
         draft.status = WebsiteDraftStatus.BUILD_FAILED
         draft.build_error = str(exc)
         return draft
 
+    issues = list(validate_site_config(site_config))
+    if business_config is not None:
+        contract_result = validate_platform_contract(artifact.files, business_config=business_config)
+        issues += [f"[PlatformContract:{f.rule}] {f.message}" for f in contract_result.findings]
+        if not contract_result.passed:
+            draft.status = WebsiteDraftStatus.BUILD_FAILED
+            draft.build_error = (
+                "PlatformContract violation(s): " + "; ".join(f.message for f in contract_result.blocking_violations)
+            )
+            draft.validation_issues = issues or None
+            return draft
+
     draft.status = WebsiteDraftStatus.READY
-    draft.validation_issues = validate_site_config(site_config) or None
+    draft.validation_issues = issues or None
     return draft
 
 

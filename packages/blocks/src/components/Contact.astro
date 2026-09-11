@@ -169,7 +169,7 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
     </div>
 
     {form && (
-      <form class="block-contact__form" action={form.action} method={form.method ?? "post"}>
+      <form class="block-contact__form" data-gwa-lead-form action={form.action} method={form.method ?? "post"}>
         <div class="block-contact__fields">
         {form.fields.map((field) => {
           const fieldId = `${formIdPrefix}-${field.name}`;

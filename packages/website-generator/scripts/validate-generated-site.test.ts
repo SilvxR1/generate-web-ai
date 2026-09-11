@@ -88,7 +88,7 @@ describe("generateSiteConfig(reforma valencia fixture)", () => {
     // which is what makes Contact.astro's client-side handler treat it
     // as not-yet-wired-to-a-backend and dispatch `lead.submitted`
     // instead of letting the browser POST nowhere useful.
-    expect(html).toMatch(/<form class="block-contact__form" method="post"(?! action=)[^>]*>/);
+    expect(html).toMatch(/<form class="block-contact__form" data-gwa-lead-form method="post"(?! action=)[^>]*>/);
     // Astro's SSR string output references the block's <script> by URL
     // rather than inlining it (that's real Astro build behavior, not a
     // gap) — so the event name is verified directly in the component

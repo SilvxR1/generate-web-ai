@@ -566,12 +566,16 @@ def create_website_draft_route(
     builds + validates it (app.publishing.drafts.create_website_draft) —
     never publishes. The currently published website (if any) is
     completely untouched by this call, whether the build succeeds or
-    fails."""
+    fails. Passes the business's own BusinessConfig so the build is also
+    scanned against the P2 PlatformContract (app.qa.platform_contract) —
+    the same contract a GENERATIVE draft is held to."""
     _get_business(session, tenant_id, business_id)
+    business_config = _load_business_config(session, tenant_id, business_id)
     return create_website_draft(
         session=session,
         tenant_id=tenant_id,
         business_id=business_id,
+        business_config=business_config,
         site_config=payload.site_config,
         creative_generation_id=payload.creative_generation_id,
     )
