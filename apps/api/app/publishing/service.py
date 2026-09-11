@@ -23,6 +23,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.automation.n8n import lead_submitted_webhook_url
+from app.creative.frontend_engine.build import rebuild_from_archive
+from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website import Website
 from app.db.models.website_version import WebsiteVersion
 from app.db.models.workflow import Workflow
@@ -33,6 +35,7 @@ from app.publishing.publisher import WebsitePublisher
 from app.repositories.website import WebsiteRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import StorageProvider
 
 
 class WebsitePublishError(Exception):
@@ -251,6 +254,87 @@ def unpublish_website(
     website.status = WebsiteStatus.INACTIVE
     website.deploy_url = None
     website.provider_deployment_id = None
+
+    return _to_state_result(website)
+
+
+def publish_generative_website(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    artifact_row: GenerativeWebsiteArtifact,
+    publisher: WebsitePublisher,
+    storage: StorageProvider,
+    api_base_url: str | None = None,
+) -> WebsiteStateResult:
+    """The GENERATIVE counterpart to publish_website above. Rebuilds
+    from the durably-archived generative source
+    (app.creative.frontend_engine.build.rebuild_from_archive) rather than
+    re-invoking the AI Frontend Engineer — "what was approved is what
+    gets published" holds here the same way it does for the
+    deterministic path's re-run of build_site, just against a fixed
+    source tree instead of a fixed SiteConfig. Persists the identical
+    Website/WebsiteVersion rows the deterministic path does; `config`
+    stores a small generative marker (never a fabricated SiteConfig)
+    since there is no SiteConfig for a generative build."""
+    repo = WebsiteRepository(session)
+    website = repo.get_by_business(tenant_id, business_id)
+    site_id = website_project_name(business_id)
+    direction_id = artifact_row.creative_direction_id
+    config_snapshot = {
+        "engine": "generative",
+        "creative_direction_id": str(direction_id) if direction_id else None,
+        "generator_provider": artifact_row.generator_provider,
+        "generator_model": artifact_row.generator_model,
+        "workspace_key": artifact_row.workspace_key,
+    }
+
+    try:
+        archive = storage.load(artifact_row.workspace_key)
+        artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
+        published = publisher.publish(site_id=site_id, artifact=artifact)
+    except WebsitePublisherError as exc:
+        if website is None:
+            website = Website(
+                tenant_id=tenant_id,
+                business_id=business_id,
+                deploy_target=DeployTarget.CLOUDFLARE,
+                status=WebsiteStatus.FAILED,
+                config=config_snapshot,
+            )
+            repo.add(website)
+        else:
+            website.status = WebsiteStatus.FAILED
+            website.config = config_snapshot
+        raise WebsitePublishError(
+            f"Publishing this generative website failed: {exc}",
+            code="website_publish_failed",
+            status_code=502,
+        ) from exc
+
+    if website is None:
+        website = Website(tenant_id=tenant_id, business_id=business_id)
+        repo.add(website)
+
+    website.deploy_target = DeployTarget.CLOUDFLARE
+    website.status = WebsiteStatus.LIVE
+    website.deploy_url = str(published.url)
+    website.provider_deployment_id = published.deployment_id
+    website.deployed_at = datetime.now(UTC)
+    website.config = config_snapshot
+
+    version = WebsiteVersion(
+        tenant_id=tenant_id,
+        business_id=business_id,
+        website_id=website.id,
+        site_config=config_snapshot,
+        deploy_url=str(published.url),
+        provider_deployment_id=published.deployment_id,
+        published_at=website.deployed_at,
+    )
+    session.add(version)
+    session.flush([version])
 
     return _to_state_result(website)
 

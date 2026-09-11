@@ -31,6 +31,9 @@ class LocalStorageProvider(StorageProvider):
     def delete(self, storage_key: str) -> None:
         self._resolve(storage_key).unlink(missing_ok=True)
 
+    def load(self, storage_key: str) -> bytes:
+        return self._resolve(storage_key).read_bytes()
+
     def url_path(self, storage_key: str) -> str:
         return f"/uploads/{storage_key}"
 

@@ -4,14 +4,23 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.creative.director import CreativeDirectorProvider
+from app.creative.director_orchestrator import (
+    CreativeDirectionNotFoundError,
+    orchestrate_create_directions,
+    orchestrate_develop_direction,
+)
 from app.creative.errors import CreativeProviderError
+from app.creative.frontend_engine import FrontendEngineer
 from app.creative.higgsfield import HiggsfieldCreativeProvider
 from app.creative.orchestrator import orchestrate_generation
 from app.creative.provider import CreativeProvider
 from app.db.models.business_asset import BusinessAsset
 from app.db.models.business_review import BusinessReview
 from app.dependencies import (
+    get_creative_director,
     get_current_tenant_id,
+    get_frontend_engineer,
     get_google_review_provider,
     get_internal_creative_provider,
     get_manual_review_provider,
@@ -22,18 +31,31 @@ from app.dependencies import (
     rate_limit_dependency,
 )
 from app.domain.business_config import BusinessConfig, CreativeConfig
-from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, CreativeProviderName
+from app.domain.creative import build_creative_brief
+from app.domain.creative.budget import BudgetExceededError, CreativeBudget
+from app.domain.enums import (
+    AssetCategory,
+    AssetKind,
+    AssetOrigin,
+    CreativeBudgetTier,
+    CreativeProviderName,
+    GenerationEngine,
+)
 from app.errors import AppError
 from app.publishing.drafts import (
+    GenerativeDraftError,
     WebsiteDraftError,
     approve_website_draft,
+    create_generative_website_draft,
     create_website_draft,
+    publish_generative_website_draft,
     publish_website_draft,
 )
 from app.publishing.publisher import WebsitePublisher
 from app.publishing.service import WebsitePublishError, WebsiteStateResult
 from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.business_review import BusinessReviewRepository
+from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.creative_generation import CreativeGenerationRepository
 from app.repositories.website_draft import WebsiteDraftRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
@@ -45,9 +67,13 @@ from app.schemas.creative import (
     BusinessReviewCreateRequest,
     BusinessReviewRead,
     BusinessReviewVisibilityUpdateRequest,
+    CreateDirectionsRequest,
+    CreativeDirectionRead,
     CreativeGenerationRead,
     CreativeGenerationRequest,
     CreativeProviderAvailability,
+    DevelopDirectionRequest,
+    GenerateWebsiteFromDirectionRequest,
     ReviewProviderAvailability,
 )
 from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
@@ -80,7 +106,7 @@ def _review_not_found() -> AppError:
     return AppError("Review not found.", code="business_review_not_found", status_code=status.HTTP_404_NOT_FOUND)
 
 
-def _draft_error(exc: WebsiteDraftError) -> AppError:
+def _draft_error(exc: "WebsiteDraftError | GenerativeDraftError") -> AppError:
     return AppError(str(exc), code=exc.code, status_code=exc.status_code)
 
 
@@ -637,15 +663,33 @@ def publish_website_draft_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
-    (Phase 10: generation/build/validation alone never publish). Reuses
-    the existing website-publish machinery unchanged
-    (app.publishing.drafts.publish_website_draft); on failure, the
+    (Phase 10: generation/build/validation alone never publish). One
+    endpoint for either engine (P2): branches on the draft's own
+    `engine` to call the matching publish function
+    (app.publishing.drafts.publish_website_draft for DETERMINISTIC,
+    publish_generative_website_draft for GENERATIVE) — Studio never
+    needs to know which one a given draft used. On failure, the
     previously live site (if any) is left exactly as it was, and this
     draft stays APPROVED — safe to retry."""
     _get_business(session, tenant_id, business_id)
+    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
+    if draft is None:
+        raise AppError(
+            "Website draft not found.", code="website_draft_not_found", status_code=status.HTTP_404_NOT_FOUND
+        )
     try:
+        if draft.engine is GenerationEngine.GENERATIVE:
+            return publish_generative_website_draft(
+                session=session,
+                tenant_id=tenant_id,
+                business_id=business_id,
+                draft_id=draft_id,
+                publisher=publisher,
+                storage=storage,
+            )
         return publish_website_draft(
             session=session,
             tenant_id=tenant_id,
@@ -654,7 +698,146 @@ def publish_website_draft_route(
             publisher=publisher,
             n8n_base_url=settings.n8n_base_url,
         )
-    except WebsiteDraftError as exc:
+    except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+# --- P2: Creative directions (create -> critic -> select -> develop) ----
+
+
+def _no_business_config() -> AppError:
+    return AppError(
+        "This business has no configuration to generate from.",
+        code="no_business_config",
+        status_code=status.HTTP_409_CONFLICT,
+    )
+
+
+@router.post(
+    "/creative-directions", response_model=list[CreativeDirectionRead], status_code=status.HTTP_201_CREATED
+)
+def create_creative_directions_route(
+    business_id: UUID,
+    payload: CreateDirectionsRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    director: CreativeDirectorProvider = Depends(get_creative_director),
+) -> list[object]:
+    """P2.3 STEP A+B+C: explores candidate creative directions (~3 via
+    Higgsfield when configured, 1 honest fallback via
+    InternalCreativeDirector otherwise), runs the deterministic critic,
+    and persists every candidate. Never silently substitutes one
+    provider's result for the other — `director.name` on each persisted
+    row's `provider_metadata` always reflects which one actually ran."""
+    config = _load_business_config(session, tenant_id, business_id)
+    if config is None:
+        raise _no_business_config()
+
+    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
+    reviews = BusinessReviewRepository(session).list_for_business(tenant_id, business_id)
+    brief = build_creative_brief(business_config=config, assets=assets, reviews=reviews)
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=payload.hard_limit)
+
+    try:
+        return list(
+            orchestrate_create_directions(
+                session=session,
+                tenant_id=tenant_id,
+                business_id=business_id,
+                brief=brief,
+                assets=brief.available_assets,
+                director=director,
+                budget=budget,
+            )
+        )
+    except (CreativeProviderError, BudgetExceededError) as exc:
+        raise AppError(str(exc), code="creative_direction_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
+
+
+@router.get("/creative-directions", response_model=list[CreativeDirectionRead])
+def list_creative_directions_route(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> list[object]:
+    _get_business(session, tenant_id, business_id)
+    return list(CreativeDirectionRepository(session).list_for_business(tenant_id, business_id))
+
+
+@router.post("/creative-directions/{direction_id}/develop", response_model=CreativeDirectionRead)
+def develop_creative_direction_route(
+    business_id: UUID,
+    direction_id: UUID,
+    payload: DevelopDirectionRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    director: CreativeDirectorProvider = Depends(get_creative_director),
+) -> object:
+    """P2.3 STEP D: deepen one already-selected direction — never starts
+    a new concept."""
+    config = _load_business_config(session, tenant_id, business_id)
+    if config is None:
+        raise _no_business_config()
+
+    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
+    reviews = BusinessReviewRepository(session).list_for_business(tenant_id, business_id)
+    brief = build_creative_brief(business_config=config, assets=assets, reviews=reviews)
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=payload.hard_limit)
+
+    try:
+        return orchestrate_develop_direction(
+            session=session,
+            tenant_id=tenant_id,
+            business_id=business_id,
+            direction_id=direction_id,
+            brief=brief,
+            assets=brief.available_assets,
+            director=director,
+            budget=budget,
+        )
+    except CreativeDirectionNotFoundError as exc:
+        raise AppError(str(exc), code="creative_direction_not_found", status_code=status.HTTP_404_NOT_FOUND) from exc
+    except (CreativeProviderError, BudgetExceededError) as exc:
+        raise AppError(str(exc), code="creative_direction_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
+
+
+@router.post(
+    "/website-drafts/generative", response_model=WebsiteDraftRead, status_code=status.HTTP_201_CREATED
+)
+def create_generative_website_draft_route(
+    request: Request,
+    business_id: UUID,
+    payload: GenerateWebsiteFromDirectionRequest,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    frontend_engineer: FrontendEngineer = Depends(get_frontend_engineer),
+) -> object:
+    """The GENERATIVE counterpart to POST .../website-drafts (P2 Part
+    A/C): turns one already-selected CreativeDirection into a real,
+    bespoke build via the AI Frontend Engineer. Never falls back to the
+    deterministic engine on failure (P2.14) — a failure here returns a
+    BUILD_FAILED draft or a real error, not a deterministic result
+    silently substituted in its place."""
+    config = _load_business_config(session, tenant_id, business_id)
+    if config is None:
+        raise _no_business_config()
+
+    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
+    brief = build_creative_brief(business_config=config, assets=assets)
+    api_base_url = str(request.base_url).rstrip("/")
+
+    try:
+        return create_generative_website_draft(
+            session=session,
+            tenant_id=tenant_id,
+            business_id=business_id,
+            business_config=config,
+            creative_direction_id=payload.creative_direction_id,
+            frontend_engineer=frontend_engineer,
+            assets=brief.available_assets,
+            api_base_url=api_base_url,
+        )
+    except GenerativeDraftError as exc:
+        raise _draft_error(exc) from exc

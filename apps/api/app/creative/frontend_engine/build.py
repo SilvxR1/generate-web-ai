@@ -21,6 +21,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact
 from app.publishing.security_headers import generate_headers_file
@@ -90,6 +91,26 @@ def _inline_script_hashes(html_files: list[str]) -> frozenset[str]:
             digest = hashlib.sha256(body.encode("utf-8")).digest()
             hashes.add(base64.b64encode(digest).decode("ascii"))
     return frozenset(hashes)
+
+
+def rebuild_from_archive(archive: bytes, *, business_id: str, api_base_url: str | None = None) -> WebsiteArtifact:
+    """Re-runs a real `npm install` + `astro build` from a previously
+    archived generative source tar.gz (see
+    app.creative.frontend_engine.anthropic_engine._archive_source) —
+    never re-invokes the LLM. This is how a GENERATIVE draft is
+    published (app.publishing.service.publish_generative_website): the
+    same real source that was approved, rebuilt fresh, not a second AI
+    generation that could produce different content."""
+    import tarfile
+    from io import BytesIO
+
+    workspace = allocate_workspace()
+    try:
+        with tarfile.open(fileobj=BytesIO(archive), mode="r:gz") as tar:
+            tar.extractall(workspace, filter="data")  # noqa: S202 — trusted, platform-archived content, not user input
+        return build_generative_workspace(workspace, business_id=business_id, api_base_url=api_base_url)
+    finally:
+        cleanup_workspace(workspace)
 
 
 def build_generative_workspace(

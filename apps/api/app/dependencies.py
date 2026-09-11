@@ -15,6 +15,7 @@ from app.automation.n8n import N8nClient
 from app.config import settings
 from app.creative.director import CreativeDirectorProvider
 from app.creative.director_internal import InternalCreativeDirector
+from app.creative.frontend_engine import FrontendEngineer, frontend_engineer_from_settings
 from app.creative.higgsfield import (
     HiggsfieldCli,
     HiggsfieldClient,
@@ -302,6 +303,34 @@ def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
         return None
     cli = HiggsfieldCli(binary=settings.higgsfield_cli_binary, timeout_seconds=settings.higgsfield_cli_timeout_seconds)
     return HiggsfieldCreativeDirector(cli, local_storage_root=Path(settings.local_storage_dir))
+
+
+def get_creative_director() -> CreativeDirectorProvider:
+    """The single creative-director selection point a router calls
+    (app.routers.creative) — prefers Higgsfield when
+    settings.higgsfield_cli_enabled, otherwise InternalCreativeDirector.
+    Always constructs successfully (mirrors get_internal_creative_provider's
+    'never fails to construct' shape): there is no 'creative direction
+    unavailable' state, only a cheaper/more expensive one. The returned
+    instance's `.name` tells a caller which one was actually used —
+    never silently presented as the other (P2.14)."""
+    return get_optional_higgsfield_director() or get_internal_creative_director()
+
+
+def get_frontend_engineer(
+    storage: StorageProvider = Depends(get_storage_provider),
+) -> FrontendEngineer:
+    """Built fresh per request, same shape as get_business_analyzer: a
+    server without ANTHROPIC_API_KEY configured still starts up fine —
+    generation only fails, loudly and with a clean 503, the first time a
+    generative website-draft is actually requested."""
+    if not settings.anthropic_api_key:
+        raise AppError(
+            "The AI Frontend Engineer is not configured on this server.",
+            code="frontend_engineer_not_configured",
+            status_code=503,
+        )
+    return frontend_engineer_from_settings(settings, storage=storage)
 
 
 def get_rate_limiter() -> RateLimiter:
