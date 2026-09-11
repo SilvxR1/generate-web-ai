@@ -13,7 +13,14 @@ from app.analysis.claude.engine import business_analyzer_from_settings
 from app.analytics_events.provider import AnalyticsProvider, InternalAnalyticsProvider
 from app.automation.n8n import N8nClient
 from app.config import settings
-from app.creative.higgsfield import HiggsfieldClient, HiggsfieldCreativeProvider
+from app.creative.director import CreativeDirectorProvider
+from app.creative.director_internal import InternalCreativeDirector
+from app.creative.higgsfield import (
+    HiggsfieldCli,
+    HiggsfieldClient,
+    HiggsfieldCreativeDirector,
+    HiggsfieldCreativeProvider,
+)
 from app.creative.internal import InternalCreativeProvider
 from app.creative.provider import CreativeProvider
 from app.db.session import make_engine, make_session_factory
@@ -273,6 +280,28 @@ def get_optional_higgsfield_provider() -> CreativeProvider | None:
     if not settings.higgsfield_api_key or not settings.higgsfield_base_url:
         return None
     return get_higgsfield_provider()
+
+
+def get_internal_creative_director() -> InternalCreativeDirector:
+    """Always available — same shape as get_internal_creative_provider
+    above (P2's CreativeDirectorProvider fallback)."""
+    return InternalCreativeDirector()
+
+
+def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
+    """Returns None (never raises) when
+    settings.higgsfield_cli_enabled is False — the machine-local opt-in
+    this codebase uses for the CLI/OAuth-session integration path (see
+    app.config.Settings.higgsfield_cli_enabled's own docstring for why
+    this isn't an API-key check the way get_optional_higgsfield_provider
+    above is). app.creative.director_orchestrator falls back to
+    get_internal_creative_director when this returns None — never
+    silently presenting that fallback as a successful Higgsfield run
+    (P2.14)."""
+    if not settings.higgsfield_cli_enabled:
+        return None
+    cli = HiggsfieldCli(binary=settings.higgsfield_cli_binary, timeout_seconds=settings.higgsfield_cli_timeout_seconds)
+    return HiggsfieldCreativeDirector(cli, local_storage_root=Path(settings.local_storage_dir))
 
 
 def get_rate_limiter() -> RateLimiter:

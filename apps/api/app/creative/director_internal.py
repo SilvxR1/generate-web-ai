@@ -23,57 +23,17 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from app.creative.director import CreativeDirectorProvider
+from app.creative.factual_safety import constraints_for_brief
 from app.domain.creative import CreativeBrief, CreativeBriefAsset
 from app.domain.creative.budget import CreativeBudget
 from app.domain.creative.direction import (
     ContentStrategy,
     CreativeConcept,
     CreativeDirection,
-    CreativeDirectionConstraints,
     ExperienceDirection,
     VisualLanguage,
 )
 from app.domain.enums import CreativeProviderName
-
-_PROHIBITED_CLAIMS = (
-    "pricing",
-    "years_of_experience",
-    "certifications",
-    "reviews",
-    "guarantees",
-    "addresses",
-    "opening_hours",
-    "shipping",
-    "delivery_times",
-    "materials",
-    "customer_counts",
-    "awards",
-    "availability",
-    "ecommerce",
-)
-
-
-def _constraints_for(brief: CreativeBrief) -> CreativeDirectionConstraints:
-    """Shared by both directors (Internal and — via
-    app.creative.higgsfield.director — Higgsfield): the factual-safety
-    boundary is a function of `brief` alone, never of which provider is
-    exploring creative direction, so every CreativeDirection this
-    codebase ever produces carries the identical prohibited-claims list
-    regardless of provider (P2.9's factual-safety layer must not vary by
-    provider)."""
-    return CreativeDirectionConstraints(
-        factual_claims=[
-            *([f"business_name: {brief.business_name}"]),
-            *([f"industry: {brief.industry}"]),
-            *([f"tagline: {brief.tagline}"] if brief.tagline else []),
-            *([f"description: {brief.description}"] if brief.description else []),
-            *([f"target_customer: {brief.target_customer}"] if brief.target_customer else []),
-            *[f"service: {service.name}" for service in brief.services],
-        ],
-        allowed_claims=["handmade" if "handmade" in (brief.description or "").lower() else "custom_service"],
-        prohibited_claims=list(_PROHIBITED_CLAIMS),
-        required_content=["working_contact_path", "legal_pages"],
-    )
 
 
 class InternalCreativeDirector(CreativeDirectorProvider):
@@ -114,7 +74,7 @@ class InternalCreativeDirector(CreativeDirectorProvider):
                 conversion_strategy=brief.conversion_objective,
             ),
             references=[],
-            constraints=_constraints_for(brief),
+            constraints=constraints_for_brief(brief),
             provider_metadata={"provider": self.name.value, "strategy": "existing_brand_and_theme"},
             generation_metadata={"credits_used": 0.0, "stage": "initial_direction", "candidate_count": 1},
             is_recommended=True,

@@ -98,6 +98,25 @@ class Settings(BaseSettings):
     higgsfield_api_key: str | None = None
     higgsfield_base_url: str | None = None
 
+    # HiggsfieldCreativeDirector (app.creative.higgsfield.director, P2) —
+    # unlike every API-key-based provider above, this integration uses
+    # the `higgsfield` CLI's own already-authenticated local OAuth
+    # session (`higgsfield auth login`, external to this codebase, see
+    # docs/higgsfield-integration.md's "CLI integration status" section)
+    # rather than a server-held credential. `higgsfield_cli_enabled` is
+    # an explicit, machine-local opt-in: true only on a host where that
+    # CLI is actually installed and logged in. Honest limitation: this is
+    # NOT yet a production-safe integration path — an unattended
+    # production deployment has no interactive session to hold the OAuth
+    # token, so this defaults to disabled and stays a
+    # development/manually-operated workflow until a real server-side
+    # API credential exists (see that doc for what completing that would
+    # require). No API key/base URL setting exists for this path by
+    # design — see app.creative.higgsfield.cli.HiggsfieldCli.
+    higgsfield_cli_enabled: bool = False
+    higgsfield_cli_binary: str = "higgsfield"
+    higgsfield_cli_timeout_seconds: float = 240.0
+
     # GoogleReviewProvider (app.reviews.provider) — no defaults, same
     # shape as every other optional provider credential above: reviews
     # import stays fully manual (already real and working) until a real
