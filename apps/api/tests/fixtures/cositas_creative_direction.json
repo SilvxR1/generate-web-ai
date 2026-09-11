@@ -1,0 +1,78 @@
+{
+  "_provenance": "Reconstructed from real, already-completed Higgsfield jobs found in this account's own generation history (higgsfield generate list --json) during this P2 continuation session — NOT a new generation, zero new Higgsfield credits spent. These jobs were run in an earlier session ('Concept 2: immersive photographic scene with embedded glowing thread-paths for navigation') against a real uploaded Cositas y Puntos logo and real product photography, per that job's own prompt text: 'You are given real product photography and a real logo (provided as references) as your raw creative material — never invent replacement products.' Every field below is derived directly from that real, already-paid-for prompt/result data — never invented in this session.",
+  "concept": {
+    "name": "Cositas y Puntos — immersive scene with embedded thread-path navigation",
+    "rationale": "Explored as an alternative to a conventional navbar+hero+cards+footer template: navigation embedded directly in an immersive photographic scene, as glowing thread/light paths between hotspots — a visual metaphor drawn directly from the business's own craft (crochet/knitting thread).",
+    "narrative": "An immersive, tactile, warmly-lit photographic diorama scene built from real yarn/knit textures, where navigation is embedded directly in the scene as glowing thread/light paths drawn between hotspots, each labeled in a warm hand-set sans caption, rather than a conventional navbar. This is the digital identity for Cositas y Puntos, a handmade crochet/amigurumi Spanish artisan who sells through Instagram and personal enquiries, with no physical store and no ecommerce checkout."
+  },
+  "visual_language": {
+    "mood": "warm, tactile, handmade diorama — an archive/collector's-catalog sensibility",
+    "palette_direction": "deep forest-green background, cream/ivory archival file-card panel, thin gold/ochre line accents, the real logo's three pastel circles (coral, peach, dusty mauve) kept exactly as given",
+    "typography_direction": "bold condensed display typeface for headlines, a lighter humanist typeface for body text",
+    "composition_philosophy": "a photographic diorama scene built from real yarn/knit textures, not a document-like page — one continuous immersive scene rather than stacked sections",
+    "imagery_treatment": "real product photography and the real logo, framed/revealed within the scene as you follow a glowing thread path to arrive at a real creation shown up close",
+    "graphic_language": "glowing thread/light paths as the navigation device itself; a circular wax-seal-style badge accent; vertical rotated side-tab text labels"
+  },
+  "experience": {
+    "navigation_concept": "wayfinding embedded directly in the scene as glowing thread/light paths drawn between hotspots, each with a warm hand-set caption — never a conventional navbar",
+    "storytelling_model": "arrival at an immersive entry scene -> follow a glowing thread path -> arrive at a real creation shown up close within the scene -> a brand-story/handmade-philosophy moment paired with a macro texture crop of real stitch/yarn detail -> contact",
+    "interaction_concepts": [
+      "following one glowing thread path reveals/frames a real product photo within the scene, not a generic product card",
+      "a full-screen archive-themed mobile menu continuing the file-card/archive-tab visual language at phone scale, not plain stacked links"
+    ],
+    "motion_concepts": [
+      "thread paths glow/animate subtly to invite exploration on first arrival"
+    ],
+    "responsive_adaptation": "on a narrow mobile/portrait viewport, the same immersive-scene-with-thread-paths model is honestly re-composed (per the real exploration's own question: 'does the same immersive-scene-with-thread-paths model still work at phone scale, or does it need a different composition/interaction for touch and a narrow viewport?') rather than the desktop scene simply shrunk down."
+  },
+  "content_strategy": {
+    "hierarchy": "immersive entry scene; thread-path navigation to real creations; brand-story/handmade-philosophy moment; contact",
+    "primary_user_journey": "arrival -> explore via thread paths -> see real creations up close -> contact via custom order enquiry",
+    "conversion_strategy": "custom-order enquiry / contact, not a checkout — no ecommerce functionality exists for this business"
+  },
+  "references": [
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_120553_e33e93af-4102-4735-ad5a-8527a96ff1b6.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_120550_770a24d0-4b25-4f44-8bf3-243e4700be43.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_120543_0c22a13e-3dc6-4ef8-b7d6-cd25fd59eb91.png"
+  ],
+  "constraints": {
+    "factual_claims": [
+      "business_name: Cositas y Puntos",
+      "industry: other (handmade crochet/amigurumi)",
+      "description: Artesana espanola independiente que crea amigurumi, crochet y piezas de punto hechas a mano. Vende a traves de Instagram y encargos personalizados; sin tienda fisica ni compra online.",
+      "no physical store",
+      "no ecommerce checkout",
+      "sells via Instagram and personal enquiries / custom orders"
+    ],
+    "allowed_claims": ["handmade"],
+    "prohibited_claims": [
+      "pricing",
+      "years_of_experience",
+      "certifications",
+      "reviews",
+      "guarantees",
+      "addresses",
+      "opening_hours",
+      "shipping",
+      "delivery_times",
+      "materials",
+      "customer_counts",
+      "awards",
+      "availability",
+      "ecommerce"
+    ],
+    "required_content": ["working_contact_path", "legal_pages"]
+  },
+  "provider_metadata": {
+    "provider": "higgsfield",
+    "job_type": "nano_banana_pro / videotape-alpha (mixed, real prior session)",
+    "note": "Reconstructed from real prior job history, not a fresh call in this session."
+  },
+  "generation_metadata": {
+    "credits_used": 0.0,
+    "stage": "reconstructed_from_prior_session",
+    "note": "Zero new Higgsfield credits spent reconstructing this fixture."
+  },
+  "is_recommended": true,
+  "selection_rationale": "The only fully-developed direction available from real prior exploration for this business; reconstructed, not re-selected by this session's critic."
+}
