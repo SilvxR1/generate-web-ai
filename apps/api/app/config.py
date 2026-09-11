@@ -146,6 +146,12 @@ class Settings(BaseSettings):
     # DNS/TLS calls — cheap for a human clicking a button occasionally,
     # not something to leave uncapped.
     website_health_rate_limit_per_minute: int = 6
+    # GET .../frontend-engineer-availability makes a real, minimal
+    # Anthropic API call on demand (no free "ping" endpoint exists) — a
+    # cheap, occasional operator action, not something a UI should ever
+    # call unprompted, same "real outbound check, rate-limited" shape as
+    # website_health_rate_limit_per_minute above.
+    frontend_engineer_availability_rate_limit_per_minute: int = 6
     # POST /public/businesses/{id}/events (app.routers.analytics, P1.7) —
     # anonymous, same abuse-sensitivity shape as public_lead above, but a
     # higher budget since a single real page view fires several distinct

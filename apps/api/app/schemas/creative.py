@@ -232,6 +232,22 @@ class CreativeDirectionRead(BaseModel):
     created_at: datetime
 
 
+class FrontendEngineerAvailability(BaseModel):
+    """GET .../frontend-engineer-availability (P2 continuation Part 1):
+    a real, on-demand, verified check (app.creative.frontend_engine.
+    availability.check_frontend_engineer_availability) — `available`
+    means Anthropic actually accepted a real, minimal request just now,
+    never merely "a key string is present". Studio uses this to show
+    "AI generation unavailable: <reason>" honestly instead of only
+    discovering it the first time a real generation attempt fails."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = "anthropic"
+    available: bool
+    unavailable_reason: str | None = None
+
+
 class GenerateWebsiteFromDirectionRequest(BaseModel):
     """Body for POST /businesses/{id}/website-drafts/generative (P2 Part
     A/C) — triggers the AI Frontend Engineer against one already-selected

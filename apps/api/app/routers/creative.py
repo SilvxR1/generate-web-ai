@@ -12,6 +12,7 @@ from app.creative.director_orchestrator import (
 )
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine import FrontendEngineer
+from app.creative.frontend_engine.availability import check_frontend_engineer_availability
 from app.creative.higgsfield import HiggsfieldCreativeProvider
 from app.creative.orchestrator import orchestrate_generation
 from app.creative.provider import CreativeProvider
@@ -73,6 +74,7 @@ from app.schemas.creative import (
     CreativeGenerationRequest,
     CreativeProviderAvailability,
     DevelopDirectionRequest,
+    FrontendEngineerAvailability,
     GenerateWebsiteFromDirectionRequest,
     ReviewProviderAvailability,
 )
@@ -701,6 +703,30 @@ def publish_website_draft_route(
         raise _draft_error(exc) from exc
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+
+
+# --- P2: AI Frontend Engineer provider availability -----------------------
+
+
+@router.get("/frontend-engineer-availability", response_model=FrontendEngineerAvailability)
+def get_frontend_engineer_availability_route(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(
+            key_prefix="frontend_engineer_availability",
+            limit_attr="frontend_engineer_availability_rate_limit_per_minute",
+        )
+    ),
+) -> FrontendEngineerAvailability:
+    """Deliberately not business-specific data (same convention as GET
+    .../creative-providers above) — a real, on-demand, rate-limited
+    Anthropic check (app.creative.frontend_engine.availability), never
+    a hardcoded 'configured' flag that would look identical whether the
+    key actually works or not."""
+    del business_id, tenant_id
+    available, reason = check_frontend_engineer_availability(settings)
+    return FrontendEngineerAvailability(available=available, unavailable_reason=reason)
 
 
 # --- P2: Creative directions (create -> critic -> select -> develop) ----
