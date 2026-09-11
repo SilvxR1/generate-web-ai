@@ -12,7 +12,7 @@
     "db:migrate:local": "wrangler d1 migrations apply sacri-barber-db --local"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.2.3",
+    "@astrojs/cloudflare": "14.3.0",
     "@generate-web-ai/renderer": "workspace:*",
     "@generate-web-ai/site-config": "workspace:*",
     "@generate-web-ai/ui": "workspace:*",
