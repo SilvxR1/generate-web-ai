@@ -75,7 +75,25 @@ def _require_known_business(session: Session, tenant_id: UUID, business_id: UUID
 
 @router.post("/leads", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)
 def ingest_lead(payload: LeadIngestRequest, session: Session = Depends(get_session)) -> Lead:
+    """P2 continuation: idempotent when `payload.lead_id` names a real
+    lead already owned by this tenant/business — returns it unchanged
+    instead of inserting a duplicate. This is what makes n8n's
+    `lead.store` step (still calling this exact endpoint, unchanged) a
+    safe no-op confirmation when the browser already posted to the new
+    canonical POST /public/businesses/{id}/leads path and this backend
+    already dispatched to n8n itself (app.automation.n8n.dispatch) —
+    "no double POST" holds because the second call is a lookup, not an
+    insert. `lead_id` naming a lead that doesn't resolve (wrong tenant,
+    already deleted, or simply absent — every pre-existing caller) falls
+    through to the original "always insert" behavior unchanged.
+    """
     _require_known_business(session, payload.tenant_id, payload.business_id)
+    repo = LeadRepository(session)
+
+    if payload.lead_id is not None:
+        existing = repo.get_for_business(payload.tenant_id, payload.business_id, payload.lead_id)
+        if existing is not None:
+            return existing
 
     lead = Lead(
         tenant_id=payload.tenant_id,
@@ -86,7 +104,7 @@ def ingest_lead(payload: LeadIngestRequest, session: Session = Depends(get_sessi
         phone=payload.phone,
         message=payload.message,
     )
-    return LeadRepository(session).add(lead)
+    return repo.add(lead)
 
 
 @router.get("/leads/{lead_id}", response_model=LeadResponse)

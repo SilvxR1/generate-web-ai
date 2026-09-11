@@ -696,7 +696,6 @@ def publish_website_draft_route(
             business_id=business_id,
             draft_id=draft_id,
             publisher=publisher,
-            n8n_base_url=settings.n8n_base_url,
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc

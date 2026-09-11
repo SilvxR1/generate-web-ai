@@ -169,17 +169,15 @@ def publish_website_draft(
     business_id: UUID,
     draft_id: UUID,
     publisher: WebsitePublisher,
-    n8n_base_url: str | None = None,
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
     (Phase 10: generation/build/validation alone never publish). Reuses
     app.publishing.service.publish_website verbatim: same real `astro
-    build` + hosting-provider deploy, same lead-capture webhook
-    injection, same 'a failed attempt never touches the previously live
-    deploy_url' guarantee. If that call fails, WebsitePublishError
-    propagates unchanged and this draft is left APPROVED (never silently
-    marked PUBLISHED) — the caller can retry the exact same approved
-    draft without re-approving.
+    build` + hosting-provider deploy, same 'a failed attempt never
+    touches the previously live deploy_url' guarantee. If that call
+    fails, WebsitePublishError propagates unchanged and this draft is
+    left APPROVED (never silently marked PUBLISHED) — the caller can
+    retry the exact same approved draft without re-approving.
     """
     draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
     if draft is None:
@@ -198,7 +196,6 @@ def publish_website_draft(
         business_id=business_id,
         site_config=site_config,
         publisher=publisher,
-        n8n_base_url=n8n_base_url,
     )
 
     website = WebsiteRepository(session).get_by_business(tenant_id, business_id)

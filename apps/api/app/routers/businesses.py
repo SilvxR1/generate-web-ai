@@ -13,6 +13,7 @@ from app.automation.activation import (
     get_automation_state,
 )
 from app.automation.n8n import N8nClient
+from app.automation.n8n.dispatch import LeadDispatchError, dispatch_lead_to_workflow
 from app.config import settings
 from app.db.models.business import Business
 from app.db.models.lead import Lead
@@ -28,7 +29,7 @@ from app.dependencies import (
     get_website_publisher,
 )
 from app.domain.business_config import BusinessConfig, Location
-from app.domain.enums import BusinessVertical, LeadStatus, WorkflowStatus
+from app.domain.enums import BusinessVertical, LeadStatus, NotificationDeliveryStatus, WorkflowStatus
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
 from app.publishing.domain_provider import DomainProvider
@@ -370,6 +371,47 @@ def _get_lead_or_404(session: Session, tenant_id: UUID, business_id: UUID, lead_
     return lead
 
 
+@router.post("/{business_id}/leads/{lead_id}/retry-automation", response_model=LeadRead)
+def retry_lead_automation_dispatch(
+    business_id: UUID,
+    lead_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> Lead:
+    """P2 continuation: "n8n can be retried" — re-attempts dispatching
+    an already-persisted Lead to this business's active n8n automation
+    (app.automation.n8n.dispatch) without ever touching the Lead row
+    itself beyond `automation_dispatch_status`. Never re-inserts the
+    lead (it already exists) and never requires the original request to
+    still be in flight — this is exactly the retry path a FAILED
+    dispatch status is for. A lead whose automation was never configured
+    (NOT_CONFIGURED) or already SENT can still be retried; this endpoint
+    doesn't second-guess why a human wants to try again."""
+    lead = _get_lead_or_404(session, tenant_id, business_id, lead_id)
+
+    if not settings.n8n_base_url:
+        raise AppError("n8n is not configured on this server.", code="n8n_not_configured", status_code=503)
+
+    workflow = WorkflowRepository(session).get_for_business(tenant_id, business_id)
+    if workflow is None or workflow.status is not WorkflowStatus.ACTIVE:
+        raise AppError(
+            "This business has no active n8n automation to dispatch to.",
+            code="automation_not_active",
+            status_code=409,
+        )
+
+    try:
+        dispatch_lead_to_workflow(lead=lead, workflow=workflow, n8n_base_url=settings.n8n_base_url)
+        lead.automation_dispatch_status = NotificationDeliveryStatus.SENT
+    except LeadDispatchError as exc:
+        lead.automation_dispatch_status = NotificationDeliveryStatus.FAILED
+        session.flush()
+        raise AppError(str(exc), code="automation_dispatch_failed", status_code=502) from exc
+
+    session.flush()
+    return lead
+
+
 @router.get("/{business_id}/leads/{lead_id}/notes", response_model=list[LeadNoteRead])
 def list_lead_notes(
     business_id: UUID,
@@ -419,12 +461,11 @@ def publish_business_website(
     Returns a provider-neutral result — never the hosting provider's own
     deployment payload, never a credential.
 
-    If a lead-capture contact form is present and this business already
-    has an *active* automation, its real n8n webhook URL is wired into
-    the form before publishing (see
-    app.publishing.service._inject_lead_capture_webhook_url) — never a
-    fabricated one; missing N8N_BASE_URL or no active automation just
-    leaves the form without an `action`, exactly as it is today.
+    P2 continuation: the published contact form is never wired to an
+    n8n webhook directly — it always submits to
+    POST /public/businesses/{id}/leads, which dispatches to an active
+    n8n automation itself, server-side, after persisting the Lead (see
+    app.automation.n8n.dispatch's own docstring).
     """
     _ensure_business_exists(session, tenant_id, business_id)
 
@@ -435,7 +476,6 @@ def publish_business_website(
             business_id=business_id,
             site_config=payload,
             publisher=publisher,
-            n8n_base_url=settings.n8n_base_url,
         )
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
@@ -553,7 +593,6 @@ def rollback_business_website(
             business_id=business_id,
             version_id=version_id,
             publisher=publisher,
-            n8n_base_url=settings.n8n_base_url,
         )
     except WebsitePublishError as exc:
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc

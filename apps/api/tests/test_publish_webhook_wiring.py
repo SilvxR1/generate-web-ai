@@ -1,25 +1,28 @@
-"""publish_website (app.publishing.service) wiring a business's real,
-active n8n webhook URL into its published contact form's `action` —
-the change that makes:
+"""publish_website (app.publishing.service) NEVER wires a business's n8n
+webhook into a published contact form's `action` — the P2 continuation's
+canonical-lead-API fix. Before this, an active automation's real webhook
+URL was injected directly into the form so the browser posted straight
+to n8n (app.publishing.service._inject_lead_capture_webhook_url, now
+removed): that made n8n the only thing that ever persisted the Lead,
+inverting the "lead always persists before automation" requirement, and
+gave a generative site (no SiteConfig to rewrite) no equivalent path at
+all.
 
-    Published website -> Contact form -> n8n webhook -> internal lead callback
-
-actually real. Covers: the URL only appears once automation is
-genuinely ACTIVE, it's built from the exact slug/workflow-id
-activation persisted (app.automation.n8n.lead_submitted_webhook_url,
-the same helper app.automation.n8n.translator uses for the workflow's
-own trigger node — no separate, duplicated path logic), that
-publishing without an active automation (or without N8N_BASE_URL)
-leaves the form exactly as `generateSiteConfig()` produced it rather
-than fabricating a URL, and that publishing itself never fails just
-because automation isn't active yet."""
+Now every published site's contact form is left exactly as
+`generateSiteConfig()` produced it (no `action`) regardless of
+automation state — the browser always submits to the one canonical
+POST /public/businesses/{id}/leads (app.routers.public), which persists
+the Lead first and only then dispatches to n8n itself, server-side, best
+-effort (see tests/test_lead_automation_dispatch.py for that half, and
+app.automation.n8n.dispatch's own docstring for the full architecture).
+"""
 
 import httpx
 import pytest
 from sqlalchemy.orm import Session
 
 from app.automation.activation import activate_lead_capture_automation, deactivate_lead_capture_automation
-from app.automation.n8n import N8nClient, lead_submitted_webhook_url
+from app.automation.n8n import N8nClient
 from app.config import Settings
 from app.db.models.business import Business
 from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG
@@ -29,7 +32,6 @@ from app.publishing.service import publish_website
 from app.schemas.site_config import SiteConfigPayload
 
 N8N_BASE_URL = "https://n8n.example.com"
-EXPECTED_WORKFLOW_ID = "reforma-casa-valencia-lead-capture"
 
 
 def _n8n_settings(**overrides: object) -> Settings:
@@ -126,14 +128,7 @@ class _FakePublisher(WebsitePublisher):
         raise NotImplementedError
 
 
-def _publish(
-    session: Session,
-    business: Business,
-    site_config: SiteConfigPayload,
-    *,
-    n8n_base_url: str | None,
-    monkeypatch: pytest.MonkeyPatch,
-):
+def _publish(session: Session, business: Business, site_config: SiteConfigPayload, monkeypatch: pytest.MonkeyPatch):
     captured: list[SiteConfigPayload] = []
 
     def _fake_build(site_config: SiteConfigPayload) -> WebsiteArtifact:
@@ -148,7 +143,6 @@ def _publish(
         business_id=business.id,
         site_config=site_config,
         publisher=_FakePublisher(),
-        n8n_base_url=n8n_base_url,
     )
     return result, captured[0]
 
@@ -157,70 +151,41 @@ def _contact_block(built_site_config: SiteConfigPayload):
     return next(b for p in built_site_config.pages for b in p.blocks if b.type == "contact")
 
 
-# --- webhook URL correctly injected -----------------------------------------
+# --- P2: never injected, regardless of automation state ---------------------
 
 
-def test_webhook_url_injected_when_automation_is_active(session: Session, business: Business, monkeypatch):
+def test_no_webhook_injection_when_automation_is_active(session: Session, business: Business, monkeypatch):
     _activate(session, business)
 
-    result, built = _publish(
-        session, business, _site_config_with_contact_form(), n8n_base_url=N8N_BASE_URL, monkeypatch=monkeypatch
-    )
+    result, built = _publish(session, business, _site_config_with_contact_form(), monkeypatch)
 
     assert result.status is WebsiteStatus.LIVE
-    action = _contact_block(built).content["form"]["action"]
-    assert action == f"{N8N_BASE_URL}/webhook/lead-submitted/{EXPECTED_WORKFLOW_ID}"
+    assert "action" not in _contact_block(built).content["form"]
 
 
-# --- correct slug/workflow mapping (reuses the translator's own helper) -----
-
-
-def test_injected_url_matches_the_translators_own_webhook_path_convention(
-    session: Session, business: Business, monkeypatch
-):
-    _activate(session, business)
-
-    _, built = _publish(
-        session, business, _site_config_with_contact_form(), n8n_base_url=N8N_BASE_URL, monkeypatch=monkeypatch
-    )
-
-    action = _contact_block(built).content["form"]["action"]
-    assert action == lead_submitted_webhook_url(N8N_BASE_URL, EXPECTED_WORKFLOW_ID)
-
-
-# --- explicit "no fake URL" behavior -----------------------------------------
-
-
-def test_no_injection_without_any_activated_automation(session: Session, business: Business, monkeypatch):
-    _, built = _publish(
-        session, business, _site_config_with_contact_form(), n8n_base_url=N8N_BASE_URL, monkeypatch=monkeypatch
-    )
+def test_no_webhook_injection_without_any_activated_automation(session: Session, business: Business, monkeypatch):
+    _, built = _publish(session, business, _site_config_with_contact_form(), monkeypatch)
 
     assert "action" not in _contact_block(built).content["form"]
 
 
-def test_no_injection_when_automation_was_deactivated(session: Session, business: Business, monkeypatch):
+def test_no_webhook_injection_when_automation_was_deactivated(session: Session, business: Business, monkeypatch):
     _activate(session, business)
     _deactivate(session, business)
 
-    _, built = _publish(
-        session, business, _site_config_with_contact_form(), n8n_base_url=N8N_BASE_URL, monkeypatch=monkeypatch
-    )
+    _, built = _publish(session, business, _site_config_with_contact_form(), monkeypatch)
 
     assert "action" not in _contact_block(built).content["form"]
 
 
-def test_no_injection_without_n8n_base_url_even_when_active(session: Session, business: Business, monkeypatch):
-    _activate(session, business)
+def test_publish_website_no_longer_accepts_an_n8n_base_url_parameter(session: Session, business: Business):
+    """The parameter is gone entirely, not merely unused — publish_website
+    has nothing left to do with it now that the browser never needs to
+    know n8n exists (app.automation.n8n.dispatch is the new, server-side
+    integration point)."""
+    import inspect
 
-    result, built = _publish(
-        session, business, _site_config_with_contact_form(), n8n_base_url=None, monkeypatch=monkeypatch
-    )
-
-    assert "action" not in _contact_block(built).content["form"]
-    # Missing n8n config is handled explicitly (no fake URL) — it does
-    # NOT block publishing itself.
-    assert result.status is WebsiteStatus.LIVE
+    assert "n8n_base_url" not in inspect.signature(publish_website).parameters
 
 
 def test_contact_block_without_a_form_is_left_alone(session: Session, business: Business, monkeypatch):
@@ -229,6 +194,6 @@ def test_contact_block_without_a_form_is_left_alone(session: Session, business: 
     contact = _contact_block(site_config)
     del contact.content["form"]
 
-    _, built = _publish(session, business, site_config, n8n_base_url=N8N_BASE_URL, monkeypatch=monkeypatch)
+    _, built = _publish(session, business, site_config, monkeypatch)
 
     assert "form" not in _contact_block(built).content

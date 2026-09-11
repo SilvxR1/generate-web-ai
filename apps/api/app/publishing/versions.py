@@ -44,7 +44,6 @@ def rollback_to_version(
     business_id: UUID,
     version_id: UUID,
     publisher: WebsitePublisher,
-    n8n_base_url: str | None = None,
 ) -> WebsiteStateResult:
     version = WebsiteVersionRepository(session).get_for_business(tenant_id, business_id, version_id)
     if version is None:
@@ -59,5 +58,4 @@ def rollback_to_version(
         business_id=business_id,
         site_config=site_config,
         publisher=publisher,
-        n8n_base_url=n8n_base_url,
     )

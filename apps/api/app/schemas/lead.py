@@ -21,6 +21,10 @@ class LeadRead(BaseModel):
     consent_given: bool
     status: LeadStatus
     acknowledgement_status: NotificationDeliveryStatus
+    # P2 continuation: the outcome of dispatching this lead to n8n
+    # automation, server-side, after it was already persisted — see
+    # app.automation.n8n.dispatch's own docstring.
+    automation_dispatch_status: NotificationDeliveryStatus
     created_at: datetime
 
 
