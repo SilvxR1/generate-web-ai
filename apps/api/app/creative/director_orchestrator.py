@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.creative.critic import select_direction
 from app.creative.director import CreativeDirectorProvider
+from app.creative.observability import StageTimer
 from app.db.models.creative_direction import CreativeDirection as CreativeDirectionRow
 from app.db.models.creative_generation import CreativeGeneration
 from app.domain.creative import CreativeBrief, CreativeBriefAsset
@@ -96,14 +97,16 @@ def orchestrate_create_directions(
     )
     CreativeGenerationRepository(session).add(generation)
 
-    try:
-        candidates = director.create_directions(brief, assets, budget)
-    except Exception as exc:
-        generation.status = CreativeGenerationStatus.FAILED
-        generation.error = str(exc)
-        generation.completed_at = datetime.now(UTC)
-        generation.credits_used = budget.credits_used
-        raise
+    with StageTimer(stage="create_directions", business_id=business_id, provider=director.name.value) as timer:
+        try:
+            candidates = director.create_directions(brief, assets, budget)
+        except Exception as exc:
+            timer.mark_failure()
+            generation.status = CreativeGenerationStatus.FAILED
+            generation.error = str(exc)
+            generation.completed_at = datetime.now(UTC)
+            generation.credits_used = budget.credits_used
+            raise
 
     select_direction(candidates, brief)  # mutates is_recommended/selection_rationale in place
 
@@ -151,7 +154,8 @@ def orchestrate_develop_direction(
         raise CreativeDirectionNotFoundError(f"CreativeDirection {direction_id} not found for this business.")
 
     selected = domain_from_row(row)
-    developed = director.develop_direction(selected, brief, assets, budget)
+    with StageTimer(stage="develop_direction", business_id=business_id, provider=director.name.value):
+        developed = director.develop_direction(selected, brief, assets, budget)
     _apply_domain_to_row(developed, row)
     row.developed_at = datetime.now(UTC)
     return row

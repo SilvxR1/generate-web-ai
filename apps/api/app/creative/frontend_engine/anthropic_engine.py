@@ -33,6 +33,7 @@ from app.creative.frontend_engine.legal_pages import build_legal_pages
 from app.creative.frontend_engine.prompts import build_system_prompt, build_user_message
 from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build_package_json
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace, write_manifest
+from app.creative.observability import StageTimer
 from app.domain.business_config import BusinessConfig
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.direction import CreativeDirection
@@ -64,13 +65,20 @@ class AnthropicFrontendEngine(FrontendEngineer):
         del platform_contract_version  # Not needed for generation itself — validated downstream by the caller.
         started = time.monotonic()
 
-        manifest = self._client.generate_manifest(
-            system=build_system_prompt(),
-            user_content=build_user_message(
-                business_config=business_config, creative_direction=creative_direction, assets=assets
-            ),
-        )
-        validate_dependencies(manifest.additional_dependencies)
+        with StageTimer(
+            stage="frontend_generate", business_id=business_id, provider=self.name, model=self._model
+        ) as timer:
+            try:
+                manifest = self._client.generate_manifest(
+                    system=build_system_prompt(),
+                    user_content=build_user_message(
+                        business_config=business_config, creative_direction=creative_direction, assets=assets
+                    ),
+                )
+                validate_dependencies(manifest.additional_dependencies)
+            except Exception:
+                timer.mark_failure()
+                raise
 
         workspace = allocate_workspace()
         try:
@@ -86,7 +94,14 @@ class AnthropicFrontendEngine(FrontendEngineer):
                 page_path.parent.mkdir(parents=True, exist_ok=True)
                 page_path.write_text(content, encoding="utf-8")
 
-            artifact = build_generative_workspace(workspace, business_id=business_id, api_base_url=api_base_url)
+            with StageTimer(stage="generative_build", business_id=business_id, provider=self.name) as build_timer:
+                try:
+                    artifact = build_generative_workspace(
+                        workspace, business_id=business_id, api_base_url=api_base_url
+                    )
+                except Exception:
+                    build_timer.mark_failure()
+                    raise
             workspace_key = self._archive_source(workspace, business_id=business_id)
         finally:
             cleanup_workspace(workspace)

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.creative.director_orchestrator import domain_from_row
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine.engine import FrontendEngineer
+from app.creative.observability import log_pipeline_stage
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
@@ -263,6 +264,13 @@ def create_generative_website_draft(
         return draft
 
     contract_result = validate_platform_contract(result.artifact.files, business_config=business_config)
+    log_pipeline_stage(
+        stage="platform_contract",
+        business_id=business_id,
+        provider=result.generator_provider,
+        result="success" if contract_result.passed else "failure",
+        blocking_violation_count=len(contract_result.blocking_violations),
+    )
     issues = [f"[PlatformContract:{f.rule}] {f.message}" for f in contract_result.findings]
 
     artifact_row = GenerativeWebsiteArtifact(
