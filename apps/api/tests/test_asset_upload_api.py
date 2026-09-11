@@ -158,3 +158,86 @@ def test_owner_can_delete_their_own_uploaded_asset(client: TestClient, tenant: T
 
     listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
     assert listed.json() == []
+
+
+# --- multi-file batch upload (LR-01) --------------------------------------------
+
+
+def _upload_batch(
+    client: TestClient,
+    business_id,
+    tenant_id,
+    files: list[tuple[str, bytes, str]],
+    *,
+    kind="image",
+    category=None,
+):
+    data = {"kind": kind}
+    if category:
+        data["category"] = category
+    return client.post(
+        f"/businesses/{business_id}/assets/upload-batch",
+        headers=_headers(tenant_id),
+        files=[("files", (name, io.BytesIO(content), content_type)) for name, content, content_type in files],
+        data=data,
+    )
+
+
+def test_batch_upload_creates_an_asset_per_file_in_one_request(client: TestClient, tenant: Tenant, business):
+    files = [
+        ("photo1.png", b"fake-image-bytes-1", "image/png"),
+        ("photo2.png", b"fake-image-bytes-2", "image/png"),
+        ("photo3.png", b"fake-image-bytes-3", "image/png"),
+    ]
+
+    response = _upload_batch(client, business.id, tenant.id, files, category="gallery")
+
+    assert response.status_code == 207, response.text
+    results = response.json()
+    assert len(results) == 3
+    assert all(result["success"] for result in results)
+    assert [result["asset"]["original_filename"] for result in results] == ["photo1.png", "photo2.png", "photo3.png"]
+    assert all(result["asset"]["category"] == "gallery" for result in results)
+
+    listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert len(listed.json()) == 3
+
+
+def test_batch_upload_preserves_successful_files_when_one_fails(client: TestClient, tenant: Tenant, business):
+    files = [
+        ("good1.png", b"real-bytes-1", "image/png"),
+        ("bad.exe", b"not-an-image", "application/x-msdownload"),
+        ("good2.png", b"real-bytes-2", "image/png"),
+    ]
+
+    response = _upload_batch(client, business.id, tenant.id, files)
+
+    assert response.status_code == 207, response.text
+    results = response.json()
+    assert [r["success"] for r in results] == [True, False, True]
+    assert results[1]["asset"] is None
+    assert results[1]["error"]
+    assert results[0]["asset"] is not None
+    assert results[2]["asset"] is not None
+
+    # The two good files are actually persisted, not rolled back because
+    # of the bad one in the middle.
+    listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert len(listed.json()) == 2
+
+
+def test_batch_upload_for_unknown_business_is_404(client: TestClient, tenant: Tenant):
+    response = _upload_batch(client, uuid.uuid4(), tenant.id, [("a.png", b"bytes", "image/png")])
+    assert response.status_code == 404
+
+
+def test_batch_uploaded_assets_cannot_be_read_through_another_tenant(
+    client: TestClient, tenant: Tenant, other_tenant: Tenant, business
+):
+    files = [("a.png", b"bytes-a", "image/png"), ("b.png", b"bytes-b", "image/png")]
+    created = _upload_batch(client, business.id, tenant.id, files)
+    assert created.status_code == 207
+    assert all(r["success"] for r in created.json())
+
+    leaked = client.get(f"/businesses/{business.id}/assets", headers=_headers(other_tenant.id))
+    assert leaked.status_code == 404

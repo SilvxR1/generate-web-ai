@@ -851,6 +851,56 @@ export function uploadBusinessAsset(
     });
 }
 
+export interface BusinessAssetUploadResult {
+  filename: string | null;
+  success: boolean;
+  asset: BusinessAsset | null;
+  error: string | null;
+}
+
+/** POST .../assets/upload-batch (LR-01) — "select N photos, upload
+ * once" instead of N repetitions of the single-file form. `kind`/
+ * `category` apply to every file in the batch. Always resolves (never
+ * rejects) with one result per file, in the order they were sent, so a
+ * caller can show per-file success/failure without losing the files
+ * that did succeed. */
+export function uploadBusinessAssetsBatch(
+  businessId: string,
+  files: File[],
+  options: { kind: AssetKind; category?: AssetCategory },
+  tenantId: string,
+): Promise<BusinessAssetUploadResult[]> {
+  const form = new FormData();
+  for (const file of files) form.append("files", file);
+  form.set("kind", options.kind);
+  if (options.category) form.set("category", options.category);
+
+  return fetch(`${API_URL}/businesses/${businessId}/assets/upload-batch`, {
+    method: "POST",
+    headers: { "X-Tenant-Id": tenantId },
+    body: form,
+  })
+    .catch((cause: unknown) => {
+      throw new NetworkError(cause);
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        let body: { error?: { code?: string; message?: string; details?: unknown } } = {};
+        try {
+          body = await response.json();
+        } catch {
+          // Non-JSON error body — fall through to the generic message.
+        }
+        throw new ApiError(body.error?.message ?? `Request failed with status ${response.status}.`, {
+          code: body.error?.code ?? "http_error",
+          status: response.status,
+          details: body.error?.details,
+        });
+      }
+      return response.json() as Promise<BusinessAssetUploadResult[]>;
+    });
+}
+
 // --- Creative provider availability (Phase 13) ---------------------------
 
 export interface CreativeProviderAvailability {

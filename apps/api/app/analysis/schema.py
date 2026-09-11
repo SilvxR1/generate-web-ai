@@ -73,6 +73,13 @@ class BusinessAnalysisOutput(BaseModel):
 
     business_name: str | None = None
     industry: BusinessVertical | None = None
+    # Customer-facing: this flows, largely verbatim (see
+    # packages/website-generator's copy.ts `sanitizeCustomerCopy` for the
+    # deterministic safety net), into published hero/about copy and the
+    # SEO meta description — never internal briefing/strategy commentary
+    # about the website project itself (LR-08). See prompts.py's
+    # SYSTEM_PROMPT rule 6 for the instruction this field's extraction
+    # actually follows.
     description: str | None = None
     location: RawLocation | None = None
     services: list[RawServiceOffering] = Field(default_factory=list)

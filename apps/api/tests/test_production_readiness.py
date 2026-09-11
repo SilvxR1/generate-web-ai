@@ -156,6 +156,96 @@ def test_custom_domain_check_is_informational_and_reflects_no_domain_attached(se
     assert domain_check.blocking is False
 
 
+def test_brand_assets_check_not_ready_and_never_blocking_with_no_assets(session: Session, business: Business):
+    report = get_production_readiness(session=session, tenant_id=business.tenant_id, business_id=business.id)
+
+    check = _checks_by_id(report)["brand_assets"]
+    assert check.ready is False
+    assert check.blocking is False
+
+
+def test_brand_assets_check_ready_once_a_real_logo_and_photo_exist(session: Session, business: Business):
+    from app.db.models.business_asset import BusinessAsset
+    from app.domain.enums import AssetCategory, AssetKind, AssetOrigin
+
+    session.add(
+        BusinessAsset(
+            business_id=business.id,
+            tenant_id=business.tenant_id,
+            kind=AssetKind.LOGO,
+            category=AssetCategory.LOGO,
+            origin=AssetOrigin.UPLOADED,
+            storage_url="https://api.example.com/uploads/biz/logo.png",
+        )
+    )
+    session.add(
+        BusinessAsset(
+            business_id=business.id,
+            tenant_id=business.tenant_id,
+            kind=AssetKind.IMAGE,
+            category=AssetCategory.GALLERY,
+            origin=AssetOrigin.UPLOADED,
+            storage_url="https://api.example.com/uploads/biz/photo.jpg",
+        )
+    )
+    session.flush()
+
+    report = get_production_readiness(session=session, tenant_id=business.tenant_id, business_id=business.id)
+
+    check = _checks_by_id(report)["brand_assets"]
+    assert check.ready is True
+    assert check.blocking is False
+
+
+def test_contact_channels_check_not_ready_with_no_lead_form_or_whatsapp(session: Session, business: Business):
+    business.config = {
+        "schema_version": 1,
+        "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
+    }
+    session.flush()
+
+    report = get_production_readiness(session=session, tenant_id=business.tenant_id, business_id=business.id)
+
+    check = _checks_by_id(report)["contact_channels"]
+    assert check.ready is False
+    assert check.blocking is False
+
+
+def test_contact_channels_check_ready_when_a_website_lead_form_is_enabled(session: Session, business: Business):
+    business.config = {
+        "schema_version": 1,
+        "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
+        "lead_management": {"enabled": True, "sources": ["website_form"]},
+    }
+    session.flush()
+
+    report = get_production_readiness(session=session, tenant_id=business.tenant_id, business_id=business.id)
+
+    check = _checks_by_id(report)["contact_channels"]
+    assert check.ready is True
+    assert check.blocking is False
+
+
+def test_contact_channels_check_never_claims_an_email_provider_is_active_merely_because_it_is_supported(
+    session: Session, business: Business, monkeypatch: pytest.MonkeyPatch
+):
+    # No lead form, no WhatsApp, no email provider configured — must not
+    # claim readiness just because Resend/SMTP support exists in this codebase.
+    monkeypatch.setattr(settings, "resend_api_key", None)
+    monkeypatch.setattr(settings, "smtp_host", None)
+    business.config = {
+        "schema_version": 1,
+        "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
+    }
+    session.flush()
+
+    report = get_production_readiness(session=session, tenant_id=business.tenant_id, business_id=business.id)
+
+    check = _checks_by_id(report)["contact_channels"]
+    assert check.ready is False
+    assert "email" not in check.detail.lower() or "no lead-capture channel" in check.detail.lower()
+
+
 # --- API boundary --------------------------------------------------------------
 
 
@@ -179,7 +269,15 @@ def test_get_production_readiness_returns_the_checklist(client: TestClient, tena
     assert "checks" in body
     assert "has_blocking_issues" in body
     check_ids = {check["id"] for check in body["checks"]}
-    assert check_ids == {"website_config", "hosting_provider", "published", "legal_profile", "custom_domain"}
+    assert check_ids == {
+        "website_config",
+        "hosting_provider",
+        "published",
+        "legal_profile",
+        "custom_domain",
+        "brand_assets",
+        "contact_channels",
+    }
 
 
 def test_production_readiness_never_leaks_across_tenants(

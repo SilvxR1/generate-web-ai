@@ -66,7 +66,7 @@ export function WebsiteDraftsPanel({ drafts, isLoading, error, onApprove, onPubl
     return <p className="banner banner--error">Could not load generated previews: {error}</p>;
   }
   if (!drafts || drafts.length === 0) {
-    return <p className="field-hint">No generated preview yet — use "Generate" above to create one.</p>;
+    return <p className="field-hint">No generated preview yet — click "Generate website" above to create one.</p>;
   }
 
   return (

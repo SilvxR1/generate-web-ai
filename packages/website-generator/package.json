@@ -10,7 +10,7 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "validate": "vitest run scripts/validate-generated-site.test.ts",
     "generate-from-business-config": "node scripts/generate-from-business-config.ts",
-    "test": "vitest run scripts/generate-from-business-config.test.ts src/generateSiteConfig.test.ts src/legal.test.ts"
+    "test": "vitest run scripts/generate-from-business-config.test.ts src/generateSiteConfig.test.ts src/legal.test.ts src/assets.test.ts src/copy.test.ts src/design.test.ts"
   },
   "dependencies": {
     "@generate-web-ai/business-config-types": "workspace:*",

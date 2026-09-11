@@ -33,10 +33,19 @@ function truncateForSeo(text: string): string {
 }
 
 /** title/description always resolve to something real: explicit
- * website.seo overrides first, then the business's own description,
- * then a deterministic fallback built from name/location — never
- * invented ad copy, and never blank. */
-export function buildSeo(profile: BusinessProfile, website: BusinessWebsiteConfig | undefined): SEOConfig {
+ * website.seo overrides first, then the business's own customer-facing
+ * description, then a deterministic fallback built from name/location —
+ * never invented ad copy, and never blank.
+ *
+ * `customerFacingDescription` is `profile.description` already run
+ * through copy.ts's `sanitizeCustomerCopy` by the caller (LR-08) — an
+ * internal-strategy sentence like "no website yet" must never appear in
+ * a public `<meta description>` any more than in hero/about copy. */
+export function buildSeo(
+  profile: BusinessProfile,
+  website: BusinessWebsiteConfig | undefined,
+  customerFacingDescription: string | undefined,
+): SEOConfig {
   const explicitTitle = website?.seo?.title;
   const title = isBlank(explicitTitle) ? profile.name : explicitTitle;
 
@@ -45,8 +54,8 @@ export function buildSeo(profile: BusinessProfile, website: BusinessWebsiteConfi
   const description = truncateForSeo(
     !isBlank(explicitDescription)
       ? explicitDescription
-      : !isBlank(profile.description)
-        ? profile.description
+      : !isBlank(customerFacingDescription)
+        ? customerFacingDescription
         : !isBlank(location)
           ? `${profile.name} — servicios profesionales en ${location}`
           : `${profile.name} — servicios profesionales`,

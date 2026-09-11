@@ -60,6 +60,20 @@ class BusinessAssetRead(BaseModel):
     created_at: datetime
 
 
+class BusinessAssetUploadResult(BaseModel):
+    """One file's outcome from POST .../assets/upload-batch (LR-01) —
+    `asset` is set only when `success` is true, `error` only when it's
+    false, so a caller never has to guess which half of a partially
+    successful batch actually persisted."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str | None
+    success: bool
+    asset: BusinessAssetRead | None = None
+    error: str | None = None
+
+
 class BusinessReviewCreateRequest(BaseModel):
     """Body for POST /businesses/{id}/reviews. Registers a review the
     caller asserts is real (Section 4: "NEVER fabricate reviews") —

@@ -14,6 +14,7 @@ export function SiteConfigPreview({ siteConfig }: { siteConfig: SiteConfig }) {
   const page = siteConfig.pages[0];
   const hero = findBlock(page, "hero");
   const services = findBlock(page, "services");
+  const gallery = findBlock(page, "gallery");
   const cta = findBlock(page, "cta");
   const contact = findBlock(page, "contact");
 
@@ -25,7 +26,15 @@ export function SiteConfigPreview({ siteConfig }: { siteConfig: SiteConfig }) {
             <span key={name} className="site-preview__swatch" style={{ background: value }} title={`${name}: ${value}`} />
           ))}
         </div>
-        <span className="site-preview__brand-name">{siteConfig.brand.name}</span>
+        {siteConfig.brand.logo ? (
+          <img
+            className="site-preview__logo"
+            src={typeof siteConfig.brand.logo.src === "string" ? siteConfig.brand.logo.src : siteConfig.brand.logo.src.src}
+            alt={siteConfig.brand.logo.alt}
+          />
+        ) : (
+          <span className="site-preview__brand-name">{siteConfig.brand.name}</span>
+        )}
         {siteConfig.brand.tagline && <span className="site-preview__tagline">{siteConfig.brand.tagline}</span>}
         <span className="site-preview__fonts">
           {siteConfig.theme.fonts.sans}
@@ -42,6 +51,31 @@ export function SiteConfigPreview({ siteConfig }: { siteConfig: SiteConfig }) {
             {hero.content.primaryAction && <span className="site-preview__button site-preview__button--solid">{hero.content.primaryAction.label}</span>}
             {hero.content.secondaryAction && <span className="site-preview__button">{hero.content.secondaryAction.label}</span>}
           </div>
+          {hero.content.image && (
+            <img
+              className="site-preview__hero-image"
+              src={typeof hero.content.image.src === "string" ? hero.content.image.src : hero.content.image.src.src}
+              alt={hero.content.image.alt}
+            />
+          )}
+        </section>
+      )}
+
+      {gallery && (
+        <section className="site-preview__section">
+          {gallery.content.heading && <h3>{gallery.content.heading}</h3>}
+          <ul className="site-preview__gallery">
+            {gallery.content.items.map((item, index) => (
+              <li key={`${item.title}-${index}`}>
+                <img
+                  className="site-preview__gallery-image"
+                  src={typeof item.image.src === "string" ? item.image.src : item.image.src.src}
+                  alt={item.image.alt}
+                />
+                <span>{item.title}</span>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
 
@@ -85,7 +119,7 @@ export function SiteConfigPreview({ siteConfig }: { siteConfig: SiteConfig }) {
         </section>
       )}
 
-      {!hero && !services && !cta && !contact && (
+      {!hero && !services && !gallery && !cta && !contact && (
         <p className="field-hint">This business's config doesn't have enough content yet for a website preview.</p>
       )}
     </div>

@@ -1,6 +1,6 @@
 import { generateSiteConfig } from "@generate-web-ai/website-generator";
 import { exampleReformaValenciaConfig } from "@generate-web-ai/business-config-types";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -220,6 +220,7 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
@@ -245,11 +246,87 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(12));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(13));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as { name: string; slug: string };
     expect(body.name).toBe("Cafe del Sol");
     expect(body.slug).toBe("cafe-del-sol");
+  });
+
+  it("LR-02: leaving every legal field blank sends no fabricated legal_profile, and a processor suggestion only fills the field when explicitly clicked", async () => {
+    fetchMock.mockResolvedValueOnce(
+      minimalAnalysis({
+        schema_version: 1,
+        business_profile: { name: "Cafe del Mar", slug: "cafe-del-mar", industry: "restaurant" },
+        lead_management: {},
+        automation: {},
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(automationRecommendationResponse());
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, { id: "biz-1", name: "Cafe del Mar", slug: "cafe-del-mar", status: "draft", raw_description: BRIEFING }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // workflow-preview
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // automation state
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website state
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // leads
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        window_days: 30,
+        website_visits: null,
+        whatsapp_clicks: null,
+        phone_clicks: null,
+        email_clicks: null,
+        form_leads: 0,
+        lead_conversion_rate: null,
+      }),
+    ); // business metrics
+    const user = userEvent.setup();
+    renderPage();
+
+    await analyze(user);
+
+    // Nothing typed into any legal field — the section explicitly says
+    // this is fine ("optional and can be completed later").
+    expect(screen.getByText(/optional and can be completed later/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Create business" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(13));
+    const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    const body = JSON.parse(createInit.body as string) as { legal_profile: unknown };
+    expect(body.legal_profile).toBeFalsy();
+  });
+
+  it("LR-02: clicking a processor suggestion appends it to the data-processors field, never marks it as auto-verified", async () => {
+    fetchMock.mockResolvedValueOnce(
+      minimalAnalysis({
+        schema_version: 1,
+        business_profile: { name: "Cafe del Mar", slug: "cafe-del-mar", industry: "restaurant" },
+        lead_management: {},
+        automation: {},
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(automationRecommendationResponse());
+    const user = userEvent.setup();
+    renderPage();
+
+    await analyze(user);
+
+    await user.click(screen.getByText("Advanced: third-party data processors"));
+    await user.click(screen.getByRole("button", { name: "+ Cloudflare (hosting)" }));
+    await user.click(screen.getByRole("button", { name: "+ Resend (email)" }));
+
+    const processorsInput = screen.getByLabelText("Third-party data processors (comma-separated)");
+    expect(processorsInput).toHaveValue("Cloudflare (hosting), Resend (email)");
+    // Still a plain, human-editable text field — nothing about clicking
+    // a suggestion claims the provider is verified/active for real.
+    expect(screen.queryByText(/verified/i)).not.toBeInTheDocument();
   });
 
   it("follow-up controls: enabling follow-up and setting the delay sends automation.follow_up.delay_hours on save", async () => {
@@ -272,6 +349,7 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
@@ -302,7 +380,7 @@ describe("NewBusiness onboarding flow", () => {
 
     await user.click(screen.getByRole("button", { name: "Create business" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(12));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(13));
     const [, createInit] = fetchMock.mock.calls[2] as [string, RequestInit];
     const body = JSON.parse(createInit.body as string) as {
       config: { automation: { follow_up: { enabled: boolean; delay_hours: number } } };
@@ -451,6 +529,7 @@ describe("NewBusiness onboarding flow", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
@@ -548,6 +627,7 @@ describe("NewBusiness preview step", () => {
     customDomainBody: unknown = null,
     websiteVersionsBody: unknown = [],
     productionReadinessBody: unknown = { checks: [], has_blocking_issues: false },
+    businessAssetsBody: unknown = [],
   ) {
     fetchMock.mockResolvedValueOnce(minimalAnalysis(exampleReformaValenciaConfig));
     fetchMock.mockResolvedValueOnce(automationRecommendationResponse()); // auto-fetched once ProposalReview mounts
@@ -568,6 +648,7 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, customDomainBody)); // custom domain, defaults to "never attached"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteVersionsBody)); // website versions, defaults to "none yet"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, productionReadinessBody)); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, businessAssetsBody)); // business assets, defaults to "none yet"
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health, defaults to "never checked"
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
@@ -621,6 +702,53 @@ describe("NewBusiness preview step", () => {
     expect(document.querySelectorAll(".site-preview__swatch")).toHaveLength(5);
   });
 
+  it("LR-05: a real uploaded logo and hero photo appear in the website preview instead of text/no-image fallbacks", async () => {
+    const user = userEvent.setup();
+    const realLogo = {
+      id: "asset-logo",
+      business_id: "biz-reforma",
+      kind: "logo",
+      category: "logo",
+      origin: "uploaded",
+      storage_url: "https://api.example.com/uploads/biz-reforma/logo.png",
+      original_filename: "logo.png",
+      alt_text: "Logo de Reformas Valencia",
+      generation_id: null,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+    const realHeroPhoto = {
+      id: "asset-hero",
+      business_id: "biz-reforma",
+      kind: "image",
+      category: "hero_candidate",
+      origin: "uploaded",
+      storage_url: "https://api.example.com/uploads/biz-reforma/hero.jpg",
+      original_filename: "hero.jpg",
+      alt_text: "Cocina reformada",
+      generation_id: null,
+      created_at: "2026-01-01T00:00:00Z",
+    };
+
+    await createReformaBusiness(
+      user,
+      REFORMA_WORKFLOW_PREVIEW,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      [realLogo, realHeroPhoto],
+    );
+
+    const logoImg = await screen.findByAltText("Logo de Reformas Valencia");
+    expect(logoImg).toHaveAttribute("src", realLogo.storage_url);
+    expect(document.querySelector(".site-preview__brand-name")).not.toBeInTheDocument();
+
+    const heroImg = screen.getByAltText("Cocina reformada");
+    expect(heroImg).toHaveAttribute("src", realHeroPhoto.storage_url);
+  });
+
   it("publish requires explicit confirmation before calling the API", async () => {
     const user = userEvent.setup();
     await createReformaBusiness(user, REFORMA_WORKFLOW_PREVIEW);
@@ -665,6 +793,47 @@ describe("NewBusiness preview step", () => {
     expect(publishInit.method).toBe("POST");
     const sentSiteConfig = JSON.parse(publishInit.body as string) as { brand: { name: string } };
     expect(sentSiteConfig.brand.name).toBe(generateSiteConfig(exampleReformaValenciaConfig).brand.name);
+  });
+
+  it("LR-04: with an active custom domain, the production domain is shown separately from the technical preview URL", async () => {
+    const user = userEvent.setup();
+    await createReformaBusiness(
+      user,
+      REFORMA_WORKFLOW_PREVIEW,
+      undefined,
+      undefined,
+      undefined,
+      {
+        domain: "reformasvalencia.example",
+        status: "active",
+        provider_status: "active",
+        cname_target: null,
+        error_message: null,
+        verified_at: "2026-08-01T00:00:00Z",
+      },
+    );
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        status: "live",
+        live_url: "https://site-biz-reforma.my-team.workers.dev/",
+        deployment_id: "site-biz-reforma",
+        deployed_at: "2026-08-27T00:00:00Z",
+        updated_at: "2026-08-27T00:00:00Z",
+      }),
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Publish website" }));
+    await user.click(screen.getByRole("button", { name: "Confirm publish" }));
+
+    expect(await screen.findByText(/Published/)).toBeInTheDocument();
+    const publishSection = document.querySelector(".website-publish") as HTMLElement;
+    expect(within(publishSection).getByText(/Production domain/)).toBeInTheDocument();
+    const domainLink = within(publishSection).getByRole("link", { name: "reformasvalencia.example" });
+    expect(domainLink).toHaveAttribute("href", "https://reformasvalencia.example");
+    // The pages.dev URL must still be reachable, but never presented as
+    // the site's primary "Open live website" identity once a real domain is active.
+    expect(within(publishSection).queryByRole("link", { name: "Open live website" })).not.toBeInTheDocument();
+    expect(within(publishSection).getByText(/Technical\/preview URL/)).toBeInTheDocument();
   });
 
   it("publish failure shows a human error, never Published, and offers a retry", async () => {
@@ -918,6 +1087,7 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // website health: never checked
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
@@ -965,6 +1135,7 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
 
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText(/created/);
@@ -1225,6 +1396,7 @@ describe("NewBusiness reopening an existing business (Studio dashboard's Open ac
     fetchMock.mockResolvedValueOnce(jsonResponse(200, null)); // custom domain: never attached
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // website versions: none yet
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false })); // production readiness
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
 
     renderReopenPage("biz-reforma-pepe");
 

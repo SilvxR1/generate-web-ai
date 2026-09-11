@@ -49,6 +49,14 @@ reviewer in `questions`.
 a country code, or any other value you are not confident about.
 5. Only extract information that fits the schema you were given. Do not add commentary or \
 extra fields outside it.
+6. `description` is published to the business's own visitors, verbatim, as website copy — it \
+is not a note to yourself or to the platform. Write it as a short, real description of what \
+the business does or sells, using only facts stated in the briefing. Never include: whether \
+the business has a website yet, what platform or version is building the site, an ecommerce/\
+payment/cart scope note, a conversion or SEO objective, an instruction about reviews, or any \
+other commentary about the website project itself rather than about the business. A briefing \
+that is entirely project/strategy notes with no real description of the business should leave \
+`description` null rather than restate that scoping language as if it were customer-facing text.
 
 A human always reviews your output before anything is saved or acted on — you are proposing \
 a draft, not making a final decision."""

@@ -41,6 +41,7 @@ from app.schemas.creative import (
     BusinessAssetCreateRequest,
     BusinessAssetRead,
     BusinessAssetUpdateRequest,
+    BusinessAssetUploadResult,
     BusinessReviewCreateRequest,
     BusinessReviewRead,
     BusinessReviewVisibilityUpdateRequest,
@@ -162,36 +163,25 @@ def create_business_asset(
     return BusinessAssetRepository(session).add(asset)
 
 
-@router.post("/assets/upload", response_model=BusinessAssetRead, status_code=status.HTTP_201_CREATED)
-def upload_business_asset(
+def _save_uploaded_asset(
+    *,
     request: Request,
     business_id: UUID,
-    file: UploadFile = File(...),
-    kind: AssetKind = Form(...),
-    category: AssetCategory = Form(AssetCategory.OTHER),
-    alt_text: str | None = Form(None),
-    tenant_id: UUID = Depends(get_current_tenant_id),
-    session: Session = Depends(get_session),
-    storage: StorageProvider = Depends(get_storage_provider),
-    _rate_limit: None = Depends(
-        rate_limit_dependency(key_prefix="asset_upload", limit_attr="asset_upload_rate_limit_per_minute")
-    ),
+    tenant_id: UUID,
+    session: Session,
+    storage: StorageProvider,
+    file: UploadFile,
+    kind: AssetKind,
+    category: AssetCategory,
+    alt_text: str | None,
 ) -> BusinessAsset:
-    """Real file ingestion (Phase 3) — the counterpart to POST .../assets
-    above, for a file the caller has on hand rather than one already
-    hosted somewhere. Validates `file.content_type` against `kind`
-    (`_ALLOWED_UPLOAD_CONTENT_TYPES`), enforces
-    `settings.max_upload_size_bytes`, generates a safe storage key
-    (`app.storage.keys.generate_storage_key` — never the caller's own
-    filename), saves via `StorageProvider`, and records a `BusinessAsset`
-    with `origin=UPLOADED`. Always creates a new asset — replacing an
-    existing one (e.g. swapping the logo) is delete-then-upload, not an
-    update, since `storage_url`/`storage_key` are provenance facts this
-    endpoint owns, not user-editable state (see PATCH .../assets/{id} for
-    what *is* editable: category/alt_text).
-    """
-    _get_business(session, tenant_id, business_id)
-
+    """The actual validate-then-save logic behind both single-file
+    upload (below) and the multi-file batch endpoint (LR-01) — one
+    implementation, so "upload 15 photos" is 15 calls to the same
+    validated path, not a second copy of it. Raises `AppError` on any
+    validation failure; the batch endpoint catches that per file so one
+    bad file never loses the others (LR-01's "show per-file failures
+    without losing successful uploads")."""
     allowed_content_types = _ALLOWED_UPLOAD_CONTENT_TYPES.get(kind)
     if not allowed_content_types or file.content_type not in allowed_content_types:
         raise AppError(
@@ -232,6 +222,107 @@ def upload_business_asset(
         alt_text=alt_text,
     )
     return BusinessAssetRepository(session).add(asset)
+
+
+@router.post("/assets/upload", response_model=BusinessAssetRead, status_code=status.HTTP_201_CREATED)
+def upload_business_asset(
+    request: Request,
+    business_id: UUID,
+    file: UploadFile = File(...),
+    kind: AssetKind = Form(...),
+    category: AssetCategory = Form(AssetCategory.OTHER),
+    alt_text: str | None = Form(None),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="asset_upload", limit_attr="asset_upload_rate_limit_per_minute")
+    ),
+) -> BusinessAsset:
+    """Real file ingestion (Phase 3) — the counterpart to POST .../assets
+    above, for a file the caller has on hand rather than one already
+    hosted somewhere. Always creates a new asset with `origin=UPLOADED` —
+    replacing an existing one (e.g. swapping the logo) is delete-then-
+    upload, not an update, since `storage_url`/`storage_key` are
+    provenance facts this endpoint owns, not user-editable state (see
+    PATCH .../assets/{id} for what *is* editable: category/alt_text).
+    See `_save_uploaded_asset` for the actual validate-then-save logic,
+    shared with the multi-file batch endpoint below."""
+    _get_business(session, tenant_id, business_id)
+    return _save_uploaded_asset(
+        request=request,
+        business_id=business_id,
+        tenant_id=tenant_id,
+        session=session,
+        storage=storage,
+        file=file,
+        kind=kind,
+        category=category,
+        alt_text=alt_text,
+    )
+
+
+@router.post(
+    "/assets/upload-batch",
+    response_model=list[BusinessAssetUploadResult],
+    status_code=status.HTTP_207_MULTI_STATUS,
+)
+def upload_business_assets_batch(
+    request: Request,
+    business_id: UUID,
+    files: list[UploadFile] = File(...),
+    kind: AssetKind = Form(...),
+    category: AssetCategory = Form(AssetCategory.OTHER),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="asset_upload", limit_attr="asset_upload_rate_limit_per_minute")
+    ),
+) -> list[BusinessAssetUploadResult]:
+    """Multi-file upload (LR-01) — "select 15 photos, upload once"
+    instead of repeating the single-file form 15 times. `kind`/`category`
+    apply to every file in the batch (the common real case: a batch of
+    business photos, or a batch of gallery images); a file that needs a
+    different classification can still be reclassified afterward via
+    PATCH .../assets/{id}, or uploaded on its own.
+
+    Always returns 207 Multi-Status with one result per file, in the
+    same order they were sent — a failure on file 7 of 15 never discards
+    the 6 that already succeeded (each file gets its own DB transaction
+    boundary via the shared session's autoflush, and a validation
+    failure raises `AppError` caught here rather than aborting the
+    request). This is the one endpoint in this router that reports
+    partial failure in its response body instead of an HTTP error
+    status, since "some of N files failed" isn't itself a request
+    failure.
+    """
+    _get_business(session, tenant_id, business_id)
+
+    results: list[BusinessAssetUploadResult] = []
+    for file in files:
+        try:
+            asset = _save_uploaded_asset(
+                request=request,
+                business_id=business_id,
+                tenant_id=tenant_id,
+                session=session,
+                storage=storage,
+                file=file,
+                kind=kind,
+                category=category,
+                alt_text=None,
+            )
+            results.append(
+                BusinessAssetUploadResult(
+                    filename=file.filename, success=True, asset=BusinessAssetRead.model_validate(asset)
+                )
+            )
+        except AppError as exc:
+            results.append(
+                BusinessAssetUploadResult(filename=file.filename, success=False, error=str(exc), asset=None)
+            )
+    return results
 
 
 @router.get("/assets", response_model=list[BusinessAssetRead])
