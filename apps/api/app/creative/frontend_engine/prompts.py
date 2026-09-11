@@ -62,13 +62,17 @@ times, materials, customer counts, awards, or availability — the business fact
 say if any of that is known; if it isn't listed, do not mention it.
 
 DEPENDENCIES: astro and typescript are already included. You may request additional \
-dependencies by name only from this list: {allowed_deps} — anything else will be rejected \
+dependencies by name only from this list: __ALLOWED_DEPS__ — anything else will be rejected \
 before any file is even written, so do not request anything else.
 """
 
 
 def build_system_prompt() -> str:
-    return SYSTEM_PROMPT.format(allowed_deps=", ".join(sorted(ALLOWED_ADDITIONAL_DEPENDENCIES)) or "(none)")
+    # Plain substring replacement, not str.format(): the prompt text
+    # above contains real TypeScript interface syntax (literal `{`/`}`),
+    # which .format() would misinterpret as format placeholders.
+    allowed = ", ".join(sorted(ALLOWED_ADDITIONAL_DEPENDENCIES)) or "(none)"
+    return SYSTEM_PROMPT.replace("__ALLOWED_DEPS__", allowed)
 
 
 def _business_facts(business_config: BusinessConfig, assets: Sequence[CreativeBriefAsset]) -> str:

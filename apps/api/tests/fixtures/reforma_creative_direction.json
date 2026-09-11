@@ -1,0 +1,91 @@
+{
+  "concept": {
+    "name": "Reforma Casa Valencia \u2014 direction 1",
+    "rationale": "Explored via a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language.",
+    "narrative": "Business: Reforma Casa Valencia (home_renovation). Description: Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.. Target customer: Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional.. Visual style so far: warm, mediterranean, editorial.  Propose a genuinely bespoke digital creative direction using a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language. Do not invent business facts not stated above. No watermark, no browser chrome, no lorem ipsum, high quality reference image for a website creative-direction exploration."
+  },
+  "visual_language": {
+    "mood": "a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language",
+    "palette_direction": "derived from the generated reference image, see references",
+    "typography_direction": "to be interpreted by the frontend engine from the reference image",
+    "composition_philosophy": "a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language",
+    "imagery_treatment": "Higgsfield-generated reference image grounding a bespoke visual language",
+    "graphic_language": "a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language"
+  },
+  "experience": {
+    "navigation_concept": "to be interpreted from the reference image",
+    "storytelling_model": "arrival -> lead_capture",
+    "interaction_concepts": [],
+    "motion_concepts": [],
+    "responsive_adaptation": "to be interpreted by the frontend engine; see develop_direction"
+  },
+  "content_strategy": {
+    "hierarchy": "hero; services; about; cta; contact",
+    "primary_user_journey": "arrival -> lead_capture",
+    "conversion_strategy": "lead_capture"
+  },
+  "references": [
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_214512_ebd76899-70a0-4957-8aca-40ac041bfeaa.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_214712_998c20ee-01b5-4a58-bb96-23d7ecb899d7.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_214825_a7d6c5ea-d41a-4673-a3b1-e68cbd4021ff.png",
+    "https://d8j0ntlcm91z4.cloudfront.net/user_3J6qNVnxBSAwywqlglU2agPyVd9/hf_20260911_214905_0cfc671e-e5a0-4998-81b1-e39be9442c92.png"
+  ],
+  "constraints": {
+    "factual_claims": [
+      "business_name: Reforma Casa Valencia",
+      "industry: home_renovation",
+      "tagline: Reformas con seguimiento profesional, de principio a fin.",
+      "description: Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+      "target_customer: Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional.",
+      "service: Reforma integral",
+      "service: Cocinas",
+      "service: Banos",
+      "service: Electricidad y fontaneria",
+      "service: Pintura",
+      "service: Diseno y planificacion"
+    ],
+    "allowed_claims": [
+      "custom_service"
+    ],
+    "prohibited_claims": [
+      "pricing",
+      "years_of_experience",
+      "certifications",
+      "reviews",
+      "guarantees",
+      "addresses",
+      "opening_hours",
+      "shipping",
+      "delivery_times",
+      "materials",
+      "customer_counts",
+      "awards",
+      "availability",
+      "ecommerce"
+    ],
+    "required_content": [
+      "working_contact_path",
+      "legal_pages"
+    ]
+  },
+  "provider_metadata": {
+    "provider": "higgsfield",
+    "job_type": "nano_banana_pro",
+    "job_id": "ebd76899-70a0-4957-8aca-40ac041bfeaa",
+    "angle": "a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's dominant graphic language"
+  },
+  "generation_metadata": {
+    "credits_used": 2.0,
+    "duration_ms": 32852,
+    "stage": "developed",
+    "iteration": 1,
+    "develop_iteration_1_credits": 2.0,
+    "develop_iteration_1_duration_ms": 73143,
+    "develop_iteration_2_credits": 2.0,
+    "develop_iteration_2_duration_ms": 39915,
+    "develop_iteration_3_credits": 2.0,
+    "develop_iteration_3_duration_ms": 39938
+  },
+  "is_recommended": true,
+  "selection_rationale": "Recommended (score 0.93/1.00): strongest combination of brand fit, feasibility, conversion alignment, and factual safety among the candidates explored."
+}
