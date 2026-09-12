@@ -17,6 +17,16 @@ dependencies = [
   "anthropic>=0.69",
   "psycopg2-binary>=2.9.12",
   "python-multipart>=0.0.32",
+  # Real-browser/Visual QA (P2 continuation Part 3/4) is a production
+  # feature, invoked from a live request path (POST
+  # .../website-drafts/{id}/visual-qa via app.publishing.drafts.
+  # run_visual_qa_for_draft) — not a test-only tool, so it belongs here,
+  # not in the dev-only group below. It was previously miscategorized as
+  # dev-only, which is exactly why `uv sync --frozen --no-dev` (the
+  # production install, see Dockerfile.prod) never installed it and
+  # Railway crashed on `from playwright.sync_api import sync_playwright`
+  # at import time in app.creative.frontend_engine.browser_qa.
+  "playwright>=1.62.0",
 ]
 
 [dependency-groups]
@@ -24,7 +34,6 @@ dev = [
   "pytest>=8.2",
   "ruff>=0.6",
   "mypy>=1.11",
-  "playwright>=1.62.0",
 ]
 
 [tool.pytest.ini_options]

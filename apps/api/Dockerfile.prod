@@ -55,6 +55,17 @@ WORKDIR /repo/apps/api
 ENV UV_FROZEN=1 UV_NO_DEV=1
 RUN uv sync --frozen --no-dev
 
+# Chromium for real browser/Visual QA (app.creative.frontend_engine.
+# browser_qa, invoked from POST .../website-drafts/{id}/visual-qa) —
+# installed once here, at BUILD time, so it's baked into this image
+# layer and never downloaded on container startup. Same `--with-deps`
+# mechanism .github/workflows/ci.yml already uses for CI's own Chromium
+# install (`playwright install --with-deps chromium`) — this line is
+# what closes the CI/production parity gap: `playwright` is now a real
+# `[project.dependencies]` entry (see apps/api/pyproject.toml), so `uv
+# run` here resolves it from the --frozen --no-dev sync above.
+RUN uv run playwright install --with-deps chromium
+
 RUN chmod +x docker-entrypoint.prod.sh
 
 EXPOSE 8000
