@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.creative.director_orchestrator import domain_from_row
 from app.creative.errors import CreativeProviderError
+from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError
 from app.creative.frontend_engine.build import rebuild_from_archive
 from app.creative.frontend_engine.engine import FrontendEngineer
 from app.creative.frontend_engine.visual_qa import run_visual_qa
@@ -355,7 +356,16 @@ def run_visual_qa_for_draft(
 
     archive = storage.load(artifact_row.workspace_key)
     artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
-    visual_result = run_visual_qa(artifact.files, business_id=str(business_id), storage=storage)
+    try:
+        visual_result = run_visual_qa(artifact.files, business_id=str(business_id), storage=storage)
+    except BrowserQAUnavailableError as exc:
+        # Never a silent skip/pass (P2.14's "no deterministic
+        # substitution" rule extends here): the caller gets an explicit,
+        # actionable 503 instead of the request hanging or a fabricated
+        # visual_qa_state. See BrowserQAUnavailableError's own docstring
+        # for why this can only be a runtime/environment problem
+        # (missing Playwright/Chromium), never a QA *finding*.
+        raise GenerativeDraftError(str(exc), code="visual_qa_unavailable", status_code=503) from exc
 
     artifact_row.visual_qa_state = {
         "passed": visual_result.passed,

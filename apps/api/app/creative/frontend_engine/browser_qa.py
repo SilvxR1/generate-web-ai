@@ -28,13 +28,26 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
-
 DEFAULT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("desktop", 1440, 900),
     ("tablet", 768, 1024),
     ("mobile", 390, 844),
 )
+
+
+class BrowserQAUnavailableError(Exception):
+    """Real browser/Visual QA (Playwright + Chromium) could not run in
+    this runtime — either the `playwright` package isn't installed or
+    Chromium couldn't launch. Deliberately never caught and turned into a
+    quiet pass/skip anywhere in this codebase (P2's "no silent
+    degradation" rule): every caller either lets this propagate as an
+    explicit failure or maps it to one (see
+    app.publishing.drafts.run_visual_qa_for_draft). `playwright` is
+    imported lazily inside run_browser_qa specifically so *this* error is
+    what a caller sees on a broken browser-QA runtime, instead of the
+    whole FastAPI app failing to boot from a module-level ImportError —
+    see this module's own docstring and Dockerfile.prod for how
+    production actually installs Playwright + Chromium."""
 
 
 @dataclass
@@ -168,7 +181,20 @@ def run_browser_qa(
     merely that a media query exists in the CSS (a static scan could
     lie about that). `capture_screenshots=True` additionally fills
     `BrowserQAResult.screenshots` (P2 Visual QA V1's real evidence — see
-    that module for how these get persisted as durable QA artifacts)."""
+    that module for how these get persisted as durable QA artifacts).
+
+    Raises BrowserQAUnavailableError (never a bare ImportError/Playwright
+    Error) if Playwright isn't installed or Chromium can't launch in this
+    runtime — see that exception's own docstring for why the import is
+    deferred to here instead of living at module level."""
+    try:
+        from playwright.sync_api import Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise BrowserQAUnavailableError(
+            "The playwright package is not installed in this runtime — real browser/Visual QA is unavailable."
+        ) from exc
+
     result = BrowserQAResult()
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -176,7 +202,12 @@ def run_browser_qa(
         with _serve_directory(root) as port:
             base_url = f"http://127.0.0.1:{port}"
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+                try:
+                    browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+                except PlaywrightError as exc:
+                    raise BrowserQAUnavailableError(
+                        f"Chromium could not be launched — real browser/Visual QA is unavailable: {exc}"
+                    ) from exc
                 try:
                     for name, width, height in viewports:
                         page = browser.new_page(viewport={"width": width, "height": height})

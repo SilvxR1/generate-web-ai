@@ -97,6 +97,34 @@ jobs:
       - name: ruff
         run: uv run ruff check .
 
+      # Regression check for the exact bug that broke the Railway
+      # production deploy after P2 merged: `playwright` was declared
+      # dev-only, so the production install (Dockerfile.prod's `uv sync
+      # --frozen --no-dev`) never installed it, and app.main crashed at
+      # import time (app.routers.creative -> app.publishing.drafts ->
+      # app.creative.frontend_engine.visual_qa -> browser_qa's
+      # module-level `from playwright.sync_api import sync_playwright`).
+      # CI installed Chromium above and every step so far ran against the
+      # *full* dev dependency set, so it never caught that Playwright
+      # itself was missing from the production subset — this step
+      # re-syncs to that exact production subset (must run last in this
+      # job: it prunes the dev group pytest/mypy/ruff above still need)
+      # and re-proves both the import and a real Chromium launch survive
+      # it, closing the CI/production parity gap.
+      - name: Verify production-equivalent dependency set can boot the API
+        run: |
+          uv sync --frozen --no-dev
+          uv run --frozen --no-dev python -c "from app.main import app; print('API import OK')"
+          uv run --frozen --no-dev python -c "from playwright.sync_api import sync_playwright; print('Playwright import OK')"
+          uv run --frozen --no-dev python - <<'PY'
+          from playwright.sync_api import sync_playwright
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True, args=["--no-sandbox"])
+              browser.close()
+          print("Chromium launch OK under production dependency set")
+          PY
+
   frontend:
     name: Frontend (pnpm monorepo)
     runs-on: ubuntu-latest
