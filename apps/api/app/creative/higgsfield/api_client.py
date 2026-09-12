@@ -37,7 +37,21 @@ class HiggsfieldApiError(CreativeProviderRequestError):
     """A Higgsfield REST API call failed — network error, timeout, a
     non-2xx response, or a request that reached a `failed`/`nsfw`/
     `canceled` terminal state. Never carries the API key or raw
-    Authorization header in its message."""
+    Authorization header in its message. `detail` is Higgsfield's own
+    machine-readable error string (e.g. "not_enough_credits",
+    "model_not_found") when the response body carried one — used by
+    app.routers.creative to map this to a specific, structured
+    application error code instead of a generic one; never a secret.
+
+    Every subclass below exists so a caller (app.routers.creative) can
+    map production Higgsfield failures — hotfix P2/creative-directions-500
+    found these escaping as an opaque, un-typed HTTP 500 with no useful
+    body — to a specific, actionable AppError instead of a single
+    catch-all "creative_direction_error"."""
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message)
+        self.detail = detail
 
 
 class HiggsfieldApiUnavailableError(HiggsfieldApiError):
@@ -46,6 +60,58 @@ class HiggsfieldApiUnavailableError(HiggsfieldApiError):
     opposed to one specific call failing. Mirrors
     app.creative.higgsfield.cli.HiggsfieldCliUnavailableError's role for
     the CLI backend."""
+
+
+class HiggsfieldInsufficientCreditsError(HiggsfieldApiError):
+    """403 `{"detail": "not_enough_credits"}` — the account/workspace this
+    API key belongs to has run out of Higgsfield credits. Distinct from
+    HiggsfieldApiUnavailableError (401): authentication succeeded here,
+    only billing didn't."""
+
+
+class HiggsfieldModelUnavailableError(HiggsfieldApiError):
+    """404 `{"detail": "model_not_found"}` — the configured job_type/model
+    is not provisioned for this account's workspace, even though the
+    endpoint is documented in the public OpenAPI spec. Distinct from a
+    generic 404 (e.g. a stale request_id) since it names the specific
+    model/endpoint that failed."""
+
+
+class HiggsfieldReferenceAssetError(HiggsfieldApiError):
+    """A reference image (`input_images`) could not be used — either this
+    client itself refused to send it (see _validate_reference_url: non-
+    https, private/loopback IP, malformed URL) or Higgsfield rejected the
+    request as unprocessable (422) because of the supplied reference(s)."""
+
+
+class HiggsfieldRateLimitedError(HiggsfieldApiError):
+    """429 — too many concurrent requests for this account/model (see
+    docs/higgsfield-integration.md's rate-limits section). A caller may
+    reasonably suggest retrying shortly; this client itself never
+    auto-retries a submit (see module docstring)."""
+
+
+class HiggsfieldContentModerationError(HiggsfieldApiError):
+    """The request reached the `nsfw` terminal state — flagged and never
+    charged, but still a real failure the caller must surface, never
+    silently treated as a successful generation with no result."""
+
+
+class HiggsfieldGenerationFailedError(HiggsfieldApiError):
+    """The request reached the `failed` terminal state — Higgsfield
+    itself reports `error` in the response body, carried in this
+    exception's message."""
+
+
+class HiggsfieldGenerationCanceledError(HiggsfieldApiError):
+    """The request reached the `canceled` terminal state."""
+
+
+class HiggsfieldTimeoutError(HiggsfieldApiError):
+    """Either a raw network/read timeout talking to Higgsfield, or the
+    poll loop in create() exceeded `wait_timeout` without the request
+    reaching a terminal state — distinct from every status-code-based
+    error above since Higgsfield's own state (if any) is unknown."""
 
 
 # Confirmed directly against the published OpenAPI spec
@@ -84,15 +150,17 @@ def _validate_reference_url(url: str) -> str:
     local paths."""
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.hostname:
-        raise HiggsfieldApiError(f"Refusing to send a non-https reference URL to Higgsfield: {url!r}")
+        raise HiggsfieldReferenceAssetError(f"Refusing to send a non-https reference URL to Higgsfield: {url!r}")
     try:
         ip = ipaddress.ip_address(parsed.hostname)
     except ValueError:
         ip = None
     if ip is not None and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved):
-        raise HiggsfieldApiError(f"Refusing to send an internal/private reference URL to Higgsfield: {url!r}")
+        raise HiggsfieldReferenceAssetError(
+            f"Refusing to send an internal/private reference URL to Higgsfield: {url!r}"
+        )
     if parsed.hostname in {"localhost"}:
-        raise HiggsfieldApiError(f"Refusing to send a localhost reference URL to Higgsfield: {url!r}")
+        raise HiggsfieldReferenceAssetError(f"Refusing to send a localhost reference URL to Higgsfield: {url!r}")
     return url
 
 
@@ -113,15 +181,52 @@ def _tail(text: str, limit: int = 500) -> str:
     return text if len(text) <= limit else f"…{text[-limit:]}"
 
 
+def _extract_detail(response: httpx.Response) -> str | None:
+    """Higgsfield's own machine-readable error string, e.g.
+    `{"detail": "not_enough_credits"}` — best-effort: a non-JSON or
+    differently-shaped error body just means no `detail` (never raises)."""
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    detail = body.get("detail") if isinstance(body, dict) else None
+    return detail if isinstance(detail, str) else None
+
+
 def _raise_for_status(response: httpx.Response, context: str) -> None:
+    """Maps every real Higgsfield failure mode this module was built
+    against (see docs/higgsfield-integration.md's "Live proof result" and
+    hotfix P2/creative-directions-500's own findings) to a specific,
+    structured exception subclass — never a bare, un-typed error a caller
+    could only respond to with a generic 500."""
+    if response.status_code < 400:
+        return
+    detail = _extract_detail(response)
     if response.status_code == 401:
         raise HiggsfieldApiUnavailableError(
-            "Higgsfield rejected the configured API key pair (401 Unauthorized)."
+            "Higgsfield rejected the configured API key pair (401 Unauthorized).", detail=detail
         )
-    if response.status_code >= 400:
-        raise HiggsfieldApiError(
-            f"Higgsfield API error ({response.status_code}) calling {context}: {_tail(response.text)}"
+    if response.status_code == 403 and detail == "not_enough_credits":
+        raise HiggsfieldInsufficientCreditsError(
+            "Higgsfield Cloud does not have enough API credits to run this generation.", detail=detail
         )
+    if response.status_code == 404 and detail == "model_not_found":
+        raise HiggsfieldModelUnavailableError(
+            f"The configured Higgsfield model/endpoint ({context}) is unavailable for this workspace.",
+            detail=detail,
+        )
+    if response.status_code == 422:
+        raise HiggsfieldReferenceAssetError(
+            f"Higgsfield rejected the request as unprocessable (422) calling {context}: {_tail(response.text)}",
+            detail=detail,
+        )
+    if response.status_code == 429:
+        raise HiggsfieldRateLimitedError(
+            "Higgsfield rate limit exceeded — too many concurrent requests for this account/model.", detail=detail
+        )
+    raise HiggsfieldApiError(
+        f"Higgsfield API error ({response.status_code}) calling {context}: {_tail(response.text)}", detail=detail
+    )
 
 
 class HiggsfieldApiClient:
@@ -180,7 +285,7 @@ class HiggsfieldApiClient:
         try:
             response = self._client.post(path, headers=self._headers(), json=body)
         except httpx.TimeoutException as exc:
-            raise HiggsfieldApiError(f"Higgsfield request to {path} timed out.") from exc
+            raise HiggsfieldTimeoutError(f"Higgsfield request to {path} timed out.") from exc
         except httpx.HTTPError as exc:
             raise HiggsfieldApiError(f"Higgsfield request to {path} failed: {type(exc).__name__}") from exc
         _raise_for_status(response, path)
@@ -208,7 +313,7 @@ class HiggsfieldApiClient:
                     continue
             except httpx.HTTPError as exc:
                 raise HiggsfieldApiError(f"Failed polling Higgsfield status: {type(exc).__name__}") from exc
-        raise HiggsfieldApiError(f"Timed out polling {status_url}.") from last_exc
+        raise HiggsfieldTimeoutError(f"Timed out polling {status_url}.") from last_exc
 
     def cancel(self, cancel_url: str) -> None:
         try:
@@ -248,7 +353,7 @@ class HiggsfieldApiClient:
             if status in _TERMINAL_STATUSES:
                 break
             if time.monotonic() >= deadline:
-                raise HiggsfieldApiError(
+                raise HiggsfieldTimeoutError(
                     f"Higgsfield request {submitted.request_id} did not reach a terminal state "
                     f"within {wait_timeout}."
                 )
@@ -256,13 +361,15 @@ class HiggsfieldApiClient:
             poll_interval = min(poll_interval * 1.5, 10.0)
 
         if status == "failed":
-            raise HiggsfieldApiError(f"Higgsfield request {submitted.request_id} failed: {data.get('error')}")
+            raise HiggsfieldGenerationFailedError(
+                f"Higgsfield request {submitted.request_id} failed: {data.get('error')}"
+            )
         if status == "nsfw":
-            raise HiggsfieldApiError(
+            raise HiggsfieldContentModerationError(
                 f"Higgsfield request {submitted.request_id} was flagged NSFW (not charged)."
             )
         if status == "canceled":
-            raise HiggsfieldApiError(f"Higgsfield request {submitted.request_id} was canceled.")
+            raise HiggsfieldGenerationCanceledError(f"Higgsfield request {submitted.request_id} was canceled.")
 
         images = data.get("images") or []
         result_url = images[0]["url"] if images and "url" in images[0] else None
