@@ -43,7 +43,10 @@ def test_real_anthropic_engine_produces_a_publishable_bespoke_site(tmp_path):
     # Phase 1: provider availability check — a key is present (the skipif
     # above already gates on this); whether Anthropic actually accepts it
     # is only known once the real request below returns.
-    print(f"[real_provider] provider availability check: ANTHROPIC_API_KEY configured, model={settings.anthropic_model}")
+    print(
+        "[real_provider] provider availability check: "
+        f"ANTHROPIC_API_KEY configured, model={settings.anthropic_model}"
+    )
 
     direction = _real_reforma_direction()
     storage = LocalStorageProvider(root_dir=tmp_path / "uploads")
