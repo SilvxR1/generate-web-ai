@@ -17,9 +17,11 @@ from app.creative.director import CreativeDirectorProvider
 from app.creative.director_internal import InternalCreativeDirector
 from app.creative.frontend_engine import FrontendEngineer, frontend_engineer_from_settings
 from app.creative.higgsfield import (
+    HiggsfieldApiClient,
+    HiggsfieldApiCreativeDirector,
     HiggsfieldCli,
+    HiggsfieldCliCreativeDirector,
     HiggsfieldClient,
-    HiggsfieldCreativeDirector,
     HiggsfieldCreativeProvider,
 )
 from app.creative.internal import InternalCreativeProvider
@@ -35,7 +37,7 @@ from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
-from app.storage import LocalStorageProvider, StorageProvider
+from app.storage import CloudflareR2StorageProvider, LocalStorageProvider, StorageProvider
 
 # Module-level: one engine/pool for the process lifetime, per SQLAlchemy's
 # own recommendation (an Engine is meant to be created once, not per
@@ -254,11 +256,30 @@ def get_google_review_provider() -> GoogleReviewProvider:
 
 
 def get_storage_provider() -> StorageProvider:
-    """Unlike every provider factory above, this needs no credentials and
-    is always available — LocalStorageProvider (app.storage.local) writes
-    to a local directory (settings.local_storage_dir), which has a real
-    default so asset upload works out of the box in dev without any
-    account/configuration, the same way sqlite:///./dev.db does."""
+    """PRODUCTION (P2.1): CloudflareR2StorageProvider (app.storage.r2)
+    whenever all four r2_* settings are configured — persistent object
+    storage, since Railway's own local filesystem is ephemeral and would
+    silently lose GenerativeWebsiteArtifact source archives and Visual QA
+    screenshots on every redeploy. DEV/TEST default: LocalStorageProvider
+    (app.storage.local) needs no credentials at all and has a real
+    default (settings.local_storage_dir), so asset upload still works out
+    of the box without any account/configuration, the same way
+    sqlite:///./dev.db does — never a silent, half-configured R2
+    attempt."""
+    account_id, access_key_id, secret_access_key, bucket_name = (
+        settings.r2_account_id,
+        settings.r2_access_key_id,
+        settings.r2_secret_access_key,
+        settings.r2_bucket_name,
+    )
+    if account_id and access_key_id and secret_access_key and bucket_name:
+        return CloudflareR2StorageProvider(
+            account_id=account_id,
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            bucket_name=bucket_name,
+            public_base_url=settings.r2_public_base_url or "",
+        )
     return LocalStorageProvider(root_dir=Path(settings.local_storage_dir))
 
 
@@ -290,19 +311,39 @@ def get_internal_creative_director() -> InternalCreativeDirector:
 
 
 def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
-    """Returns None (never raises) when
-    settings.higgsfield_cli_enabled is False — the machine-local opt-in
-    this codebase uses for the CLI/OAuth-session integration path (see
-    app.config.Settings.higgsfield_cli_enabled's own docstring for why
-    this isn't an API-key check the way get_optional_higgsfield_provider
-    above is). app.creative.director_orchestrator falls back to
-    get_internal_creative_director when this returns None — never
-    silently presenting that fallback as a successful Higgsfield run
-    (P2.14)."""
-    if not settings.higgsfield_cli_enabled:
-        return None
-    cli = HiggsfieldCli(binary=settings.higgsfield_cli_binary, timeout_seconds=settings.higgsfield_cli_timeout_seconds)
-    return HiggsfieldCreativeDirector(cli, local_storage_root=Path(settings.local_storage_dir))
+    """Returns None (never raises) when neither production nor dev
+    Higgsfield configuration is present — app.creative.director_orchestrator
+    falls back to get_internal_creative_director when this returns None,
+    never silently presenting that fallback as a successful Higgsfield run
+    (P2.14).
+
+    PRODUCTION (P2.1): prefers the official REST API
+    (app.creative.higgsfield.api_client.HiggsfieldApiClient) whenever
+    HIGGSFIELD_API_KEY_ID/HIGGSFIELD_API_KEY_SECRET are configured — a
+    server-side credential pair, safe to run unattended.
+
+    DEV/LOCAL ONLY: falls back to the `higgsfield` CLI's own local OAuth
+    session (higgsfield_cli_enabled — see that setting's own docstring for
+    why this path is never selected in production) only when the REST
+    credential pair above isn't set."""
+    if settings.higgsfield_api_key_id and settings.higgsfield_api_key_secret:
+        client = HiggsfieldApiClient(
+            key_id=settings.higgsfield_api_key_id,
+            key_secret=settings.higgsfield_api_key_secret,
+            base_url=settings.higgsfield_api_base_url,
+            timeout_seconds=settings.higgsfield_api_timeout_seconds,
+        )
+        return HiggsfieldApiCreativeDirector(
+            client,
+            estimated_credits_per_call=settings.higgsfield_api_estimated_credits_per_call,
+            asset_base_url=settings.internal_api_base_url,
+        )
+    if settings.higgsfield_cli_enabled:
+        cli = HiggsfieldCli(
+            binary=settings.higgsfield_cli_binary, timeout_seconds=settings.higgsfield_cli_timeout_seconds
+        )
+        return HiggsfieldCliCreativeDirector(cli, local_storage_root=Path(settings.local_storage_dir))
+    return None
 
 
 def get_creative_director() -> CreativeDirectorProvider:

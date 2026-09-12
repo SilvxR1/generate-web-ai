@@ -1019,6 +1019,54 @@ export function getFrontendEngineerAvailability(
   );
 }
 
+/** GET .../generative-pipeline-capability (P2.1): the ONE authoritative,
+ * real-verified production-readiness state for every P2 Generative
+ * Website subsystem — deliberately separate from (and not to be confused
+ * with) CreativeProviderAvailability above, which reflects an unrelated
+ * legacy provider. `creative_director_provider` names exactly which
+ * CreativeDirectorProvider a real create_directions call would use right
+ * now — "higgsfield" or "internal" — so this panel never implies
+ * Higgsfield readiness the fallback would silently satisfy instead. */
+export interface GenerativeSubsystemCapability {
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
+export interface GenerativePipelineCapability {
+  creative_director: GenerativeSubsystemCapability;
+  creative_director_provider: CreativeProviderName;
+  frontend_engineer: GenerativeSubsystemCapability;
+  browser_qa: GenerativeSubsystemCapability;
+  artifact_storage: GenerativeSubsystemCapability;
+  artifact_storage_persistent: boolean;
+}
+
+export function getGenerativePipelineCapability(
+  businessId: string,
+  tenantId: string,
+): Promise<GenerativePipelineCapability> {
+  return requestJson<GenerativePipelineCapability>(
+    `/businesses/${businessId}/generative-pipeline-capability`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+/** Turns any StorageProvider.url_path() result the backend returned
+ * (app.storage.provider.absolute_url_path's own frontend counterpart)
+ * into a URL the browser can fetch directly — root-relative paths
+ * (LocalStorageProvider, e.g. "/uploads/...") get API_URL prepended;
+ * already-absolute URLs (CloudflareR2StorageProvider's own public bucket
+ * domain) pass through unchanged. Every call site that used to assume
+ * `${API_URL}${url}` was always safe must go through this instead now
+ * that a provider may return either shape. */
+export function resolveStorageUrl(urlPath: string): string {
+  if (urlPath.startsWith("http://") || urlPath.startsWith("https://")) {
+    return urlPath;
+  }
+  return `${API_URL}${urlPath}`;
+}
+
 /** One candidate/developed CreativeDirection — free-text creative
  * intent (concept/visual_language/experience/content_strategy), never a
  * template/design-family pick. `concept`/`visual_language`/`experience`/
@@ -1036,6 +1084,12 @@ export interface CreativeDirection {
   content_strategy: Record<string, unknown>;
   references: string[];
   constraints: Record<string, unknown>;
+  // { provider: "higgsfield" | "internal", ... } — which
+  // CreativeDirectorProvider actually produced this candidate (P2.14:
+  // never silently presented as the other). Read `provider_metadata.provider`
+  // to show "Creative Director: Higgsfield" vs "Internal fallback" — see
+  // GenerativeWorkflowPanel.
+  provider_metadata: Record<string, unknown>;
   is_recommended: boolean;
   selection_rationale: string | null;
   credits_used: number | null;

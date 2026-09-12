@@ -18,15 +18,73 @@ target-customer string, all of which are user-supplied and untrusted)
 can never break out into shell command injection regardless of content.
 Verified directly by `tests/test_higgsfield_cli_director.py::test_cli_never_uses_a_shell_string`.
 
-**No server-held Higgsfield credential.** `HiggsfieldCreativeDirector`
-uses the `higgsfield` CLI's own already-authenticated local OAuth session
-(`higgsfield auth login`) rather than an `HIGGSFIELD_API_KEY` — the CLI's
-token is never read, printed, or logged by this codebase. This is an
-explicit, documented **limitation, not a feature**: it means this
-integration path is not yet safe to run unattended in a production
-deployment (no interactive session exists there to hold the OAuth token)
-— see `docs/higgsfield-integration.md`. It defaults fully disabled
-(`higgsfield_cli_enabled=False`).
+**No server-held Higgsfield credential (dev/local path only).**
+`HiggsfieldCliCreativeDirector` uses the `higgsfield` CLI's own
+already-authenticated local OAuth session (`higgsfield auth login`) rather
+than a server-held credential — the CLI's token is never read, printed, or
+logged by this codebase. This remains an explicit, documented
+**limitation, not a feature** for that path: it is not safe to run
+unattended in a production deployment (no interactive session exists
+there to hold the OAuth token) — see `docs/higgsfield-integration.md`. It
+defaults fully disabled (`higgsfield_cli_enabled=False`) and is never
+selected when the production credential below is configured.
+
+## P2.1: Production Higgsfield REST integration
+
+**Server-side API key pair, never a browser session.**
+`HiggsfieldApiCreativeDirector` (`app.creative.higgsfield.api_client`)
+authenticates with `HIGGSFIELD_API_KEY_ID`/`HIGGSFIELD_API_KEY_SECRET` —
+`Authorization: Key <ID>:<SECRET>` — safe to run unattended, unlike the
+CLI/OAuth path above. This is the real, documented Higgsfield mechanism
+(confirmed against the official OpenAPI spec, see
+`docs/higgsfield-integration.md`), not an undocumented workaround.
+
+**No secret leakage.** The Authorization header value is built once per
+client instance and never appears in any exception message, log line, or
+the `raw` response dict this client returns — `HiggsfieldApiError`
+messages include only the HTTP status code and a length-bounded tail of
+the response body, never request headers.
+
+**SSRF / unsafe outgoing reference URLs.**
+`app.creative.higgsfield.api_client._validate_reference_url` rejects any
+`image_url` sent to Higgsfield that isn't `https://` with a real public
+hostname — no `file://`/`javascript:` scheme, no bare private/loopback/
+link-local IP, no `localhost`. `BusinessAsset.storage_url` values are
+always generated internally (`app.storage.keys.generate_storage_key`),
+never taken from raw user input, but this check stays as defense in
+depth, the same discipline `app.creative.higgsfield.cli.resolve_local_reference`
+already applies on the CLI path.
+
+**No arbitrary callback URLs.** P2.1 v1 deliberately uses polling, not
+webhooks (`GET /requests/{id}/status`) — there is no webhook-receiver
+endpoint in this codebase to worry about accepting an arbitrary callback
+URL from, and no incoming payload from Higgsfield is ever trusted without
+this process itself having issued the `request_id`/`status_url` first
+(`HiggsfieldApiClient.get_status` only ever polls a URL Higgsfield itself
+returned to a `submit()` this process made).
+
+**No double-spend retries.** `HiggsfieldApiClient.submit` (the
+credit-consuming POST) is never retried automatically — only the
+read-only, unbilled `GET /requests/{id}/status` poll retries a bounded
+number of times on a transient network error. A `create_directions`/
+`develop_direction` call that fails mid-workflow stops and returns
+whatever candidates already completed (`_HiggsfieldDirectorBase`'s shared
+`try`/`except` per iteration) rather than restarting the whole exploration.
+
+**Credit-budget enforcement is unchanged and still pre-flight**
+(`app.domain.creative.budget.CreativeBudget.record_spend`) — every call
+is costed (via a configured estimate; see `docs/higgsfield-integration.md`
+for why no real estimate endpoint exists) and checked against the caller's
+hard limit *before* the request is sent, never after.
+
+**Generated customer websites never receive Higgsfield/Anthropic
+credentials.** The AI Frontend Engineer's own prompt context carries no
+provider credential of any kind (unchanged from P2 — see
+`app.creative.frontend_engine.anthropic_engine`'s own docstring), and
+`CreativeDirection.provider_metadata`/`generation_metadata` (which do
+reach the frontend engine's prompt as reference material) never contain a
+key, token, or the raw Higgsfield API response beyond a `job_id` and a
+public result URL.
 
 **Workspace path-traversal guard**
 (`app.creative.higgsfield.cli.resolve_local_reference`): a

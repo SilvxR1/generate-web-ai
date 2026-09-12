@@ -17,6 +17,16 @@ dependencies = [
   "anthropic>=0.69",
   "psycopg2-binary>=2.9.12",
   "python-multipart>=0.0.32",
+  # CloudflareR2StorageProvider (app.storage.r2, P2.1) — production
+  # persistent artifact storage (GenerativeWebsiteArtifact source
+  # archives, Visual QA screenshots), replacing LocalStorageProvider's
+  # ephemeral Railway disk. R2 is S3-compatible; boto3 (with a custom
+  # `endpoint_url`) is the standard, well-tested way to talk to it,
+  # preferred here over hand-rolling AWS SigV4 request signing by hand —
+  # a correctness-sensitive algorithm not worth re-implementing for one
+  # provider. LocalStorageProvider (no boto3 dependency) remains the
+  # local/dev/test default; see app.dependencies.get_storage_provider.
+  "boto3>=1.34",
   # Real-browser/Visual QA (P2 continuation Part 3/4) is a production
   # feature, invoked from a live request path (POST
   # .../website-drafts/{id}/visual-qa via app.publishing.drafts.

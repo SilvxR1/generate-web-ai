@@ -1,18 +1,76 @@
 import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import {
-  API_URL,
   createCreativeDirections,
   createGenerativeWebsiteDraft,
   getFrontendEngineerAvailability,
   getGenerativeArtifact,
+  getGenerativePipelineCapability,
+  resolveStorageUrl,
   runGenerativeVisualQa,
   type CreativeDirection,
   type FrontendEngineerAvailability,
   type GenerativeArtifact,
+  type GenerativePipelineCapability,
   type WebsiteDraft,
   type WebsiteState,
 } from "../../lib/api";
+
+/** Which CreativeDirectorProvider actually produced a candidate —
+ * never silently implies Higgsfield when InternalCreativeDirector
+ * handled the request (P2.14). Falls back to "internal" only if
+ * provider_metadata is somehow missing the field (never happens on a
+ * real backend response, but keeps this component total). */
+function directorLabel(direction: CreativeDirection): string {
+  const provider = direction.provider_metadata?.provider;
+  return provider === "higgsfield" ? "Creative Director: Higgsfield" : "Creative Director: Internal fallback";
+}
+
+function CapabilityRow({
+  label,
+  capability,
+}: {
+  label: string;
+  capability: { available: boolean; unavailable_reason: string | null };
+}) {
+  return (
+    <div className="capability-panel__row">
+      <span>
+        {capability.available ? "✓" : "✕"} {label}
+      </span>
+      {!capability.available && capability.unavailable_reason && (
+        <span className="field-hint"> — {capability.unavailable_reason}</span>
+      )}
+    </div>
+  );
+}
+
+function CapabilityPanel({ capability }: { capability: GenerativePipelineCapability | null }) {
+  if (!capability) return null;
+  return (
+    <div className="capability-panel">
+      <h4>Generative Website — real subsystem status</h4>
+      <CapabilityRow
+        label={
+          capability.creative_director_provider === "higgsfield"
+            ? "Higgsfield"
+            : "Higgsfield (Internal fallback will be used)"
+        }
+        capability={capability.creative_director}
+      />
+      <CapabilityRow label="Anthropic (Frontend Engineer)" capability={capability.frontend_engineer} />
+      <CapabilityRow label="Browser QA (Chromium)" capability={capability.browser_qa} />
+      <CapabilityRow
+        label={
+          capability.artifact_storage_persistent
+            ? "Artifact storage (persistent)"
+            : "Artifact storage (ephemeral — not persistent)"
+        }
+        capability={capability.artifact_storage}
+      />
+    </div>
+  );
+}
 
 interface GenerativeWorkflowPanelProps {
   businessId: string;
@@ -73,6 +131,7 @@ export function GenerativeWorkflowPanel({
 }: GenerativeWorkflowPanelProps) {
   const [availability, setAvailability] = useState<FrontendEngineerAvailability | null>(null);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
+  const [capability, setCapability] = useState<GenerativePipelineCapability | null>(null);
 
   const [directions, setDirections] = useState<CreativeDirection[]>([]);
   const [directionsLoaded, setDirectionsLoaded] = useState(false);
@@ -94,6 +153,13 @@ export function GenerativeWorkflowPanel({
     getFrontendEngineerAvailability(businessId, tenantId)
       .then((data) => !cancelled && setAvailability(data))
       .catch((error: unknown) => !cancelled && setAvailabilityError(friendlyErrorMessage(error, "Unknown error")));
+    getGenerativePipelineCapability(businessId, tenantId)
+      .then((data) => !cancelled && setCapability(data))
+      .catch(() => {
+        /* Capability panel is purely informational — a failure here
+         * degrades to "no panel shown", never blocks the actual
+         * generative workflow below. */
+      });
     return () => {
       cancelled = true;
     };
@@ -190,6 +256,8 @@ export function GenerativeWorkflowPanel({
         deterministic generation above.
       </p>
 
+      <CapabilityPanel capability={capability} />
+
       {availabilityError && <p className="banner banner--error">Could not check AI availability: {availabilityError}</p>}
       {availability && !availability.available && (
         <p className="banner banner--warning">
@@ -225,6 +293,7 @@ export function GenerativeWorkflowPanel({
                     <strong>{direction.concept.name}</strong>
                     {direction.is_recommended && " · Recommended"}
                   </div>
+                  <p className="field-hint">{directorLabel(direction)}</p>
                   <p className="field-hint">{direction.concept.rationale}</p>
                   {direction.selection_rationale && <p className="field-hint">Why: {direction.selection_rationale}</p>}
                   {direction.credits_used != null && (
@@ -274,7 +343,7 @@ export function GenerativeWorkflowPanel({
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
             {Object.entries(artifact.screenshot_urls).map(([viewport, url]) => (
               <figure key={viewport}>
-                <img src={`${API_URL}${url}`} alt={`${viewport} preview`} style={{ maxWidth: "280px" }} />
+                <img src={resolveStorageUrl(url)} alt={`${viewport} preview`} style={{ maxWidth: "280px" }} />
                 <figcaption className="field-hint">{viewport}</figcaption>
               </figure>
             ))}
