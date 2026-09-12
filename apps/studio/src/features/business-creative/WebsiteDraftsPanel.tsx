@@ -27,10 +27,14 @@ const STATUS_LABELS: Record<WebsiteDraft["status"], string> = {
 
 /** Generated previews, distinct from the currently *published* website
  * (Phase 9) — WebsitePublish (business-preview) shows that; this shows
- * every draft ever generated, most recent first, with the explicit
- * Approve -> Publish actions Phase 10 requires. Reuses the existing
- * SiteConfigPreview component for "Open preview" — no second renderer. */
-export function WebsiteDraftsPanel({ drafts, isLoading, error, onApprove, onPublish }: WebsiteDraftsPanelProps) {
+ * every DETERMINISTIC draft ever generated (see GenerativeWorkflowPanel
+ * for the separate AI Frontend Engineer track — P2 continuation Part 5
+ * deliberately keeps the two apart, never mixed in one list), most
+ * recent first, with the explicit Approve -> Publish actions Phase 10
+ * requires. Reuses the existing SiteConfigPreview component for "Open
+ * preview" — no second renderer. */
+export function WebsiteDraftsPanel({ drafts: allDrafts, isLoading, error, onApprove, onPublish }: WebsiteDraftsPanelProps) {
+  const drafts = (allDrafts ?? []).filter((draft) => draft.engine === "deterministic");
   const [openDraftId, setOpenDraftId] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -65,7 +69,7 @@ export function WebsiteDraftsPanel({ drafts, isLoading, error, onApprove, onPubl
   if (error) {
     return <p className="banner banner--error">Could not load generated previews: {error}</p>;
   }
-  if (!drafts || drafts.length === 0) {
+  if (drafts.length === 0) {
     return <p className="field-hint">No generated preview yet — click "Generate website" above to create one.</p>;
   }
 
@@ -108,7 +112,7 @@ export function WebsiteDraftsPanel({ drafts, isLoading, error, onApprove, onPubl
               {draft.status === "published" && <span className="field-hint">Published from this draft.</span>}
             </div>
 
-            {openDraftId === draft.id && <SiteConfigPreview siteConfig={draft.site_config} />}
+            {openDraftId === draft.id && draft.site_config && <SiteConfigPreview siteConfig={draft.site_config} />}
           </li>
         ))}
       </ul>
