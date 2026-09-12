@@ -16,6 +16,7 @@ Higgsfield/n8n/Cloudflare configuration of any kind reaches it or the
 prompt it builds.
 """
 
+import logging
 import tarfile
 import time
 from collections.abc import Sequence
@@ -38,6 +39,8 @@ from app.domain.business_config import BusinessConfig
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.direction import CreativeDirection
 from app.storage import StorageProvider, generate_storage_key
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "claude-opus-5"
 
@@ -76,6 +79,9 @@ class AnthropicFrontendEngine(FrontendEngineer):
                     ),
                 )
                 validate_dependencies(manifest.additional_dependencies)
+                logger.info(
+                    "frontend_engine dependencies validated (%d requested)", len(manifest.additional_dependencies)
+                )
             except Exception:
                 timer.mark_failure()
                 raise
@@ -93,16 +99,20 @@ class AnthropicFrontendEngine(FrontendEngineer):
                 page_path = workspace / relative_path
                 page_path.parent.mkdir(parents=True, exist_ok=True)
                 page_path.write_text(content, encoding="utf-8")
+            logger.info("frontend_engine workspace written (%s)", workspace)
 
             with StageTimer(stage="generative_build", business_id=business_id, provider=self.name) as build_timer:
                 try:
+                    logger.info("frontend_engine astro build started")
                     artifact = build_generative_workspace(
                         workspace, business_id=business_id, api_base_url=api_base_url
                     )
+                    logger.info("frontend_engine astro build completed (%d files)", len(artifact.files))
                 except Exception:
                     build_timer.mark_failure()
                     raise
             workspace_key = self._archive_source(workspace, business_id=business_id)
+            logger.info("frontend_engine source archived (workspace_key=%s)", workspace_key)
         finally:
             cleanup_workspace(workspace)
 

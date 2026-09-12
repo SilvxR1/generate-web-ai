@@ -17,6 +17,7 @@ real repo, neither of which is desired here.
 import base64
 import hashlib
 import json
+import logging
 import re
 import subprocess
 from pathlib import Path
@@ -25,6 +26,8 @@ from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_w
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact
 from app.publishing.security_headers import generate_headers_file
+
+logger = logging.getLogger(__name__)
 
 _INSTALL_TIMEOUT_SECONDS = 180
 _BUILD_TIMEOUT_SECONDS = 120
@@ -119,14 +122,18 @@ def build_generative_workspace(
     if not (workspace / "package.json").is_file():
         raise GenerativeBuildError(f"{workspace} has no package.json — write_manifest must run before building.")
 
+    logger.info("frontend_engine npm install started")
     _run(
         ["npm", "install", "--no-audit", "--no-fund"],
         cwd=workspace,
         timeout=_INSTALL_TIMEOUT_SECONDS,
         step="npm install",
     )
+    logger.info("frontend_engine npm install completed")
     out_dir = workspace / "dist"
+    logger.info("frontend_engine astro build started")
     _run(["npm", "run", "build"], cwd=workspace, timeout=_BUILD_TIMEOUT_SECONDS, step="astro build")
+    logger.info("frontend_engine astro build completed")
 
     if not out_dir.is_dir():
         raise GenerativeBuildError(f"astro build reported success but {out_dir} doesn't exist")

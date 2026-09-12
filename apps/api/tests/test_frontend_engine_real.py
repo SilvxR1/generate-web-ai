@@ -15,6 +15,7 @@ this task's credit budget does not restrict.
 """
 
 import json
+import time
 from pathlib import Path
 
 import anthropic
@@ -39,11 +40,17 @@ def _real_reforma_direction() -> CreativeDirection:
 
 @pytest.mark.skipif(not settings.anthropic_api_key, reason="ANTHROPIC_API_KEY not configured")
 def test_real_anthropic_engine_produces_a_publishable_bespoke_site(tmp_path):
+    # Phase 1: provider availability check — a key is present (the skipif
+    # above already gates on this); whether Anthropic actually accepts it
+    # is only known once the real request below returns.
+    print(f"[real_provider] provider availability check: ANTHROPIC_API_KEY configured, model={settings.anthropic_model}")
+
     direction = _real_reforma_direction()
     storage = LocalStorageProvider(root_dir=tmp_path / "uploads")
     client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
     engine = AnthropicFrontendEngine(AnthropicManifestClient(client, model=settings.anthropic_model), storage=storage)
 
+    started = time.monotonic()
     result = engine.generate(
         business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
         creative_direction=direction,
@@ -52,15 +59,22 @@ def test_real_anthropic_engine_produces_a_publishable_bespoke_site(tmp_path):
         business_id="real-reforma-test",
         api_base_url="https://api.example.com",
     )
+    print(f"[real_provider] engine.generate() completed in {result.duration_ms}ms (model={result.generator_model})")
 
     assert "index.html" in result.artifact.files
     assert result.generator_provider == "anthropic"
     assert result.duration_ms > 0
     # The generated source was archived durably (not left as a /tmp path).
     assert storage._resolve(result.workspace_key).is_file()  # noqa: SLF001 — verifying the real durable artifact exists
+    print(f"[real_provider] artifact persisted: workspace_key={result.workspace_key}")
 
+    print("[real_provider] PlatformContract validation started")
     contract = validate_platform_contract(result.artifact.files, business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG)
+    print(f"[real_provider] PlatformContract validation completed: passed={contract.passed}")
     assert contract.passed, [f.message for f in contract.blocking_violations]
+
+    total_ms = round((time.monotonic() - started) * 1000)
+    print(f"[real_provider] test total duration: {total_ms}ms")
 
     # Bespoke, not deterministic: the generated homepage must not be the
     # deterministic engine's own block markup (no "block-contact__form"
