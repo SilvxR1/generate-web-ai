@@ -14,7 +14,18 @@ from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine import FrontendEngineer
 from app.creative.frontend_engine.availability import check_frontend_engineer_availability
 from app.creative.frontend_engine.browser_qa import check_browser_qa_availability
-from app.creative.higgsfield import HiggsfieldCreativeProvider
+from app.creative.higgsfield import (
+    HiggsfieldApiUnavailableError,
+    HiggsfieldContentModerationError,
+    HiggsfieldCreativeProvider,
+    HiggsfieldGenerationCanceledError,
+    HiggsfieldGenerationFailedError,
+    HiggsfieldInsufficientCreditsError,
+    HiggsfieldModelUnavailableError,
+    HiggsfieldRateLimitedError,
+    HiggsfieldReferenceAssetError,
+    HiggsfieldTimeoutError,
+)
 from app.creative.higgsfield.availability import check_higgsfield_director_availability
 from app.creative.orchestrator import orchestrate_generation
 from app.creative.provider import CreativeProvider
@@ -873,6 +884,86 @@ def _no_business_config() -> AppError:
     )
 
 
+# hotfix P2/creative-directions-500: maps a specific Higgsfield exception
+# type (app.creative.higgsfield.api_client) to its own (code, status_code,
+# operator-facing message) — every entry here used to fall through to the
+# single generic "creative_direction_error" 502 below, which is how a real
+# Higgsfield failure (403 not_enough_credits, 404 model_not_found, ...)
+# ended up looking identical to any other provider error to Studio. Order
+# doesn't matter for correctness (every key here is a direct, sibling
+# subclass of HiggsfieldApiError — no ambiguous overlap), but is kept
+# roughly in "most actionable for an operator" order.
+_HIGGSFIELD_ERROR_MAP: dict[type[Exception], tuple[str, int, str]] = {
+    HiggsfieldInsufficientCreditsError: (
+        "higgsfield_insufficient_credits",
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Higgsfield does not have enough API credits to generate creative directions right now.",
+    ),
+    HiggsfieldModelUnavailableError: (
+        "higgsfield_model_unavailable",
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Higgsfield generation is currently unavailable for this workspace.",
+    ),
+    HiggsfieldApiUnavailableError: (
+        "higgsfield_unavailable",
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "Higgsfield is not configured correctly on this server.",
+    ),
+    HiggsfieldReferenceAssetError: (
+        "higgsfield_reference_asset_unreachable",
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "A reference image could not be accessed by Higgsfield.",
+    ),
+    HiggsfieldRateLimitedError: (
+        "higgsfield_rate_limited",
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        "Higgsfield is temporarily rate-limited — try again shortly.",
+    ),
+    HiggsfieldTimeoutError: (
+        "higgsfield_timeout",
+        status.HTTP_504_GATEWAY_TIMEOUT,
+        "Higgsfield generation timed out.",
+    ),
+    HiggsfieldContentModerationError: (
+        "higgsfield_content_moderated",
+        status.HTTP_502_BAD_GATEWAY,
+        "Higgsfield flagged the generated content and could not complete this request.",
+    ),
+    HiggsfieldGenerationFailedError: (
+        "higgsfield_generation_failed",
+        status.HTTP_502_BAD_GATEWAY,
+        "Higgsfield generation failed.",
+    ),
+    HiggsfieldGenerationCanceledError: (
+        "higgsfield_generation_canceled",
+        status.HTTP_502_BAD_GATEWAY,
+        "The Higgsfield generation request was canceled.",
+    ),
+}
+
+
+def _creative_provider_error(exc: Exception) -> AppError:
+    """The single place a CreativeDirectorProvider failure
+    (app.creative.director.CreativeDirectorProvider.create_directions/
+    develop_direction) becomes an HTTP response — every specific
+    Higgsfield exception type gets its own structured code/status/message
+    via _HIGGSFIELD_ERROR_MAP; anything else (a future provider's own
+    CreativeProviderError, or BudgetExceededError) keeps the original
+    generic mapping. Never an opaque, un-typed 500 for a real, known
+    provider failure — see hotfix P2/creative-directions-500's own report
+    for why that matters beyond just the error message (a bare, unmapped
+    exception here would reach FastAPI's catch-all Exception handler,
+    which — in this app's actual Starlette middleware stack — produces a
+    response that never receives CORS headers, since Starlette's
+    ServerErrorMiddleware owns that handler and sits outside
+    CORSMiddleware; the browser then reports a misleading "network
+    failure" instead of surfacing the real error to Studio)."""
+    for exc_type, (code, status_code, message) in _HIGGSFIELD_ERROR_MAP.items():
+        if isinstance(exc, exc_type):
+            return AppError(message, code=code, status_code=status_code)
+    return AppError(str(exc), code="creative_direction_error", status_code=status.HTTP_502_BAD_GATEWAY)
+
+
 @router.post(
     "/creative-directions", response_model=list[CreativeDirectionRead], status_code=status.HTTP_201_CREATED
 )
@@ -911,7 +1002,7 @@ def create_creative_directions_route(
             )
         )
     except (CreativeProviderError, BudgetExceededError) as exc:
-        raise AppError(str(exc), code="creative_direction_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
+        raise _creative_provider_error(exc) from exc
 
 
 @router.get("/creative-directions", response_model=list[CreativeDirectionRead])
@@ -958,7 +1049,7 @@ def develop_creative_direction_route(
     except CreativeDirectionNotFoundError as exc:
         raise AppError(str(exc), code="creative_direction_not_found", status_code=status.HTTP_404_NOT_FOUND) from exc
     except (CreativeProviderError, BudgetExceededError) as exc:
-        raise AppError(str(exc), code="creative_direction_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
+        raise _creative_provider_error(exc) from exc
 
 
 @router.post(

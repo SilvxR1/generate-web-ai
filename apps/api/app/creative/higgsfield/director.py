@@ -147,6 +147,7 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
     ) -> list[CreativeDirection]:
         references = self._reference_urls_for(assets)
         candidates: list[CreativeDirection] = []
+        last_error: Exception | None = None
 
         for iteration, angle in enumerate(_EXPLORATION_ANGLES, start=1):
             prompt = _build_prompt(brief, angle)
@@ -154,7 +155,8 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                 job, credits, duration_ms = self._spend_and_create(
                     prompt, references=references, budget=budget, operation="create_directions", iteration=iteration
                 )
-            except Exception:  # noqa: BLE001 — budget refusal or a real backend failure both stop exploration here
+            except Exception as exc:  # noqa: BLE001 — budget refusal or a real backend failure both stop exploration here
+                last_error = exc
                 budget.record_failure(
                     provider=self.name.value,
                     operation="create_directions",
@@ -209,8 +211,25 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
             )
 
         if not candidates:
-            raise RuntimeError(
-                f"{type(self).__name__} produced no candidates — see budget/backend failure above."
+            # Re-raise the real, specific failure (a CreativeProviderError
+            # subclass — e.g. HiggsfieldInsufficientCreditsError,
+            # HiggsfieldModelUnavailableError, BudgetExceededError) instead
+            # of a bare RuntimeError: the caller (app.routers.creative)
+            # maps CreativeProviderError/BudgetExceededError to a
+            # structured AppError response. A bare RuntimeError would
+            # escape that mapping entirely and fall through to FastAPI's
+            # generic catch-all handler — which, in this app's actual
+            # Starlette middleware stack, produces a response that never
+            # receives CORS headers (Starlette's ServerErrorMiddleware,
+            # which owns the bare-Exception handler, sits outside
+            # CORSMiddleware), making the browser report a misleading
+            # "network failure" instead of the real error. See hotfix
+            # P2/creative-directions-500's own report for the full,
+            # empirically-verified chain.
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError(  # pragma: no cover — defensive only; every real failure path sets last_error
+                f"{type(self).__name__} produced no candidates and no failure was recorded."
             )
         return candidates
 

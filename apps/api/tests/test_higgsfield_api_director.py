@@ -15,7 +15,7 @@ from app.creative.higgsfield.director import HiggsfieldApiCreativeDirector
 from app.creative.higgsfield.models import HiggsfieldJobResult
 from app.domain.business_config import BusinessConfig, BusinessProfile
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
-from app.domain.creative.budget import CreativeBudget
+from app.domain.creative.budget import BudgetExceededError, CreativeBudget
 from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, BusinessVertical, CreativeBudgetTier
 
 
@@ -177,6 +177,10 @@ def test_create_directions_raises_when_zero_candidates_could_be_afforded():
     client = _FakeApiClient([_job("r-1", "https://x/1.png")])
     director = HiggsfieldApiCreativeDirector(client, estimated_credits_per_call=2.0)
 
-    with pytest.raises(RuntimeError):
+    # hotfix P2/creative-directions-500: the director now re-raises the
+    # REAL underlying failure (here, the budget refusal itself) instead
+    # of a generic RuntimeError, so app.routers.creative can map it to a
+    # specific, structured error rather than an opaque one.
+    with pytest.raises(BudgetExceededError):
         director.create_directions(brief, [], budget)
     assert budget.credits_used == 0.0
