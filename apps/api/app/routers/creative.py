@@ -644,18 +644,27 @@ def get_website_draft(
     return draft
 
 
+def _artifact_read(artifact_row, storage: StorageProvider) -> GenerativeArtifactRead:
+    read = GenerativeArtifactRead.model_validate(artifact_row)
+    return read.model_copy(
+        update={"screenshot_urls": {name: storage.url_path(key) for name, key in artifact_row.screenshot_keys.items()}}
+    )
+
+
 @router.get("/website-drafts/{draft_id}/generative-artifact", response_model=GenerativeArtifactRead)
 def get_generative_artifact(
     business_id: UUID,
     draft_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> object:
     """Studio's single source for a generative draft's QA state (P2
     continuation Parts 4/5): PlatformContract's `qa_state` (always
     present once BUILDING finishes) plus real-browser Visual QA's
-    `visual_qa_state`/`screenshot_keys` (empty until
-    POST .../visual-qa has actually run)."""
+    `visual_qa_state`/`screenshot_keys`/`screenshot_urls` (empty until
+    POST .../visual-qa has actually run) — `screenshot_urls` is what
+    Studio's PREVIEW_READY state actually renders as the real preview."""
     _get_business(session, tenant_id, business_id)
     artifact_row = GenerativeWebsiteArtifactRepository(session).get_for_draft(tenant_id, business_id, draft_id)
     if artifact_row is None:
@@ -664,7 +673,7 @@ def get_generative_artifact(
             code="generative_artifact_missing",
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    return artifact_row
+    return _artifact_read(artifact_row, storage)
 
 
 @router.post("/website-drafts/{draft_id}/visual-qa", response_model=GenerativeArtifactRead)
@@ -685,7 +694,7 @@ def run_visual_qa_route(
     _get_business(session, tenant_id, business_id)
     api_base_url = str(request.base_url).rstrip("/")
     try:
-        return run_visual_qa_for_draft(
+        artifact_row = run_visual_qa_for_draft(
             session=session,
             tenant_id=tenant_id,
             business_id=business_id,
@@ -695,6 +704,7 @@ def run_visual_qa_route(
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc
+    return _artifact_read(artifact_row, storage)
 
 
 @router.post("/website-drafts/{draft_id}/approve", response_model=WebsiteDraftRead)

@@ -297,9 +297,15 @@ def test_visual_qa_endpoint_runs_a_real_browser_pass_and_persists_results(
     body = qa_response.json()
     assert body["visual_qa_state"]["passed"] is True
     assert set(body["screenshot_keys"]) == {"desktop", "tablet", "mobile"}
+    # Real, servable URLs Studio's PREVIEW_READY state renders — resolved
+    # from StorageProvider.url_path, never a raw internal storage key.
+    assert set(body["screenshot_urls"]) == {"desktop", "tablet", "mobile"}
+    for viewport, storage_key in body["screenshot_keys"].items():
+        assert body["screenshot_urls"][viewport] == f"/uploads/{storage_key}"
 
     after = client.get(
         f"/businesses/{business_with_config.id}/website-drafts/{draft['id']}/generative-artifact",
         headers=_headers(tenant.id),
     )
     assert after.json()["visual_qa_state"]["passed"] is True
+    assert set(after.json()["screenshot_urls"]) == {"desktop", "tablet", "mobile"}

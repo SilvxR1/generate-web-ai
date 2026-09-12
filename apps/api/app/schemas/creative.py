@@ -279,5 +279,10 @@ class GenerativeArtifactRead(BaseModel):
     qa_state: dict
     visual_qa_state: dict
     screenshot_keys: dict
+    # Real, servable URLs for each screenshot_keys entry (storage.
+    # url_path(key)) — computed by the router, not stored, so Studio
+    # never has to know how StorageProvider lays out its keys. Empty
+    # until Visual QA has actually run (same as screenshot_keys).
+    screenshot_urls: dict[str, str] = Field(default_factory=dict)
     generated_at: datetime
     duration_ms: int | None
