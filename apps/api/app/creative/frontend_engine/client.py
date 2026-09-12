@@ -61,6 +61,8 @@ class _AnthropicClientLike(Protocol):
     @property
     def messages(self) -> _MessagesLike: ...
 
+    def with_options(self, *, timeout: float | None = None) -> "_AnthropicClientLike": ...
+
 
 class AnthropicManifestClient:
     def __init__(self, client: anthropic.Anthropic | _AnthropicClientLike, *, model: str) -> None:
@@ -71,13 +73,17 @@ class AnthropicManifestClient:
         logger.info("frontend_engine anthropic request started (model=%s)", self._model)
         started = time.monotonic()
         try:
-            response = self._client.messages.parse(
+            # Request timeout is set via with_options(...) — the SDK's own
+            # supported per-call override mechanism — rather than passed
+            # directly to parse(), so the client's own type (Anthropic |
+            # _AnthropicClientLike) stays exactly what messages.parse's real
+            # signature expects; see this file's own _AnthropicClientLike.
+            response = self._client.with_options(timeout=DEFAULT_TIMEOUT_SECONDS).messages.parse(
                 model=self._model,
                 max_tokens=DEFAULT_MAX_TOKENS,
                 system=system,
                 messages=[{"role": "user", "content": user_content}],
                 output_format=GeneratedProjectManifest,
-                timeout=DEFAULT_TIMEOUT_SECONDS,
             )
         except pydantic.ValidationError as exc:
             logger.warning("frontend_engine anthropic response failed schema validation")
