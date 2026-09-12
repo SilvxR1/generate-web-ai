@@ -1,4 +1,4 @@
-"""HiggsfieldCli / HiggsfieldCreativeDirector (app.creative.higgsfield.cli,
+"""HiggsfieldCli / HiggsfieldCliCreativeDirector (app.creative.higgsfield.cli,
 app.creative.higgsfield.director) — subprocess mocked throughout (no real
 Higgsfield credits spent by this test module); verifies the budget-before-
 spend discipline, candidate/reference propagation, and graceful partial
@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from app.creative.higgsfield.cli import HiggsfieldCli, HiggsfieldCliError, HiggsfieldCliUnavailableError
-from app.creative.higgsfield.director import HiggsfieldCreativeDirector
+from app.creative.higgsfield.director import HiggsfieldCliCreativeDirector
 from app.domain.business_config import BusinessConfig, BusinessProfile
 from app.domain.creative.brief import build_creative_brief
 from app.domain.creative.budget import CreativeBudget
@@ -99,7 +99,7 @@ def test_cli_never_uses_a_shell_string(monkeypatch: pytest.MonkeyPatch):
     assert "; rm -rf / #" in captured["args"]  # passed as one argv element, not shell-interpreted
 
 
-# --- HiggsfieldCreativeDirector -------------------------------------------
+# --- HiggsfieldCliCreativeDirector -------------------------------------------
 
 
 def _job_response(job_id: str, url: str) -> str:
@@ -109,7 +109,7 @@ def _job_response(job_id: str, url: str) -> str:
 def test_create_directions_produces_three_candidates_and_records_spend():
     brief = _brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
-    director = HiggsfieldCreativeDirector(HiggsfieldCli())
+    director = HiggsfieldCliCreativeDirector(HiggsfieldCli())
 
     responses = iter(
         [
@@ -139,7 +139,7 @@ def test_create_directions_stops_gracefully_on_budget_exhaustion():
     brief = _brief()
     # Hard limit only covers 2 of the 3 exploration calls (2 credits each).
     budget = CreativeBudget.for_tier(CreativeBudgetTier.EXPERIMENTAL, hard_limit=4.0)
-    director = HiggsfieldCreativeDirector(HiggsfieldCli())
+    director = HiggsfieldCliCreativeDirector(HiggsfieldCli())
 
     responses = iter(
         [
@@ -159,7 +159,7 @@ def test_create_directions_stops_gracefully_on_budget_exhaustion():
 def test_create_directions_raises_when_zero_candidates_could_be_afforded():
     brief = _brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.EXPERIMENTAL, hard_limit=1.0)  # below even one 2-credit call
-    director = HiggsfieldCreativeDirector(HiggsfieldCli())
+    director = HiggsfieldCliCreativeDirector(HiggsfieldCli())
 
     with patch("subprocess.run", return_value=_FakeCompletedProcess(0, json.dumps({"credits": 2}))):
         with pytest.raises(RuntimeError):
@@ -171,7 +171,7 @@ def test_create_directions_raises_when_zero_candidates_could_be_afforded():
 def test_develop_direction_anchors_on_the_selected_jobs_id_and_appends_references():
     brief = _brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
-    director = HiggsfieldCreativeDirector(HiggsfieldCli())
+    director = HiggsfieldCliCreativeDirector(HiggsfieldCli())
 
     with patch(
         "subprocess.run",

@@ -29,10 +29,16 @@ class StorageProvider(ABC):
 
     @abstractmethod
     def url_path(self, storage_key: str) -> str:
-        """A root-relative URL path (e.g. '/uploads/<key>') this file is
-        servable at once saved. The caller (a router, which knows the
-        incoming request's real host) turns this into an absolute URL —
-        this layer never guesses its own public hostname."""
+        """Where this file is servable once saved — either a root-relative
+        URL path (e.g. '/uploads/<key>', LocalStorageProvider: the caller,
+        a router that knows the incoming request's real host, turns this
+        into an absolute URL) or a full absolute URL
+        (app.storage.r2.CloudflareR2StorageProvider: R2 serves objects
+        from its own public bucket domain, a real *configured* value, not
+        guessed — see that class's own docstring). Every caller that
+        prepends its own host to this value (app.routers.creative, the
+        Studio frontend) must check for an already-absolute URL first —
+        see absolute_url_path below."""
 
     @abstractmethod
     def load(self, storage_key: str) -> bytes:
@@ -43,3 +49,16 @@ class StorageProvider(ABC):
         business asset was already reachable via `url_path` over HTTP;
         this is the one case this codebase needs the bytes back
         in-process instead."""
+
+
+def absolute_url_path(url_path: str, *, request_base_url: str) -> str:
+    """Turns any StorageProvider.url_path() result into an absolute URL a
+    browser/external service (e.g. Higgsfield) can actually fetch —
+    root-relative paths get `request_base_url` prepended;
+    already-absolute URLs (app.storage.r2.CloudflareR2StorageProvider)
+    pass through unchanged. Every call site that used to blindly
+    concatenate `request_base_url + storage.url_path(...)` must go
+    through this instead now that a provider may return either shape."""
+    if url_path.startswith("http://") or url_path.startswith("https://"):
+        return url_path
+    return f"{request_base_url.rstrip('/')}{url_path}"

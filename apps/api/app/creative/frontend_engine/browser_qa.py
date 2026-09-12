@@ -168,6 +168,29 @@ def _check_viewport(page, *, name: str, base_url: str) -> list[BrowserQAFinding]
     return findings
 
 
+def check_browser_qa_availability() -> tuple[bool, str | None]:
+    """Cheap, non-billable readiness check for the P2 capability endpoint
+    (P2.1) — never launches a real browser (that's what run_browser_qa
+    itself does): only confirms the `playwright` package imports and that
+    a Chromium executable actually exists on disk at the path Playwright
+    would launch, mirroring run_browser_qa's own lazy-import discipline so
+    a broken runtime here can never crash the whole app either. Returns
+    (available, unavailable_reason), never raises."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False, "The playwright package is not installed in this runtime."
+
+    try:
+        with sync_playwright() as playwright:
+            executable_path = playwright.chromium.executable_path
+            if not executable_path or not Path(executable_path).is_file():
+                return False, f"Chromium is not installed at the expected path ({executable_path or 'unknown'})."
+    except Exception as exc:  # noqa: BLE001 — any driver-startup failure is itself the finding here
+        return False, f"Could not start the Playwright driver: {type(exc).__name__}"
+    return True, None
+
+
 def run_browser_qa(
     files: dict[str, bytes],
     *,

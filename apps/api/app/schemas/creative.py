@@ -232,6 +232,42 @@ class CreativeDirectionRead(BaseModel):
     created_at: datetime
 
 
+class GenerativeSubsystemCapability(BaseModel):
+    """One row of GET .../generative-pipeline-capability (P2.1) — the same
+    honest, real-verified shape as CreativeProviderAvailability/
+    FrontendEngineerAvailability above, generalized to every subsystem the
+    P2 Generative Website workflow depends on."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    available: bool
+    unavailable_reason: str | None = None
+
+
+class GenerativePipelineCapability(BaseModel):
+    """GET .../generative-pipeline-capability (P2.1) — the ONE
+    authoritative, real-verified production-readiness state for every P2
+    Generative Website subsystem, replacing any inference Studio might
+    otherwise draw from the unrelated legacy GET .../creative-providers
+    (app.creative.higgsfield.provider — inert scaffolding for the OLD
+    CreativeLevel PREMIUM/CINEMATIC tier, never the P2 Higgsfield Creative
+    Director). `creative_director.available` reflects Higgsfield
+    specifically (app.creative.higgsfield.availability.check_higgsfield_director_availability)
+    — never conflated with InternalCreativeDirector's own always-available
+    fallback, which `creative_director_provider` names explicitly so
+    Studio never silently implies a Higgsfield-generated result came from
+    Higgsfield when it actually came from the fallback (P2.14)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    creative_director: GenerativeSubsystemCapability
+    creative_director_provider: CreativeProviderName
+    frontend_engineer: GenerativeSubsystemCapability
+    browser_qa: GenerativeSubsystemCapability
+    artifact_storage: GenerativeSubsystemCapability
+    artifact_storage_persistent: bool
+
+
 class FrontendEngineerAvailability(BaseModel):
     """GET .../frontend-engineer-availability (P2 continuation Part 1):
     a real, on-demand, verified check (app.creative.frontend_engine.

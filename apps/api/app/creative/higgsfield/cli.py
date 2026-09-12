@@ -26,11 +26,12 @@ never read, passed, or logged by this module.
 
 import json
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from app.creative.errors import CreativeProviderRequestError
+from app.creative.higgsfield.models import HiggsfieldJobResult
 
 
 class HiggsfieldCliError(CreativeProviderRequestError):
@@ -49,15 +50,6 @@ class HiggsfieldAccountStatus:
     email: str
     credits: float
     subscription_plan_type: str | None = None
-
-
-@dataclass
-class HiggsfieldJobResult:
-    job_id: str
-    job_type: str
-    status: str
-    result_url: str | None
-    raw: dict = field(default_factory=dict)
 
 
 class HiggsfieldCli:

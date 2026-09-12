@@ -13,7 +13,9 @@ from app.creative.director_orchestrator import (
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine import FrontendEngineer
 from app.creative.frontend_engine.availability import check_frontend_engineer_availability
+from app.creative.frontend_engine.browser_qa import check_browser_qa_availability
 from app.creative.higgsfield import HiggsfieldCreativeProvider
+from app.creative.higgsfield.availability import check_higgsfield_director_availability
 from app.creative.orchestrator import orchestrate_generation
 from app.creative.provider import CreativeProvider
 from app.db.models.business_asset import BusinessAsset
@@ -79,11 +81,13 @@ from app.schemas.creative import (
     FrontendEngineerAvailability,
     GenerateWebsiteFromDirectionRequest,
     GenerativeArtifactRead,
+    GenerativePipelineCapability,
+    GenerativeSubsystemCapability,
     ReviewProviderAvailability,
 )
 from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
 from app.services.business_service import BusinessNotFoundError, BusinessService
-from app.storage import StorageProvider, generate_storage_key
+from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 
 router = APIRouter(prefix="/businesses/{business_id}", tags=["creative"])
 
@@ -240,7 +244,9 @@ def _save_uploaded_asset(
     # request.base_url reflects however this request actually reached the
     # server (host/scheme/port) — never a hardcoded setting, so this
     # works unchanged in dev, behind a proxy, or in production alike.
-    storage_url = str(request.base_url).rstrip("/") + storage.url_path(storage_key)
+    # absolute_url_path leaves an already-absolute URL (R2) unchanged and
+    # only prepends the host for a root-relative one (LocalStorageProvider).
+    storage_url = absolute_url_path(storage.url_path(storage_key), request_base_url=str(request.base_url))
 
     asset = BusinessAsset(
         tenant_id=tenant_id,
@@ -793,6 +799,67 @@ def get_frontend_engineer_availability_route(
     del business_id, tenant_id
     available, reason = check_frontend_engineer_availability(settings)
     return FrontendEngineerAvailability(available=available, unavailable_reason=reason)
+
+
+@router.get("/generative-pipeline-capability", response_model=GenerativePipelineCapability)
+def get_generative_pipeline_capability_route(
+    business_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(
+            key_prefix="generative_pipeline_capability",
+            limit_attr="generative_pipeline_capability_rate_limit_per_minute",
+        )
+    ),
+) -> GenerativePipelineCapability:
+    """The ONE authoritative P2 Generative Website readiness state (P2.1)
+    — see GenerativePipelineCapability's own docstring for why this is
+    deliberately separate from (and not to be confused with) the legacy
+    GET .../creative-providers below. Every field is a real, on-demand
+    check, never a hardcoded 'configured' flag — none of them spend a
+    Higgsfield credit or Anthropic token beyond
+    check_frontend_engineer_availability's own already-existing minimal
+    call, and none launch a real browser (check_browser_qa_availability
+    only confirms Chromium is installed on disk)."""
+    del business_id, tenant_id
+    higgsfield_available, higgsfield_reason = check_higgsfield_director_availability(settings)
+    frontend_available, frontend_reason = check_frontend_engineer_availability(settings)
+    browser_qa_available, browser_qa_reason = check_browser_qa_availability()
+
+    storage_persistent = bool(
+        settings.r2_account_id
+        and settings.r2_access_key_id
+        and settings.r2_secret_access_key
+        and settings.r2_bucket_name
+    )
+    storage_reason = (
+        None
+        if storage_persistent
+        else "R2 is not configured (r2_account_id/r2_access_key_id/r2_secret_access_key/r2_bucket_name) — "
+        "using ephemeral local disk storage, which does not survive a redeploy."
+    )
+
+    return GenerativePipelineCapability(
+        creative_director=GenerativeSubsystemCapability(
+            available=higgsfield_available, unavailable_reason=higgsfield_reason
+        ),
+        creative_director_provider=(
+            CreativeProviderName.HIGGSFIELD if higgsfield_available else CreativeProviderName.INTERNAL
+        ),
+        frontend_engineer=GenerativeSubsystemCapability(
+            available=frontend_available, unavailable_reason=frontend_reason
+        ),
+        browser_qa=GenerativeSubsystemCapability(
+            available=browser_qa_available, unavailable_reason=browser_qa_reason
+        ),
+        # Local storage is always "available" (LocalStorageProvider has a
+        # real default, see app.dependencies.get_storage_provider) — the
+        # operator-facing distinction that matters is persistence, not
+        # existence, which is why this is reported separately below rather
+        # than folded into `.available`.
+        artifact_storage=GenerativeSubsystemCapability(available=True, unavailable_reason=storage_reason),
+        artifact_storage_persistent=storage_persistent,
+    )
 
 
 # --- P2: Creative directions (create -> critic -> select -> develop) ----
