@@ -177,3 +177,112 @@ class CreativeGenerationRead(BaseModel):
     completed_at: datetime | None
     error: str | None
     created_at: datetime
+
+
+# --- P2: CreativeDirection / generative workflow -------------------------
+
+
+class CreateDirectionsRequest(BaseModel):
+    """Body for POST /businesses/{id}/creative-directions (P2.3 STEP A).
+    `hard_limit`/`tier` let a caller override the STANDARD default budget
+    (app.domain.creative.budget) for this one exploration — never a
+    silent, unbounded spend."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    hard_limit: float | None = Field(default=None, gt=0)
+
+
+class DevelopDirectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    hard_limit: float | None = Field(default=None, gt=0)
+
+
+class CreativeDirectionRead(BaseModel):
+    """One candidate/developed CreativeDirection — the full free-text
+    creative-intent shape (concept/visual_language/experience/
+    content_strategy/references/constraints), never collapsed to an id
+    a caller can't actually see or reason about (P2.13: Studio must be
+    able to show *why* a direction was recommended)."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    id: uuid.UUID
+    business_id: uuid.UUID
+    creative_generation_id: uuid.UUID | None
+    concept: dict
+    visual_language: dict
+    experience: dict
+    content_strategy: dict
+    # The ORM attribute is named `references_` (see
+    # app.db.models.creative_direction's own docstring for why), but the
+    # public API field is plain `references` — validation_alias controls
+    # how from_attributes reads the ORM object, serialization_alias
+    # controls the outgoing JSON key; a plain `alias=` would have made
+    # from_attributes look for a nonexistent `.references` attribute.
+    references_: list[str] = Field(validation_alias="references_", serialization_alias="references")
+    constraints: dict
+    provider_metadata: dict
+    generation_metadata: dict
+    is_recommended: bool
+    selection_rationale: str | None
+    credits_used: float | None
+    developed_at: datetime | None
+    created_at: datetime
+
+
+class FrontendEngineerAvailability(BaseModel):
+    """GET .../frontend-engineer-availability (P2 continuation Part 1):
+    a real, on-demand, verified check (app.creative.frontend_engine.
+    availability.check_frontend_engineer_availability) — `available`
+    means Anthropic actually accepted a real, minimal request just now,
+    never merely "a key string is present". Studio uses this to show
+    "AI generation unavailable: <reason>" honestly instead of only
+    discovering it the first time a real generation attempt fails."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = "anthropic"
+    available: bool
+    unavailable_reason: str | None = None
+
+
+class GenerateWebsiteFromDirectionRequest(BaseModel):
+    """Body for POST /businesses/{id}/website-drafts/generative (P2 Part
+    A/C) — triggers the AI Frontend Engineer against one already-selected
+    CreativeDirection. Never accepts a business_id/api_base_url override
+    from the caller (both stay server-derived, P2 Part K's tenant-
+    spoofing protection)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    creative_direction_id: uuid.UUID
+
+
+class GenerativeArtifactRead(BaseModel):
+    """GET .../website-drafts/{id}/generative-artifact (P2 continuation
+    Part 4/5): the full QA record behind a generative draft — Studio's
+    single source for both PlatformContract (`qa_state`) and real-browser
+    Visual QA (`visual_qa_state`) results, plus the storage keys for the
+    real screenshots that back it. `visual_qa_state`/`screenshot_keys`
+    are `{}` until run_visual_qa_for_draft has actually run for this
+    draft — never a fabricated pass."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    website_draft_id: uuid.UUID
+    framework: str
+    generator_provider: str
+    generator_model: str | None
+    platform_contract_version: str
+    qa_state: dict
+    visual_qa_state: dict
+    screenshot_keys: dict
+    # Real, servable URLs for each screenshot_keys entry (storage.
+    # url_path(key)) — computed by the router, not stored, so Studio
+    # never has to know how StorageProvider lays out its keys. Empty
+    # until Visual QA has actually run (same as screenshot_keys).
+    screenshot_urls: dict[str, str] = Field(default_factory=dict)
+    generated_at: datetime
+    duration_ms: int | None

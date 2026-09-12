@@ -9,11 +9,14 @@ touches `deploy_url`/`deployed_at`: only a successful deploy advances
 those, so a previous live site is never reported gone just because a
 later republish attempt failed.
 
-If the site has a lead-capture contact form and this business already
-has an active automation, `_inject_lead_capture_webhook_url` wires that
-automation's real n8n webhook URL into the form's `action` before the
-build — see that function's docstring for exactly when it does (and
-deliberately doesn't) do that.
+P2 continuation: a published site's contact form is never wired to
+n8n's webhook directly anymore — every site (deterministic or
+generative) always submits through
+POST /public/businesses/{id}/leads (app.routers.public), which
+dispatches to an active n8n automation itself, server-side, strictly
+after persisting the Lead. See app.automation.n8n.dispatch's own
+docstring for the full "why"; this module no longer touches
+`site_config`'s contact-form `action` at all.
 """
 
 from datetime import UTC, datetime
@@ -22,17 +25,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from app.automation.n8n import lead_submitted_webhook_url
+from app.creative.frontend_engine.build import rebuild_from_archive
+from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website import Website
 from app.db.models.website_version import WebsiteVersion
-from app.db.models.workflow import Workflow
-from app.domain.enums import DeployTarget, WebsiteStatus, WorkflowStatus
+from app.domain.enums import DeployTarget, WebsiteStatus
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsitePublisher
 from app.repositories.website import WebsiteRepository
-from app.repositories.workflow import WorkflowRepository
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import StorageProvider
 
 
 class WebsitePublishError(Exception):
@@ -82,34 +85,6 @@ def _to_state_result(website: Website) -> WebsiteStateResult:
     )
 
 
-def _inject_lead_capture_webhook_url(
-    site_config: SiteConfigPayload, *, workflow: Workflow | None, n8n_base_url: str | None
-) -> None:
-    """Wires the real n8n webhook URL into the contact form's `action`,
-    mutating `site_config` in place — only when everything needed for
-    that URL to be real actually exists: N8N_BASE_URL is configured
-    *and* a matching lead-capture Workflow has already been activated
-    for this business (app.db.models.workflow.Workflow, status ACTIVE
-    — see app.automation.activation, the only code that sets it).
-
-    Never fabricates a URL: when either is missing, the form is left
-    exactly as `generateSiteConfig()` produced it — no `action` — which
-    is Contact.astro's existing, documented "not wired to a backend
-    yet" behavior. Publishing itself still succeeds either way: a site
-    with lead capture configured but automation not yet activated is a
-    normal, valid state in this architecture (the two are independent,
-    explicit human actions), not a publish-time error.
-    """
-    if not n8n_base_url or workflow is None or workflow.status is not WorkflowStatus.ACTIVE:
-        return
-
-    webhook_url = lead_submitted_webhook_url(n8n_base_url, workflow.local_workflow_id)
-    for page in site_config.pages:
-        for block in page.blocks:
-            if block.type == "contact" and isinstance(block.content.get("form"), dict):
-                block.content["form"]["action"] = webhook_url
-
-
 def publish_website(
     *,
     session: Session,
@@ -117,15 +92,11 @@ def publish_website(
     business_id: UUID,
     site_config: SiteConfigPayload,
     publisher: WebsitePublisher,
-    n8n_base_url: str | None = None,
 ) -> WebsiteStateResult:
     """`publisher` is already-validated-as-configured (see
     app.dependencies.get_website_publisher) and injected rather than
     built here, so tests can pass one wired to a mocked transport
-    without needing real hosting-provider credentials. `n8n_base_url`
-    is passed the same way (see app.routers.businesses) purely to wire
-    the lead-capture webhook URL below — this module never reaches into
-    global settings itself.
+    without needing real hosting-provider credentials.
 
     Every publish attempt is a fresh deploy — there's no "already
     published, no-op" short-circuit like activation's (a republish is
@@ -136,8 +107,6 @@ def publish_website(
     """
     repo = WebsiteRepository(session)
     website = repo.get_by_business(tenant_id, business_id)
-    workflow = WorkflowRepository(session).get_for_business(tenant_id, business_id)
-    _inject_lead_capture_webhook_url(site_config, workflow=workflow, n8n_base_url=n8n_base_url)
     # Same "the generated static site needs to know its own business id"
     # reasoning as app.publishing.drafts.create_website_draft — set again
     # here (idempotent if already set) so a direct publish that never
@@ -251,6 +220,87 @@ def unpublish_website(
     website.status = WebsiteStatus.INACTIVE
     website.deploy_url = None
     website.provider_deployment_id = None
+
+    return _to_state_result(website)
+
+
+def publish_generative_website(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    artifact_row: GenerativeWebsiteArtifact,
+    publisher: WebsitePublisher,
+    storage: StorageProvider,
+    api_base_url: str | None = None,
+) -> WebsiteStateResult:
+    """The GENERATIVE counterpart to publish_website above. Rebuilds
+    from the durably-archived generative source
+    (app.creative.frontend_engine.build.rebuild_from_archive) rather than
+    re-invoking the AI Frontend Engineer — "what was approved is what
+    gets published" holds here the same way it does for the
+    deterministic path's re-run of build_site, just against a fixed
+    source tree instead of a fixed SiteConfig. Persists the identical
+    Website/WebsiteVersion rows the deterministic path does; `config`
+    stores a small generative marker (never a fabricated SiteConfig)
+    since there is no SiteConfig for a generative build."""
+    repo = WebsiteRepository(session)
+    website = repo.get_by_business(tenant_id, business_id)
+    site_id = website_project_name(business_id)
+    direction_id = artifact_row.creative_direction_id
+    config_snapshot = {
+        "engine": "generative",
+        "creative_direction_id": str(direction_id) if direction_id else None,
+        "generator_provider": artifact_row.generator_provider,
+        "generator_model": artifact_row.generator_model,
+        "workspace_key": artifact_row.workspace_key,
+    }
+
+    try:
+        archive = storage.load(artifact_row.workspace_key)
+        artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
+        published = publisher.publish(site_id=site_id, artifact=artifact)
+    except WebsitePublisherError as exc:
+        if website is None:
+            website = Website(
+                tenant_id=tenant_id,
+                business_id=business_id,
+                deploy_target=DeployTarget.CLOUDFLARE,
+                status=WebsiteStatus.FAILED,
+                config=config_snapshot,
+            )
+            repo.add(website)
+        else:
+            website.status = WebsiteStatus.FAILED
+            website.config = config_snapshot
+        raise WebsitePublishError(
+            f"Publishing this generative website failed: {exc}",
+            code="website_publish_failed",
+            status_code=502,
+        ) from exc
+
+    if website is None:
+        website = Website(tenant_id=tenant_id, business_id=business_id)
+        repo.add(website)
+
+    website.deploy_target = DeployTarget.CLOUDFLARE
+    website.status = WebsiteStatus.LIVE
+    website.deploy_url = str(published.url)
+    website.provider_deployment_id = published.deployment_id
+    website.deployed_at = datetime.now(UTC)
+    website.config = config_snapshot
+
+    version = WebsiteVersion(
+        tenant_id=tenant_id,
+        business_id=business_id,
+        website_id=website.id,
+        site_config=config_snapshot,
+        deploy_url=str(published.url),
+        provider_deployment_id=published.deployment_id,
+        published_at=website.deployed_at,
+    )
+    session.add(version)
+    session.flush([version])
 
     return _to_state_result(website)
 

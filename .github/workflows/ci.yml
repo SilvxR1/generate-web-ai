@@ -51,6 +51,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
+      # P2 continuation Part 3 (real browser QA): tests/test_browser_qa.py
+      # and tests/test_visual_qa.py launch a real headless Chromium
+      # (Playwright's own bundled browser — this is the one that actually
+      # launches in a locked-down sandbox, unlike other browser tooling
+      # tried during development) against a real generative build's
+      # static output. `--with-deps` also installs the system libraries
+      # Chromium needs via apt, which GitHub's ubuntu-latest runner allows
+      # non-interactively (unlike a local dev sandbox without passwordless
+      # sudo).
+      - name: Install Playwright Chromium (for real browser + visual QA)
+        run: uv run playwright install --with-deps chromium
+
       # app.publishing.build shells out to a real `pnpm exec astro build`
       # (see its own docstring: "no second renderer, no duplicated
       # blocks") — the site-builder integration tests exercise that real

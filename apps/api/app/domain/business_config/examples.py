@@ -142,3 +142,41 @@ EXAMPLE_REFORMA_VALENCIA_CONFIG = BusinessConfig(
         follow_up=FollowUpConfig(enabled=True, delay="2d", delay_hours=48),
     ),
 )
+
+
+# P2's second, deliberately contrasting golden fixture (P2.16/P2 Part H
+# of the continuation prompt): a small, Instagram-led handmade-crochet
+# business, used to prove the generative pipeline can produce a
+# genuinely different experience from Reforma Valencia's — different
+# navigation/storytelling/interaction, not just different colors.
+#
+# Deliberately narrower than EXAMPLE_REFORMA_VALENCIA_CONFIG above: no
+# `contact`/`business_hours`/`address`/`brand` block is included, because
+# no real Cositas y Puntos client data (a real logo, real product
+# photos, a real contact channel) was ever made available in this
+# session — see this task's final report for the exact reason. Every
+# field below is either a structural default or one of the "known
+# context" facts explicitly given as input to this session's real,
+# already-generated Higgsfield exploration for this business (see
+# tests/fixtures/cositas_creative_direction.json's own provenance notes)
+# — never invented here. Do not add contact/address/hours/pricing to
+# this fixture without a real source.
+EXAMPLE_COSITAS_Y_PUNTOS_CONFIG = BusinessConfig(
+    business_profile=BusinessProfile(
+        name="Cositas y Puntos",
+        slug="cositas-y-puntos",
+        industry=BusinessVertical.OTHER,
+        description=(
+            "Artesana espanola independiente que crea amigurumi, crochet y piezas de punto "
+            "hechas a mano. Vende a traves de Instagram y encargos personalizados; sin tienda "
+            "fisica ni compra online."
+        ),
+        target_customers="Personas que buscan un regalo hecho a mano y personalizado.",
+    ),
+    lead_management=LeadManagementConfig(
+        enabled=True,
+        sources=[LeadSource.WHATSAPP, LeadSource.WEBSITE_FORM],
+        required_fields=["name", "message"],
+    ),
+    automation=AutomationConfig(lead_capture=True),
+)

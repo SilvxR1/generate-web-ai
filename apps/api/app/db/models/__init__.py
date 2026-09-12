@@ -10,10 +10,12 @@ from app.db.models.analytics_event import AnalyticsEvent
 from app.db.models.business import Business
 from app.db.models.business_asset import BusinessAsset
 from app.db.models.business_review import BusinessReview
+from app.db.models.creative_direction import CreativeDirection
 from app.db.models.creative_generation import CreativeGeneration
 from app.db.models.credential import Credential
 from app.db.models.custom_domain import CustomDomain
 from app.db.models.execution import Execution
+from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.integration import Integration
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
@@ -34,9 +36,11 @@ __all__ = [
     "BusinessAsset",
     "BusinessReview",
     "Credential",
+    "CreativeDirection",
     "CreativeGeneration",
     "CustomDomain",
     "Execution",
+    "GenerativeWebsiteArtifact",
     "InternalNotification",
     "Integration",
     "Lead",

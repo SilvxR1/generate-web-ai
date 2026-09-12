@@ -1,20 +1,42 @@
 # Higgsfield integration — configuration
 
-This file documents the environment variables the Higgsfield creative
-provider (`apps/api/app/creative/higgsfield/`) reads, kept separate from
-`docs/architecture.md` per that document's own instruction. **No
-credentials are committed here or anywhere else in this repository.**
+This file documents the environment variables/settings the two
+Higgsfield integration paths in `apps/api/app/creative/higgsfield/` use,
+kept separate from `docs/architecture.md` per that document's own
+instruction. **No credentials are committed here or anywhere else in
+this repository.**
 
-## Status
+## Status (updated in P2)
 
-No real Higgsfield API call is implemented yet — see
-`docs/architecture.md`'s "Higgsfield integration status" section for why,
-and what's needed to complete it. The variables below are already wired
-into `app.config.Settings` and `app.dependencies.get_higgsfield_provider`
-(a server without them still starts up fine; premium creative generation
-fails loudly with a `503` the first time it's actually attempted), but
-setting them does not yet make generation succeed — every provider method
-currently raises `HiggsfieldNotIntegratedError` regardless.
+There are now **two distinct, independent Higgsfield integration
+paths** in this codebase — do not conflate them:
+
+1. **`HiggsfieldCreativeProvider`** (`app.creative.higgsfield.provider`)
+   — the original P0-era HTTP/API-key-based boundary. Still exactly as
+   documented below: every method raises `HiggsfieldNotIntegratedError`,
+   `HIGGSFIELD_API_KEY`/`HIGGSFIELD_BASE_URL` are wired but inert. Left
+   untouched in P2 — treat it as legacy/unintegrated scaffolding, not a
+   contradiction of point 2 below.
+2. **`HiggsfieldCreativeDirector`** (`app.creative.higgsfield.director`,
+   P2) — the real, working integration, built on the `higgsfield` CLI's
+   own already-authenticated local OAuth session instead of a server-held
+   API key (see `docs/security.md`'s P2 section for why this is a
+   documented limitation, not a design preference). Controlled by
+   `higgsfield_cli_enabled`/`higgsfield_cli_binary`/
+   `higgsfield_cli_timeout_seconds` in `app.config.Settings` — all
+   default to disabled/sane defaults, so a server without the CLI
+   installed and authenticated still starts up fine.
+   `app.dependencies.get_optional_higgsfield_director` returns `None`
+   (never raises) when `higgsfield_cli_enabled` is `False`, mirroring
+   `get_optional_higgsfield_provider`'s shape. Verified end-to-end
+   against the real, authenticated CLI during this P2 pass: 3
+   `create_directions` + 3 `develop_direction` calls, 12 real Higgsfield
+   credits spent (account balance 1108 → 1096), all mocked-subprocess
+   unit tests in `tests/test_higgsfield_cli_director.py` passing
+   alongside.
+
+The rest of this document (environment variables below) describes path 1
+only, unchanged from before P2.
 
 ## Required environment variables
 

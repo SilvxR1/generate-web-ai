@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from app.domain.enums import WebsiteDraftStatus
+from app.domain.enums import GenerationEngine, WebsiteDraftStatus
 from app.schemas.site_config import SiteConfigPayload
 
 
@@ -28,7 +28,10 @@ class WebsiteDraftRead(BaseModel):
     id: uuid.UUID
     business_id: uuid.UUID
     creative_generation_id: uuid.UUID | None
-    site_config: dict
+    engine: GenerationEngine
+    # P2: null exactly when this draft's engine is GENERATIVE — see
+    # app.db.models.website_draft.WebsiteDraft's own docstring.
+    site_config: dict | None
     status: WebsiteDraftStatus
     build_error: str | None
     validation_issues: list[str] | None

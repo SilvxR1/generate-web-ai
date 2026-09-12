@@ -16,6 +16,15 @@ notification/acknowledgement delivery app.notifications.service already
 provides, best-effort: a notification/acknowledgement failure never fails
 the request or loses the lead (Phase 9 — the lead is always committed
 first).
+
+P2 continuation: this is now the *only* lead-capture surface, for every
+site (deterministic or generative) and every automation state — a
+published site's contact form never posts to n8n directly anymore (see
+app.automation.n8n.dispatch's own docstring for the full "why"). When
+this business has an active n8n workflow, dispatching to it is one more
+best-effort step here, same shape as the notification/acknowledgement
+steps already below: it runs strictly after the Lead is committed, and
+its failure never loses the lead or fails this request.
 """
 
 from datetime import UTC, datetime
@@ -25,6 +34,8 @@ from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
 from app.analytics_events.provider import AnalyticsProvider
+from app.automation.n8n.dispatch import LeadDispatchError, dispatch_lead_to_workflow
+from app.config import settings
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.dependencies import (
@@ -34,7 +45,7 @@ from app.dependencies import (
     rate_limit_dependency,
 )
 from app.domain.business_config import BusinessConfig
-from app.domain.enums import LeadSource
+from app.domain.enums import LeadSource, NotificationDeliveryStatus, WorkflowStatus
 from app.errors import AppError
 from app.leads.spam import is_spam
 from app.notifications.sender import NotificationSender
@@ -47,6 +58,7 @@ from app.notifications.service import (
 from app.repositories.business import BusinessRepository
 from app.repositories.internal_notification import InternalNotificationRepository
 from app.repositories.lead import LeadRepository
+from app.repositories.workflow import WorkflowRepository
 from app.schemas.analytics import AnalyticsEventCreateRequest, AnalyticsEventCreateResponse
 from app.schemas.public import PublicLeadCreateRequest, PublicLeadCreateResponse
 
@@ -127,7 +139,32 @@ def create_public_lead(
     except LeadAcknowledgementEmailError:
         pass
 
+    _dispatch_to_automation_if_configured(session, lead)
+
     return PublicLeadCreateResponse()
+
+
+def _dispatch_to_automation_if_configured(session: Session, lead: Lead) -> None:
+    """The one place a persisted Lead is handed to n8n — always after
+    the fact, never before (see app.automation.n8n.dispatch's own
+    docstring). No active workflow or no N8N_BASE_URL configured is not
+    a failure: `automation_dispatch_status` records NOT_CONFIGURED, the
+    same "not every business has this configured" convention every
+    other optional-provider status already uses in this codebase."""
+    if not settings.n8n_base_url:
+        lead.automation_dispatch_status = NotificationDeliveryStatus.NOT_CONFIGURED
+        return
+
+    workflow = WorkflowRepository(session).get_for_business(lead.tenant_id, lead.business_id)
+    if workflow is None or workflow.status is not WorkflowStatus.ACTIVE:
+        lead.automation_dispatch_status = NotificationDeliveryStatus.NOT_CONFIGURED
+        return
+
+    try:
+        dispatch_lead_to_workflow(lead=lead, workflow=workflow, n8n_base_url=settings.n8n_base_url)
+        lead.automation_dispatch_status = NotificationDeliveryStatus.SENT
+    except LeadDispatchError:
+        lead.automation_dispatch_status = NotificationDeliveryStatus.FAILED
 
 
 @router.post("/events", response_model=AnalyticsEventCreateResponse, status_code=status.HTTP_201_CREATED)

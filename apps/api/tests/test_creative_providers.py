@@ -73,7 +73,17 @@ def test_higgsfield_provider_declares_the_full_premium_capability_set():
     provider = _higgsfield_provider()
 
     assert provider.name is CreativeProviderName.HIGGSFIELD
+    # Every CreativeGenerationType except CREATIVE_DIRECTION (P2): that
+    # value tracks the separate CreativeDirectorProvider workflow
+    # (app.creative.director — create_directions/develop_direction,
+    # implemented by HiggsfieldCreativeDirector, a different class from
+    # this CreativeProvider), not one of this ABC's five generate_*
+    # capability methods, so it's deliberately not part of this set — see
+    # app.domain.enums.CreativeGenerationType's own docstring.
     for generation_type in CreativeGenerationType:
+        if generation_type is CreativeGenerationType.CREATIVE_DIRECTION:
+            assert not provider.supports(generation_type)
+            continue
         assert provider.supports(generation_type)
 
 

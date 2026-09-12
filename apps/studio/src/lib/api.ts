@@ -932,11 +932,18 @@ export function listCreativeProviders(
 
 export type WebsiteDraftStatus = "draft" | "building" | "ready" | "build_failed" | "approved" | "published";
 
+// P2 continuation: which pipeline produced this draft. A GENERATIVE
+// draft's site_config is always null (its real record is the separate
+// GenerativeArtifact below) — see app.domain.enums.GenerationEngine's
+// own docstring on the backend for why a draft is never both.
+export type WebsiteDraftEngine = "deterministic" | "generative";
+
 export interface WebsiteDraft {
   id: string;
   business_id: string;
   creative_generation_id: string | null;
-  site_config: SiteConfig;
+  engine: WebsiteDraftEngine;
+  site_config: SiteConfig | null;
   status: WebsiteDraftStatus;
   build_error: string | null;
   validation_issues: string[] | null;
@@ -980,6 +987,156 @@ export function approveWebsiteDraft(businessId: string, draftId: string, tenantI
 export function publishWebsiteDraft(businessId: string, draftId: string, tenantId: string): Promise<WebsiteState> {
   return requestJson<WebsiteState>(
     `/businesses/${businessId}/website-drafts/${draftId}/publish`,
+    { method: "POST" },
+    tenantId,
+  );
+}
+
+// --- Generative workflow (P2 continuation, Part 5): CreativeDirection ->
+// --- AI Frontend Engineer -> real build -> Visual QA -> preview. A
+// --- completely separate track from the deterministic
+// --- generateSiteConfig()/SiteConfig flow above — neither replaces the
+// --- other; a business can use either.
+
+/** GET .../frontend-engineer-availability (P2 continuation Part 1): a
+ * real, on-demand check, never "a key string is present" — Studio shows
+ * `unavailable_reason` verbatim rather than only discovering it the
+ * first time a generation attempt fails. */
+export interface FrontendEngineerAvailability {
+  provider: string;
+  available: boolean;
+  unavailable_reason: string | null;
+}
+
+export function getFrontendEngineerAvailability(
+  businessId: string,
+  tenantId: string,
+): Promise<FrontendEngineerAvailability> {
+  return requestJson<FrontendEngineerAvailability>(
+    `/businesses/${businessId}/frontend-engineer-availability`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+/** One candidate/developed CreativeDirection — free-text creative
+ * intent (concept/visual_language/experience/content_strategy), never a
+ * template/design-family pick. `concept`/`visual_language`/`experience`/
+ * `content_strategy` are the same free-form shape the backend's
+ * CreativeConcept/VisualLanguage/ExperienceDirection/ContentStrategy
+ * models produce, kept as loosely-typed records here rather than
+ * duplicating those Pydantic models field-for-field in TypeScript. */
+export interface CreativeDirection {
+  id: string;
+  business_id: string;
+  creative_generation_id: string | null;
+  concept: { name: string; rationale: string; narrative: string } & Record<string, unknown>;
+  visual_language: Record<string, unknown>;
+  experience: Record<string, unknown>;
+  content_strategy: Record<string, unknown>;
+  references: string[];
+  constraints: Record<string, unknown>;
+  is_recommended: boolean;
+  selection_rationale: string | null;
+  credits_used: number | null;
+  developed_at: string | null;
+  created_at: string;
+}
+
+/** POST .../creative-directions — the Higgsfield Creative Director
+ * exploring several candidate directions within one CreativeBudget
+ * (never an unbounded spend); `hardLimit` overrides the STANDARD
+ * default for this one exploration. */
+export function createCreativeDirections(
+  businessId: string,
+  tenantId: string,
+  hardLimit?: number,
+): Promise<CreativeDirection[]> {
+  return requestJson<CreativeDirection[]>(
+    `/businesses/${businessId}/creative-directions`,
+    { method: "POST", body: JSON.stringify(hardLimit != null ? { hard_limit: hardLimit } : {}) },
+    tenantId,
+  );
+}
+
+export function listCreativeDirections(businessId: string, tenantId: string): Promise<CreativeDirection[]> {
+  return requestJson<CreativeDirection[]>(`/businesses/${businessId}/creative-directions`, { method: "GET" }, tenantId);
+}
+
+/** POST .../creative-directions/{id}/develop — deepens the chosen
+ * candidate in place (same row, same id) rather than creating a new one. */
+export function developCreativeDirection(
+  businessId: string,
+  directionId: string,
+  tenantId: string,
+): Promise<CreativeDirection> {
+  return requestJson<CreativeDirection>(
+    `/businesses/${businessId}/creative-directions/${directionId}/develop`,
+    { method: "POST", body: JSON.stringify({}) },
+    tenantId,
+  );
+}
+
+/** POST .../website-drafts/generative — turns one already-selected
+ * CreativeDirection into a real, bespoke build via the AI Frontend
+ * Engineer. Never falls back to the deterministic engine on failure: a
+ * failure here returns a BUILD_FAILED draft or a real error, not a
+ * deterministic result silently substituted in its place. */
+export function createGenerativeWebsiteDraft(
+  businessId: string,
+  creativeDirectionId: string,
+  tenantId: string,
+): Promise<WebsiteDraft> {
+  return requestJson<WebsiteDraft>(
+    `/businesses/${businessId}/website-drafts/generative`,
+    { method: "POST", body: JSON.stringify({ creative_direction_id: creativeDirectionId }) },
+    tenantId,
+  );
+}
+
+/** The full QA record behind a generative draft: PlatformContract's
+ * static `qa_state` (always present once BUILDING finishes) plus
+ * real-browser Visual QA's `visual_qa_state`/`screenshot_urls` (empty
+ * until POST .../visual-qa has actually run). `screenshot_urls` is the
+ * real preview Studio shows once QA has run — never a fabricated mock. */
+export interface GenerativeArtifact {
+  website_draft_id: string;
+  framework: string;
+  generator_provider: string;
+  generator_model: string | null;
+  platform_contract_version: string;
+  qa_state: { passed?: boolean; findings?: unknown[]; blocking_violations?: unknown[] } & Record<string, unknown>;
+  visual_qa_state: { passed?: boolean; findings?: unknown[] } & Record<string, unknown>;
+  screenshot_keys: Record<string, string>;
+  screenshot_urls: Record<string, string>;
+  generated_at: string;
+  duration_ms: number | null;
+}
+
+export function getGenerativeArtifact(
+  businessId: string,
+  draftId: string,
+  tenantId: string,
+): Promise<GenerativeArtifact> {
+  return requestJson<GenerativeArtifact>(
+    `/businesses/${businessId}/website-drafts/${draftId}/generative-artifact`,
+    { method: "GET" },
+    tenantId,
+  );
+}
+
+/** POST .../website-drafts/{id}/visual-qa — Studio's own QA_RUNNING
+ * step: runs a real headless-browser pass against the draft's real
+ * build output and persists screenshots + findings. A real Chromium
+ * launch, kept as an explicit, on-demand action rather than something
+ * that happens invisibly during generation. */
+export function runGenerativeVisualQa(
+  businessId: string,
+  draftId: string,
+  tenantId: string,
+): Promise<GenerativeArtifact> {
+  return requestJson<GenerativeArtifact>(
+    `/businesses/${businessId}/website-drafts/${draftId}/visual-qa`,
     { method: "POST" },
     tenantId,
   );

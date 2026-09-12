@@ -24,10 +24,15 @@ dev = [
   "pytest>=8.2",
   "ruff>=0.6",
   "mypy>=1.11",
+  "playwright>=1.62.0",
 ]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+addopts = "-m 'not real_provider'"
+markers = [
+  "real_provider: calls a real external provider (Higgsfield CLI, Anthropic API) and is never run in default CI — see tests/test_frontend_engine_real.py and tests/test_higgsfield_real.py for why these stay opt-in (`pytest -m real_provider`), separate from the default `pytest` invocation used everywhere else.",
+]
 
 [tool.ruff]
 line-length = 120

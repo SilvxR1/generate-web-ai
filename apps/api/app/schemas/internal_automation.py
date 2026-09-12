@@ -34,6 +34,16 @@ class LeadIngestRequest(BaseModel):
     email: str | None = None
     phone: str | None = None
     message: str | None = None
+    # P2 continuation: set when this call is n8n's `lead.store` step
+    # confirming a Lead this backend already persisted itself (the new
+    # canonical POST /public/businesses/{id}/leads path dispatches to
+    # n8n *after* persisting — see app.automation.n8n.dispatch's own
+    # docstring). When present and it names a real lead already owned
+    # by tenant_id/business_id, app.routers.internal_automation.ingest_lead
+    # returns that lead unchanged instead of inserting a duplicate.
+    # None (every pre-existing caller) keeps the old "always insert"
+    # behavior exactly as before.
+    lead_id: uuid.UUID | None = None
 
 
 class LeadResponse(BaseModel):

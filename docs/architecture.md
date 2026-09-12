@@ -349,3 +349,67 @@ None of this requires a Higgsfield account, credentials, or subscription
 Publish` workflow is exercised end to end on `InternalCreativeProvider`
 alone (see `apps/api/tests/test_website_draft_service.py` and
 `test_website_draft_api.py`).
+
+## P2: Generative Creative Engine
+
+A second, additive pipeline sitting alongside everything above (the
+deterministic pipeline is completely unchanged):
+
+```
+BusinessConfig -> CreativeBrief (unchanged, reused as-is)
+  -> CreativeDirectorProvider.create_directions (app.creative.director)
+     - InternalCreativeDirector: one honest, zero-cost candidate
+     - HiggsfieldCreativeDirector: 3 real, CLI-backed candidates
+  -> select_direction critic (app.creative.critic) — rule-based, not
+     another paid AI call
+  -> CreativeDirectorProvider.develop_direction on the selected one
+  -> CreativeDirection persisted (app.db.models.creative_direction)
+  -> [not yet built: AI Frontend Engineer -> GenerativeWebsiteArtifact]
+  -> validate_platform_contract (app.qa.platform_contract) — engine-
+     agnostic, gates WebsiteDraft the same way for either engine
+```
+
+**`GenerationEngine`** (`app.domain.enums`) is `DETERMINISTIC` or
+`GENERATIVE`, carried on `WebsiteDraft.engine` (default `DETERMINISTIC`
+— every pre-P2 row is unaffected). A `GENERATIVE` draft would link to a
+`GenerativeWebsiteArtifact` row (framework, workspace reference, build
+command, output dir, dependencies, generator provider/model, QA state)
+instead of carrying `site_config`; `WebsiteDraft.site_config` is now
+nullable to make room for that, enforced in code (never both null and
+un-linked), not by a DB constraint — same reasoning as
+`WebsiteDraftStatus`'s own terminal-state rule.
+
+**`CreativeDirection`** (`app.domain.creative.direction`) is deliberately
+free-text creative vocabulary — concept/visual language/experience/
+content strategy/references/constraints — never a `heroVariant`/
+`designFamily`-style enum. See that module's own docstring.
+
+**`PlatformContract`** (`app.qa.platform_contract`, version `1.0.0`) is a
+build-output scan (dead CTAs, broken anchors, disconnected lead forms,
+missing legal/consent/SEO, WhatsApp-when-configured) that runs on *both*
+engines' output — wired as a blocking gate into the existing
+`create_website_draft` today for the deterministic path (a BLOCKING
+violation demotes the draft to `BUILD_FAILED`, same as a real build
+failure); a `GENERATIVE` draft would be held to the identical contract
+once the frontend engine exists.
+
+**Higgsfield as creative director, verified for real.** During this P2
+pass, `HiggsfieldCreativeDirector` was run end-to-end against the real,
+authenticated `higgsfield` CLI and the `EXAMPLE_REFORMA_VALENCIA_CONFIG`
+fixture (`app.domain.business_config.examples`) — 3 `create_directions`
++ 3 `develop_direction` calls, 12 real credits spent (verified via
+`higgsfield account transactions`), well under this task's 20-credit
+hard cap. See `docs/higgsfield-integration.md`'s "Status (updated in
+P2)" section for the two distinct Higgsfield integration paths this
+codebase now has.
+
+**Not yet built**: the AI Frontend Engineer
+(`app.creative.frontend_engine`, referenced above but not implemented) —
+the component that would take a `CreativeDirection` and have an LLM
+write actual bespoke Astro/TypeScript/CSS files into an isolated
+workspace, build them for real, and produce a `GenerativeWebsiteArtifact`.
+This is the single largest remaining piece of P2; see the P2 final
+report (delivered alongside this PR) for its full design and the exact
+reasoning for deferring it rather than shipping a rushed, undertested
+version of something this security-sensitive (arbitrary LLM-authored
+code, dependency installation, a real build subprocess).

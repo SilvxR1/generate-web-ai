@@ -33,3 +33,13 @@ class StorageProvider(ABC):
         servable at once saved. The caller (a router, which knows the
         incoming request's real host) turns this into an absolute URL —
         this layer never guesses its own public hostname."""
+
+    @abstractmethod
+    def load(self, storage_key: str) -> bytes:
+        """Reads a previously-saved file back server-side (P2: needed to
+        republish a GenerativeWebsiteArtifact's archived source without
+        re-invoking the AI Frontend Engineer — see
+        app.publishing.service.publish_generative_website). Every real
+        business asset was already reachable via `url_path` over HTTP;
+        this is the one case this codebase needs the bytes back
+        in-process instead."""

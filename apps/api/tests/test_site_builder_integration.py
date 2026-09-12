@@ -118,7 +118,11 @@ def test_contact_form_renders_the_injected_webhook_action_and_predictable_field_
     artifact = build_site(site_config)
     html = artifact.files["index.html"].decode("utf-8")
 
-    assert f'<form class="block-contact__form" action="{webhook_url}" method="post"' in html
+    # P2: Contact.astro's form also carries data-gwa-lead-form (the
+    # PlatformContract lead-form marker, app.qa.platform_contract) —
+    # additive, doesn't change the webhook-wiring assertion this test is
+    # actually about.
+    assert f'<form class="block-contact__form" data-gwa-lead-form action="{webhook_url}" method="post"' in html
     assert 'name="name"' in html
     assert 'name="phone"' in html
 

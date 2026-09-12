@@ -210,6 +210,7 @@ class CreativeGenerationType(StrEnum):
     IMAGE = "image"
     VIDEO = "video"
     VISUAL_ASSET = "visual_asset"
+    CREATIVE_DIRECTION = "creative_direction"
 
 
 class CreativeGenerationStatus(StrEnum):
@@ -375,6 +376,54 @@ class AnalyticsEventType(StrEnum):
     LEAD_SUBMITTED = "lead_submitted"
     PHONE_CLICK = "phone_click"
     EMAIL_CLICK = "email_click"
+
+
+class GenerationEngine(StrEnum):
+    """Which pipeline actually produced a WebsiteDraft's implementation
+    (P2): DETERMINISTIC is the existing, unchanged
+    packages/website-generator `generateSiteConfig()` -> blocks -> Astro
+    pipeline (WebsiteDraft.site_config carries its output); GENERATIVE is
+    the new CreativeDirection -> AI Frontend Engineer pipeline
+    (app.creative.frontend_engine), whose output is a
+    GenerativeWebsiteArtifact (app.db.models.generative_website_artifact)
+    instead of a SiteConfig. A draft's `engine` decides which of the two
+    is populated — never both, never neither. Engine selection is always
+    explicit (a caller states which engine it wants); nothing in this
+    codebase silently falls back from GENERATIVE to DETERMINISTIC and
+    reports it as a successful generative result — a failed generative
+    attempt surfaces as a FAILED/BUILD_FAILED state, honestly."""
+
+    DETERMINISTIC = "deterministic"
+    GENERATIVE = "generative"
+
+
+class CreativeBudgetTier(StrEnum):
+    """A named credit-spend ceiling for one Higgsfield creative-direction
+    workflow run (app.domain.creative.budget) — not a pricing plan sold to
+    a business, purely an internal control on how much a single
+    create_directions + develop_direction workflow is allowed to spend.
+    EXPERIMENTAL carries no built-in default hard limit (see
+    app.domain.creative.budget.DEFAULT_TIER_LIMITS) — a caller must state
+    one explicitly, never inherit an implicit ceiling for a tier whose
+    whole point is "we don't have a settled number yet"."""
+
+    STANDARD = "standard"
+    PREMIUM = "premium"
+    EXPERIMENTAL = "experimental"
+
+
+class PlatformContractSeverity(StrEnum):
+    """How a PlatformContract finding (app.qa.platform_contract) affects a
+    WebsiteDraft's QA outcome. BLOCKING mirrors WebsiteDraftStatus's
+    existing BUILD_FAILED gate: a draft carrying any BLOCKING violation can
+    never be approved (P2.8's "must never reach an approved/publishable
+    state with decorative dead CTAs" is enforced here, not only by
+    convention). ADVISORY mirrors app.qa.validate's existing
+    `validation_issues` — visible to a human before approving, never
+    itself blocking."""
+
+    BLOCKING = "blocking"
+    ADVISORY = "advisory"
 
 
 class HealthStatus(StrEnum):

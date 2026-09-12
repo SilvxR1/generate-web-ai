@@ -15,14 +15,21 @@ if TYPE_CHECKING:
 
 
 class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
-    """A real lead — captured either through the lead.submitted ->
-    WorkflowConfig -> n8n -> /internal/leads loop (see
-    app.routers.internal_automation) when n8n is configured, or directly
-    through POST /public/businesses/{id}/leads (app.routers.public, P0)
-    when it isn't: a real first customer's contact form must work
-    without n8n being set up at all. Deliberately still minimal — not a
-    CRM: `status` (NEW -> CONTACTED -> QUALIFIED -> WON/LOST) is the only
-    follow-up field; no notes, no pipeline stages, no user assignment.
+    """A real lead — always captured through the one canonical path,
+    POST /public/businesses/{id}/leads (app.routers.public), regardless
+    of whether the site that submitted it is deterministic or generative,
+    and regardless of whether n8n automation is configured (P2
+    continuation: previously a site with active n8n automation posted
+    directly to n8n's webhook instead, making n8n the only thing that
+    ever persisted the lead — see app.automation.n8n.dispatch's own
+    docstring for why that inverted the required "persist before
+    automation" guarantee). When n8n *is* configured and active, this
+    backend dispatches to it itself, server-side, only after this row
+    is already committed — `automation_dispatch_status` records that
+    attempt's outcome, completely independent of `status` below.
+    Deliberately still minimal — not a CRM: `status` (NEW -> CONTACTED ->
+    QUALIFIED -> WON/LOST) is the only follow-up field; no notes, no
+    pipeline stages, no user assignment.
     """
 
     __tablename__ = "leads"
@@ -72,6 +79,19 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     # the lead itself is always already committed by the time this is
     # set (app.routers.public.create_public_lead).
     acknowledgement_status: Mapped[NotificationDeliveryStatus] = mapped_column(
+        str_enum(NotificationDeliveryStatus, 20), nullable=False, default=NotificationDeliveryStatus.PENDING
+    )
+    # P2 continuation: the outcome of dispatching this lead to the
+    # business's active n8n automation (app.automation.n8n.dispatch),
+    # attempted server-side by app.routers.public.create_public_lead
+    # *after* this row is already committed — never the other way
+    # around (see this model's own docstring: n8n is now strictly
+    # downstream of a persisted Lead). NOT_CONFIGURED means no active
+    # workflow existed to dispatch to; FAILED means a dispatch attempt
+    # genuinely failed and can be retried (POST
+    # .../leads/{id}/retry-automation, app.routers.businesses) without
+    # ever re-inserting this row.
+    automation_dispatch_status: Mapped[NotificationDeliveryStatus] = mapped_column(
         str_enum(NotificationDeliveryStatus, 20), nullable=False, default=NotificationDeliveryStatus.PENDING
     )
 
