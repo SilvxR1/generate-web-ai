@@ -30,10 +30,12 @@ from pathlib import Path
 
 from app.creative.frontend_engine.anthropic_engine import AnthropicFrontendEngine
 from app.creative.frontend_engine.manifest import GeneratedFile, GeneratedProjectManifest
+from app.creative.frontend_engine.visual_qa import run_visual_qa
 from app.domain.business_config.examples import EXAMPLE_COSITAS_Y_PUNTOS_CONFIG, EXAMPLE_REFORMA_VALENCIA_CONFIG
 from app.domain.creative.direction import CreativeDirection
 from app.qa.platform_contract import validate_platform_contract
 from app.storage import LocalStorageProvider
+from app.storage.provider import StorageProvider, StoredFile
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -89,6 +91,7 @@ import Layout from "../layouts/Layout.astro";
 ---
 <Layout title="Cositas y Puntos" description="Amigurumi y crochet hechos a mano">
   <main class="scene-diorama" data-thread-path-scene>
+    <h1 class="scene-title">Cositas y Puntos</h1>
     <svg class="thread-path" viewBox="0 0 100 100" aria-hidden="true">
       <path d="M10 10 L50 50 L90 20" data-thread-glow />
     </svg>
@@ -201,3 +204,81 @@ def test_two_golden_fixtures_produce_structurally_different_real_builds(tmp_path
     # pass by accident").
     assert "data-gwa-lead-form" in reforma_html
     assert "data-gwa-lead-form" in cositas_html
+
+
+class _InMemoryStorage(StorageProvider):
+    def __init__(self) -> None:
+        self.saved: dict[str, bytes] = {}
+
+    def save(self, *, storage_key: str, content: bytes) -> StoredFile:
+        self.saved[storage_key] = content
+        return StoredFile(storage_key=storage_key)
+
+    def delete(self, storage_key: str) -> None:
+        self.saved.pop(storage_key, None)
+
+    def url_path(self, storage_key: str) -> str:
+        return f"/uploads/{storage_key}"
+
+    def load(self, storage_key: str) -> bytes:
+        return self.saved[storage_key]
+
+
+def test_two_golden_fixtures_pass_real_browser_and_visual_qa_with_distinct_previews(tmp_path):
+    """P2 continuation Part 6 acceptance: completes the same two
+    contrasting, real real-Higgsfield-explored fixtures through the rest
+    of the pipeline this test file's own docstring promises —
+    PlatformContract -> real-browser QA -> Visual QA's real, persisted
+    screenshots (the "preview" step) — reusing the identical persisted
+    CreativeDirections above, spending zero additional Higgsfield
+    credits (no CreativeDirector call happens here at all)."""
+    reforma_storage = LocalStorageProvider(root_dir=tmp_path / "reforma-uploads")
+    cositas_storage = LocalStorageProvider(root_dir=tmp_path / "cositas-uploads")
+
+    reforma_engine = AnthropicFrontendEngine(
+        _fake_client_for('<nav class="editorial-nav"><a href="#servicios">Servicios</a></nav>', _REFORMA_INDEX),
+        storage=reforma_storage,
+    )
+    cositas_engine = AnthropicFrontendEngine(
+        _fake_client_for(
+            "<!-- no conventional navbar: navigation is embedded in the scene itself -->", _COSITAS_INDEX
+        ),
+        storage=cositas_storage,
+    )
+
+    reforma_result = reforma_engine.generate(
+        business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
+        creative_direction=_load_direction("reforma_creative_direction.json"),
+        assets=[],
+        platform_contract_version="1.0.0",
+        business_id="reforma-contrast-qa",
+        api_base_url="https://api.example.com",
+    )
+    cositas_result = cositas_engine.generate(
+        business_config=EXAMPLE_COSITAS_Y_PUNTOS_CONFIG,
+        creative_direction=_load_direction("cositas_creative_direction.json"),
+        assets=[],
+        platform_contract_version="1.0.0",
+        business_id="cositas-contrast-qa",
+        api_base_url="https://api.example.com",
+    )
+
+    reforma_qa_storage = _InMemoryStorage()
+    cositas_qa_storage = _InMemoryStorage()
+    reforma_visual_qa = run_visual_qa(
+        reforma_result.artifact.files, business_id="reforma-contrast-qa", storage=reforma_qa_storage
+    )
+    cositas_visual_qa = run_visual_qa(
+        cositas_result.artifact.files, business_id="cositas-contrast-qa", storage=cositas_qa_storage
+    )
+
+    assert reforma_visual_qa.passed, [f for f in reforma_visual_qa.browser_qa.failures]
+    assert cositas_visual_qa.passed, [f for f in cositas_visual_qa.browser_qa.failures]
+
+    # The real "preview" step: both businesses got real, distinct,
+    # persisted screenshots — never the same bytes reused for both.
+    assert set(reforma_visual_qa.screenshot_keys) == {"desktop", "tablet", "mobile"}
+    assert set(cositas_visual_qa.screenshot_keys) == {"desktop", "tablet", "mobile"}
+    reforma_desktop = reforma_qa_storage.saved[reforma_visual_qa.screenshot_keys["desktop"]]
+    cositas_desktop = cositas_qa_storage.saved[cositas_visual_qa.screenshot_keys["desktop"]]
+    assert reforma_desktop != cositas_desktop
