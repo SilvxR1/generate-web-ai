@@ -258,3 +258,26 @@ class GenerateWebsiteFromDirectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     creative_direction_id: uuid.UUID
+
+
+class GenerativeArtifactRead(BaseModel):
+    """GET .../website-drafts/{id}/generative-artifact (P2 continuation
+    Part 4/5): the full QA record behind a generative draft — Studio's
+    single source for both PlatformContract (`qa_state`) and real-browser
+    Visual QA (`visual_qa_state`) results, plus the storage keys for the
+    real screenshots that back it. `visual_qa_state`/`screenshot_keys`
+    are `{}` until run_visual_qa_for_draft has actually run for this
+    draft — never a fabricated pass."""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True)
+
+    website_draft_id: uuid.UUID
+    framework: str
+    generator_provider: str
+    generator_model: str | None
+    platform_contract_version: str
+    qa_state: dict
+    visual_qa_state: dict
+    screenshot_keys: dict
+    generated_at: datetime
+    duration_ms: int | None

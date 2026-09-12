@@ -71,6 +71,17 @@ class GenerativeWebsiteArtifact(UUIDPrimaryKeyMixin, TimestampMixin, TenantScope
     # only a pass/fail bit, so a human/Studio can see exactly why a draft
     # is BUILD_FAILED or carries validation_issues.
     qa_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # P2 continuation Part 4 "Visual QA V1" — real-browser findings
+    # (app.creative.frontend_engine.visual_qa.VisualQAResult.browser_qa,
+    # dumped as {findings: [...], passed: bool}), populated only once a
+    # READY draft's separate, explicit QA_RUNNING step
+    # (app.publishing.drafts.run_visual_qa_for_draft) has actually run —
+    # empty dict beforehand, never a fabricated pass.
+    visual_qa_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # {viewport_name: storage_key} for the real screenshots that same
+    # step persists via StorageProvider — the durable QA artifacts a
+    # future AI VisualCritic (not implemented in P2) would consume.
+    screenshot_keys: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     generator_provider: Mapped[str] = mapped_column(String(50), nullable=False)
     generator_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

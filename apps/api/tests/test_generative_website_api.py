@@ -251,3 +251,55 @@ def test_generative_frontend_engineer_unavailable_returns_503(
         headers=_headers(tenant.id),
     )
     assert response.status_code == 503
+
+
+def test_visual_qa_endpoint_runs_a_real_browser_pass_and_persists_results(
+    client: TestClient, tenant: Tenant, business_with_config, monkeypatch: pytest.MonkeyPatch
+):
+    """P2 continuation Part 4/5: POST .../visual-qa runs a real headless
+    browser against the draft's real build output (Chromium is real
+    here — only the archive rebuild is faked, since _FakeStorage.load
+    returns non-real archive bytes) and GET .../generative-artifact then
+    reports it, never a fabricated pass."""
+    real_html = (
+        "<html><head><title>T</title><meta name=\"description\" content=\"d\">"
+        '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
+        "<body><h1>Visual QA Co</h1><p>Real content.</p></body></html>"
+    )
+    monkeypatch.setattr(
+        "app.publishing.drafts.rebuild_from_archive",
+        lambda archive, **kwargs: WebsiteArtifact(files={"index.html": real_html.encode()}),
+    )
+
+    [direction] = client.post(
+        f"/businesses/{business_with_config.id}/creative-directions", json={}, headers=_headers(tenant.id)
+    ).json()
+    draft = client.post(
+        f"/businesses/{business_with_config.id}/website-drafts/generative",
+        json={"creative_direction_id": direction["id"]},
+        headers=_headers(tenant.id),
+    ).json()
+    assert draft["status"] == "ready"
+
+    before = client.get(
+        f"/businesses/{business_with_config.id}/website-drafts/{draft['id']}/generative-artifact",
+        headers=_headers(tenant.id),
+    )
+    assert before.status_code == 200, before.text
+    assert before.json()["visual_qa_state"] == {}
+    assert before.json()["screenshot_keys"] == {}
+
+    qa_response = client.post(
+        f"/businesses/{business_with_config.id}/website-drafts/{draft['id']}/visual-qa",
+        headers=_headers(tenant.id),
+    )
+    assert qa_response.status_code == 200, qa_response.text
+    body = qa_response.json()
+    assert body["visual_qa_state"]["passed"] is True
+    assert set(body["screenshot_keys"]) == {"desktop", "tablet", "mobile"}
+
+    after = client.get(
+        f"/businesses/{business_with_config.id}/website-drafts/{draft['id']}/generative-artifact",
+        headers=_headers(tenant.id),
+    )
+    assert after.json()["visual_qa_state"]["passed"] is True

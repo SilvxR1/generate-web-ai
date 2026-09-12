@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session
 
 from app.creative.director_orchestrator import domain_from_row
 from app.creative.errors import CreativeProviderError
+from app.creative.frontend_engine.build import rebuild_from_archive
 from app.creative.frontend_engine.engine import FrontendEngineer
+from app.creative.frontend_engine.visual_qa import run_visual_qa
 from app.creative.observability import log_pipeline_stage
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website_draft import WebsiteDraft
@@ -228,6 +230,14 @@ def create_generative_website_draft(
     FrontendEngineer/build/PlatformContract failure here always produces
     a BUILD_FAILED draft or a raised GenerativeDraftError, never a
     silently-substituted deterministic result.
+
+    Deliberately does NOT run real-browser Visual QA inline (that's a
+    real Chromium launch, seconds long): see run_visual_qa_for_draft
+    below, a separate, explicitly-triggered step a READY draft moves
+    through next (Studio's own QA_RUNNING stage), kept off this
+    synchronous creation path so every other generative-draft test in
+    this codebase doesn't need a real browser and Chromium isn't a
+    dependency of the hot request path.
     """
     direction_row = CreativeDirectionRepository(session).get_for_business(tenant_id, business_id, creative_direction_id)
     if direction_row is None:
@@ -300,6 +310,62 @@ def create_generative_website_draft(
     draft.status = WebsiteDraftStatus.READY
     draft.validation_issues = issues or None
     return draft
+
+
+def run_visual_qa_for_draft(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    draft_id: UUID,
+    storage: StorageProvider,
+    api_base_url: str | None = None,
+) -> GenerativeWebsiteArtifact:
+    """P2 continuation Part 4 (Visual QA V1) — Studio's own QA_RUNNING
+    step: rebuilds a READY generative draft's already-archived source
+    (same `rebuild_from_archive` pattern publish_generative_website_draft
+    uses — never re-invokes the LLM) and runs a real headless-browser
+    pass (app.creative.frontend_engine.visual_qa) against the real
+    output, persisting screenshots and findings on the draft's
+    GenerativeWebsiteArtifact row. Kept separate from
+    create_generative_website_draft so draft creation itself never needs
+    a real browser. Does not change the draft's own status — a Visual QA
+    failure is surfaced for a human to review (see `visual_qa_state` on
+    the returned row), never silently turned into BUILD_FAILED or a
+    deterministic substitution."""
+    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
+    if draft is None:
+        raise WebsiteDraftError("Website draft not found.", code="website_draft_not_found", status_code=404)
+    if draft.engine is not GenerationEngine.GENERATIVE:
+        raise GenerativeDraftError(
+            "This draft was not produced by the generative engine.", code="not_a_generative_draft", status_code=409
+        )
+    if draft.status not in (WebsiteDraftStatus.READY, WebsiteDraftStatus.APPROVED):
+        raise WebsiteDraftError(
+            f"Visual QA requires a READY or APPROVED draft (current status: {draft.status.value!r}).",
+            code="website_draft_not_ready",
+            status_code=409,
+        )
+
+    artifact_row = GenerativeWebsiteArtifactRepository(session).get_for_draft(tenant_id, business_id, draft_id)
+    if artifact_row is None:
+        raise GenerativeDraftError(
+            "This draft has no generative artifact record.", code="generative_artifact_missing", status_code=500
+        )
+
+    archive = storage.load(artifact_row.workspace_key)
+    artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
+    visual_result = run_visual_qa(artifact.files, business_id=str(business_id), storage=storage)
+
+    artifact_row.visual_qa_state = {
+        "passed": visual_result.passed,
+        "findings": [
+            {"viewport": f.viewport, "check": f.check, "passed": f.passed, "detail": f.detail}
+            for f in visual_result.browser_qa.findings
+        ],
+    }
+    artifact_row.screenshot_keys = visual_result.screenshot_keys
+    return artifact_row
 
 
 def publish_generative_website_draft(
