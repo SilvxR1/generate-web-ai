@@ -54,6 +54,9 @@ class BusinessAssetRead(BaseModel):
     category: AssetCategory
     origin: AssetOrigin
     storage_url: str
+    storage_provider: str | None
+    storage_key: str | None
+    unavailable_reason: str | None
     original_filename: str | None
     alt_text: str | None
     generation_id: uuid.UUID | None
@@ -264,8 +267,18 @@ class GenerativePipelineCapability(BaseModel):
     creative_director_provider: CreativeProviderName
     frontend_engineer: GenerativeSubsystemCapability
     browser_qa: GenerativeSubsystemCapability
+    # Generated artifacts (GenerativeWebsiteArtifact source archives,
+    # Visual QA screenshots) — see app.publishing.service/app.creative.
+    # frontend_engine.visual_qa for what actually gets written here.
     artifact_storage: GenerativeSubsystemCapability
     artifact_storage_persistent: bool
+    # Real business uploads (Studio's AssetsPanel: logos, gallery photos)
+    # — Phase 9 hotfix: distinguished from artifact_storage above so an
+    # operator reading this diagnostic never has to assume one implies
+    # the other, even though both currently share the exact same
+    # app.dependencies.get_storage_provider factory and R2 configuration.
+    business_asset_storage: GenerativeSubsystemCapability
+    business_asset_storage_persistent: bool
 
 
 class FrontendEngineerAvailability(BaseModel):

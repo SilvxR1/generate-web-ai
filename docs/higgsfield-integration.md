@@ -136,15 +136,29 @@ construct a `HiggsfieldApiCreativeDirector`; either missing falls back to
 `InternalCreativeDirector` (or the dev-only CLI path if
 `HIGGSFIELD_CLI_ENABLED=true`) — never a silent, half-configured attempt.
 
-## Persistent artifact storage (P2.1)
+## Persistent storage — artifacts AND business assets (P2.1, extended by
+the persistent-business-assets-r2 hotfix)
 
 See `app.storage.r2.CloudflareR2StorageProvider` and
 `app.dependencies.get_storage_provider` — `R2_ACCOUNT_ID`/
 `R2_ACCESS_KEY_ID`/`R2_SECRET_ACCESS_KEY`/`R2_BUCKET_NAME`/
-`R2_PUBLIC_BASE_URL` (all required together) switch production artifact
-storage (`GenerativeWebsiteArtifact` source archives, Visual QA
-screenshots) from Railway's ephemeral local disk to persistent Cloudflare
-R2. Leaving any unset keeps `LocalStorageProvider` (dev/test default).
+`R2_PUBLIC_BASE_URL` (all required together) switch production storage
+from Railway's ephemeral local disk to persistent Cloudflare R2 for BOTH:
+
+- generated artifacts (`GenerativeWebsiteArtifact` source archives,
+  Visual QA screenshots), and
+- real Studio business uploads (`app.routers.creative`'s
+  `assets/upload`, `assets/upload-batch`, and `assets/{id}/replace` —
+  logos, gallery photos), which record `storage_provider`/`storage_key`
+  on the `BusinessAsset` row so a later caller can verify the object
+  still exists (`app.services.asset_health`) or request a short-lived
+  presigned reference for Higgsfield (`app.creative.higgsfield.director`)
+  without guessing.
+
+Leaving any of the five unset keeps `LocalStorageProvider` (dev/test
+default) for both — in production, that means uploaded business photos
+and logos do **not** survive a redeploy, which is the confirmed bug this
+hotfix fixes.
 
 ## Adding these to `.env.example`
 

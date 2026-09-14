@@ -124,6 +124,13 @@ class Settings(BaseSettings):
     higgsfield_api_estimated_credits_per_call: float = 2.0
     higgsfield_api_base_url: str = "https://api.higgsfield.ai"
     higgsfield_api_timeout_seconds: float = 60.0
+    # How long a presigned R2 GET URL handed to Higgsfield for a private
+    # business asset stays valid (Phase 5: "backend creates a short-lived
+    # provider-fetchable URL ... URL expires"). Long enough for Higgsfield
+    # to actually fetch the reference image once, short enough that the
+    # URL is worthless to anyone who happens to see it logged/cached
+    # afterward — this is never a URL the customer manages or sees.
+    higgsfield_reference_presigned_url_expires_in_seconds: int = 600
 
     # HiggsfieldCli/HiggsfieldCreativeDirector-over-CLI — retained ONLY for
     # local development and the manually-run real_provider test

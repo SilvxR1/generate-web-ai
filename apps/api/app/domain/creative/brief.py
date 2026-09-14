@@ -40,6 +40,9 @@ class AssetInput(Protocol):
     category: AssetCategory
     origin: AssetOrigin
     storage_url: str
+    storage_provider: str | None
+    storage_key: str | None
+    unavailable_reason: str | None
     alt_text: str | None
 
 
@@ -67,6 +70,17 @@ class CreativeBriefAsset(BaseModel):
     category: AssetCategory
     origin: AssetOrigin
     url: str
+    # Canonical storage identity, carried through only when this asset
+    # was actually uploaded through this backend (P2 continuation:
+    # persistent asset storage) — None for a legacy row or one registered
+    # via POST .../assets with an externally-hosted URL. Lets a Creative
+    # Director provider (app.creative.higgsfield.director) request a
+    # short-lived presigned URL for a private object instead of always
+    # sending `url` as-is; a provider with no `storage_key` to work with
+    # falls back to `url` unchanged, exactly as before these fields
+    # existed. Never used to guess a provider/key some other way.
+    storage_provider: str | None = None
+    storage_key: str | None = None
     alt_text: str | None = None
 
 
@@ -231,9 +245,24 @@ def build_creative_brief(
             category=asset.category,
             origin=asset.origin,
             url=asset.storage_url,
+            storage_provider=asset.storage_provider,
+            storage_key=asset.storage_key,
             alt_text=asset.alt_text,
         )
         for asset in assets
+        # A confirmed-broken asset (P2 continuation: persistent storage —
+        # app.services.asset_health.check_business_asset_availability has
+        # already verified the underlying object is gone) is excluded
+        # here, the one place every downstream consumer's asset list
+        # comes from — the deterministic website-generator, the AI
+        # Frontend Engineer, and every CreativeDirectorProvider (Higgsfield
+        # included) all draw from `available_assets`, so a broken row can
+        # never be embedded in a generated site or sent to Higgsfield as
+        # reference material. `unavailable_reason is None` also covers
+        # "never checked yet" — never treated as broken, only a real,
+        # confirmed check excludes an asset (see asset_health's own
+        # contract).
+        if asset.unavailable_reason is None
     ]
     has_hero_candidate = any(asset.category == AssetCategory.HERO_CANDIDATE for asset in brief_assets)
     media_requirements: list[str] = []

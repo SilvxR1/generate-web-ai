@@ -97,10 +97,43 @@ from app.schemas.creative import (
     ReviewProviderAvailability,
 )
 from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
+from app.services.asset_health import check_business_asset_availability
 from app.services.business_service import BusinessNotFoundError, BusinessService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 
 router = APIRouter(prefix="/businesses/{business_id}", tags=["creative"])
+
+
+def _public_base_url(request: Request) -> str:
+    """The externally-reachable base URL for this API, for turning a
+    root-relative StorageProvider.url_path() into an absolute URL a
+    browser/external service can fetch (Phase 8 hotfix: HTTP->HTTPS).
+    `request.base_url` reflects whatever scheme the ASGI server itself
+    received the request over — on Railway that's the scheme its proxy
+    forwarded internally (empirically observed as plain HTTP even though
+    Railway's own edge terminates HTTPS), not necessarily what a real
+    browser used. Resolution order:
+      1. settings.internal_api_base_url, whenever an operator has
+         actually configured it away from its localhost dev default —
+         the same real, operator-set value app.automation.n8n.engine
+         already trusts as "where this API itself is reachable", never
+         guessed.
+      2. A trusted X-Forwarded-Proto header, when present, corrects
+         request.base_url's scheme without needing (1) configured.
+      3. request.base_url unchanged — correct as-is for local
+         development, where no proxy sits in front of this process.
+    Never a hardcoded 'https://' — local HTTP development must keep
+    working unchanged."""
+    configured = settings.internal_api_base_url.rstrip("/")
+    if configured and configured != "http://localhost:8000":
+        return configured
+    base = str(request.base_url).rstrip("/")
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    if forwarded_proto and base.startswith("http://"):
+        scheme = forwarded_proto.split(",")[0].strip()
+        _, _, rest = base.partition("://")
+        return f"{scheme}://{rest}"
+    return base
 
 # Phase 3's stated minimum ("logo, image") plus video/document so the
 # validation boundary is already extensible without a router change —
@@ -251,13 +284,14 @@ def _save_uploaded_asset(
         raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
 
     storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
-    storage.save(storage_key=storage_key, content=content)
-    # request.base_url reflects however this request actually reached the
-    # server (host/scheme/port) — never a hardcoded setting, so this
-    # works unchanged in dev, behind a proxy, or in production alike.
-    # absolute_url_path leaves an already-absolute URL (R2) unchanged and
-    # only prepends the host for a root-relative one (LocalStorageProvider).
-    storage_url = absolute_url_path(storage.url_path(storage_key), request_base_url=str(request.base_url))
+    storage.save(storage_key=storage_key, content=content, content_type=file.content_type)
+    # _public_base_url resolves however this API is actually reachable
+    # externally (Phase 8: never a plain http:// URL when Railway's own
+    # proxy forwards over http internally) — see that helper's own
+    # docstring. absolute_url_path leaves an already-absolute URL (R2)
+    # unchanged and only prepends the host for a root-relative one
+    # (LocalStorageProvider).
+    storage_url = absolute_url_path(storage.url_path(storage_key), request_base_url=_public_base_url(request))
 
     asset = BusinessAsset(
         tenant_id=tenant_id,
@@ -266,6 +300,14 @@ def _save_uploaded_asset(
         category=category,
         origin=AssetOrigin.UPLOADED,
         storage_url=storage_url,
+        # Canonical storage identity (Phase 3) — recorded once, here,
+        # never guessed later: lets app.services.asset_health verify this
+        # exact object still exists, and lets a Higgsfield reference
+        # request a presigned URL for it (app.creative.higgsfield.director),
+        # regardless of which provider is currently active by the time
+        # either of those runs.
+        storage_provider=storage.provider_name,
+        storage_key=storage_key,
         original_filename=file.filename,
         alt_text=alt_text,
     )
@@ -417,6 +459,106 @@ def delete_business_asset(
     if repo.get_for_business(tenant_id, business_id, asset_id) is None:
         raise _asset_not_found()
     repo.delete(tenant_id, asset_id)
+
+
+@router.post("/assets/{asset_id}/verify", response_model=BusinessAssetRead)
+def verify_business_asset(
+    business_id: UUID,
+    asset_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
+) -> BusinessAsset:
+    """Phase 6 (broken-asset detection): the ONE explicit, on-demand
+    real check against this asset's actual storage object — a
+    BusinessAsset row surviving a redeploy that silently destroyed
+    LocalStorageProvider's local disk (no R2 configured) is exactly the
+    production bug this exists to catch. Never runs implicitly on GET
+    .../assets or during generation (a live StorageProvider.exists() call
+    per asset on every read/generation would be real, avoidable latency);
+    an operator/Studio explicitly asks "is this one still there?" and
+    gets a real answer, persisted on the row so every later reader
+    (Studio, app.domain.creative.brief) sees it without re-checking."""
+    _get_business(session, tenant_id, business_id)
+    repo = BusinessAssetRepository(session)
+    asset = repo.get_for_business(tenant_id, business_id, asset_id)
+    if asset is None:
+        raise _asset_not_found()
+    asset.unavailable_reason = check_business_asset_availability(asset, storage)
+    session.flush()
+    return asset
+
+
+@router.post("/assets/{asset_id}/replace", response_model=BusinessAssetRead)
+def replace_business_asset(
+    request: Request,
+    business_id: UUID,
+    asset_id: UUID,
+    file: UploadFile = File(...),
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="asset_upload", limit_attr="asset_upload_rate_limit_per_minute")
+    ),
+) -> BusinessAsset:
+    """Phase 7 (re-upload/replacement UX): repairs an EXISTING asset row
+    in place — same id, same kind/category, same place in Studio's
+    gallery/logo slot — rather than the normal upload endpoints' own
+    always-create-a-new-row behavior. This is deliberately the one path
+    that mutates `storage_url`/`storage_provider`/`storage_key` on an
+    existing row: exactly what a lost Cositas y Puntos photo needs (the
+    original file is gone for good — see this hotfix's own report — but
+    the *semantic* asset, e.g. "the logo", is repaired rather than
+    orphaned as a duplicate). Always writes the new content under a
+    freshly generated storage key (never overwrites the old key in
+    place, so a failed save never corrupts a still-referenced object),
+    then best-effort deletes the old object — a no-op if it was already
+    the missing file this endpoint exists to fix (StorageProvider.delete
+    is idempotent by contract). Clears `unavailable_reason`: a real,
+    successful save right here IS confirmation the new object exists,
+    not something verify_business_asset needs to separately re-check."""
+    _get_business(session, tenant_id, business_id)
+    repo = BusinessAssetRepository(session)
+    asset = repo.get_for_business(tenant_id, business_id, asset_id)
+    if asset is None:
+        raise _asset_not_found()
+
+    allowed_content_types = _ALLOWED_UPLOAD_CONTENT_TYPES.get(asset.kind)
+    if not allowed_content_types or file.content_type not in allowed_content_types:
+        raise AppError(
+            f"Unsupported content type {file.content_type!r} for asset kind {asset.kind.value!r}.",
+            code="unsupported_asset_content_type",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
+
+    content = file.file.read(settings.max_upload_size_bytes + 1)
+    if len(content) > settings.max_upload_size_bytes:
+        raise AppError(
+            f"File exceeds the maximum upload size of {settings.max_upload_size_bytes} bytes.",
+            code="asset_too_large",
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+        )
+    if not content:
+        raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
+
+    new_storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
+    storage.save(storage_key=new_storage_key, content=content, content_type=file.content_type)
+    new_storage_url = absolute_url_path(storage.url_path(new_storage_key), request_base_url=_public_base_url(request))
+
+    old_storage_provider, old_storage_key = asset.storage_provider, asset.storage_key
+
+    asset.storage_url = new_storage_url
+    asset.storage_provider = storage.provider_name
+    asset.storage_key = new_storage_key
+    asset.original_filename = file.filename
+    asset.unavailable_reason = None
+    session.flush()
+
+    if old_storage_key and old_storage_provider == storage.provider_name:
+        storage.delete(old_storage_key)
+
+    return asset
 
 
 # --- Google/manual reviews (Section 4) ---------------------------------
@@ -709,7 +851,7 @@ def run_visual_qa_route(
     own docstring for why a real Chromium launch never sits on the
     synchronous BUILDING path."""
     _get_business(session, tenant_id, business_id)
-    api_base_url = str(request.base_url).rstrip("/")
+    api_base_url = _public_base_url(request)
     try:
         artifact_row = run_visual_qa_for_draft(
             session=session,
@@ -837,17 +979,34 @@ def get_generative_pipeline_capability_route(
     frontend_available, frontend_reason = check_frontend_engineer_availability(settings)
     browser_qa_available, browser_qa_reason = check_browser_qa_availability()
 
+    # app.dependencies.get_storage_provider is the ONE storage factory
+    # both a BusinessAsset upload (app.routers.creative's own
+    # upload/upload-batch/replace endpoints) and a generated
+    # GenerativeWebsiteArtifact/Visual QA screenshot go through — so
+    # today this single R2-configured check genuinely applies to both.
+    # Reported as two separate fields below (Phase 9 hotfix) rather than
+    # one, since an operator reading this diagnostic should never have to
+    # assume "artifact storage" already covered real business uploads too
+    # — if that ever stops being the same underlying provider, only the
+    # two booleans below would need to diverge, not this endpoint's shape.
     storage_persistent = bool(
         settings.r2_account_id
         and settings.r2_access_key_id
         and settings.r2_secret_access_key
         and settings.r2_bucket_name
     )
-    storage_reason = (
+    artifact_storage_reason = (
         None
         if storage_persistent
         else "R2 is not configured (r2_account_id/r2_access_key_id/r2_secret_access_key/r2_bucket_name) — "
-        "using ephemeral local disk storage, which does not survive a redeploy."
+        "generated website artifacts are using ephemeral local disk storage, which does not survive a redeploy."
+    )
+    business_asset_storage_reason = (
+        None
+        if storage_persistent
+        else "R2 is not configured (r2_account_id/r2_access_key_id/r2_secret_access_key/r2_bucket_name) — "
+        "business asset uploads (logos, gallery photos) are using ephemeral local disk storage, which does not "
+        "survive a redeploy. Files uploaded now will be lost on the next deploy."
     )
 
     return GenerativePipelineCapability(
@@ -868,8 +1027,12 @@ def get_generative_pipeline_capability_route(
         # operator-facing distinction that matters is persistence, not
         # existence, which is why this is reported separately below rather
         # than folded into `.available`.
-        artifact_storage=GenerativeSubsystemCapability(available=True, unavailable_reason=storage_reason),
+        artifact_storage=GenerativeSubsystemCapability(available=True, unavailable_reason=artifact_storage_reason),
         artifact_storage_persistent=storage_persistent,
+        business_asset_storage=GenerativeSubsystemCapability(
+            available=True, unavailable_reason=business_asset_storage_reason
+        ),
+        business_asset_storage_persistent=storage_persistent,
     )
 
 
@@ -1075,7 +1238,7 @@ def create_generative_website_draft_route(
 
     assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
     brief = build_creative_brief(business_config=config, assets=assets)
-    api_base_url = str(request.base_url).rstrip("/")
+    api_base_url = _public_base_url(request)
 
     try:
         return create_generative_website_draft(
