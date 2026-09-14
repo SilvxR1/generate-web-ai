@@ -542,6 +542,13 @@ export interface BusinessAsset {
   category: AssetCategory;
   origin: AssetOrigin;
   storage_url: string;
+  storage_provider: string | null;
+  storage_key: string | null;
+  /** Set only by an explicit POST .../assets/{id}/verify check — null
+   * means "presumed fine, or not yet checked", never "confirmed
+   * healthy". Studio shows a broken-asset indicator whenever this is
+   * non-null and offers replaceBusinessAsset as the fix. */
+  unavailable_reason: string | null;
   original_filename: string | null;
   alt_text: string | null;
   generation_id: string | null;
@@ -901,6 +908,55 @@ export function uploadBusinessAssetsBatch(
     });
 }
 
+/** POST .../assets/{id}/replace (Phase 7 hotfix: re-upload/replacement) —
+ * repairs an EXISTING asset row in place (same id, same kind/category,
+ * same slot in Studio's gallery/logo UI) instead of creating a new one.
+ * This is the fix for a BusinessAsset whose `unavailable_reason` is set
+ * (its underlying file is confirmed gone) — never a second, orphaned
+ * duplicate next to the broken one. */
+export function replaceBusinessAsset(businessId: string, assetId: string, file: File, tenantId: string): Promise<BusinessAsset> {
+  const form = new FormData();
+  form.set("file", file);
+
+  return fetch(`${API_URL}/businesses/${businessId}/assets/${assetId}/replace`, {
+    method: "POST",
+    headers: { "X-Tenant-Id": tenantId },
+    body: form,
+  })
+    .catch((cause: unknown) => {
+      throw new NetworkError(cause);
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        let body: { error?: { code?: string; message?: string; details?: unknown } } = {};
+        try {
+          body = await response.json();
+        } catch {
+          // Non-JSON error body — fall through to the generic message.
+        }
+        throw new ApiError(body.error?.message ?? `Request failed with status ${response.status}.`, {
+          code: body.error?.code ?? "http_error",
+          status: response.status,
+          details: body.error?.details,
+        });
+      }
+      return response.json() as Promise<BusinessAsset>;
+    });
+}
+
+/** POST .../assets/{id}/verify (Phase 6 hotfix: broken-asset detection) —
+ * the one explicit, on-demand real check against this asset's actual
+ * storage object. Never called implicitly by listBusinessAssets; Studio
+ * calls this deliberately (e.g. an operator-facing "Check" action) and
+ * reflects whatever `unavailable_reason` comes back. */
+export function verifyBusinessAsset(businessId: string, assetId: string, tenantId: string): Promise<BusinessAsset> {
+  return requestJson<BusinessAsset>(
+    `/businesses/${businessId}/assets/${assetId}/verify`,
+    { method: "POST" },
+    tenantId,
+  );
+}
+
 // --- Creative provider availability (Phase 13) ---------------------------
 
 export interface CreativeProviderAvailability {
@@ -1037,8 +1093,14 @@ export interface GenerativePipelineCapability {
   creative_director_provider: CreativeProviderName;
   frontend_engineer: GenerativeSubsystemCapability;
   browser_qa: GenerativeSubsystemCapability;
+  /** Generated artifacts (source archives, Visual QA screenshots). */
   artifact_storage: GenerativeSubsystemCapability;
   artifact_storage_persistent: boolean;
+  /** Real business uploads (Studio's AssetsPanel: logos, gallery photos)
+   * — Phase 9 hotfix: distinguished from artifact_storage above, even
+   * though both share the same underlying storage configuration today. */
+  business_asset_storage: GenerativeSubsystemCapability;
+  business_asset_storage_persistent: boolean;
 }
 
 export function getGenerativePipelineCapability(

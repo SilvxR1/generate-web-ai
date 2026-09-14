@@ -50,6 +50,7 @@ from app.domain.creative.direction import (
     VisualLanguage,
 )
 from app.domain.enums import AssetCategory, AssetKind, CreativeProviderName
+from app.storage.provider import StorageProvider
 
 CLI_DEFAULT_IMAGE_MODEL = "nano_banana_pro"
 
@@ -337,12 +338,24 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
         estimated_credits_per_call: float = 2.0,
         asset_base_url: str = "",
         max_reference_assets: int = 3,
+        storage: StorageProvider | None = None,
+        presigned_url_expires_in_seconds: int = 600,
     ) -> None:
         self._client = client
         self._job_type = job_type
         self._estimated_credits_per_call = estimated_credits_per_call
         self._asset_base_url = asset_base_url.rstrip("/")
         self._max_reference_assets = max_reference_assets
+        # Phase 5 (private provider references): when set, this is the
+        # SAME StorageProvider app.dependencies.get_storage_provider would
+        # construct right now — used only to mint a short-lived presigned
+        # GET URL for an asset this backend itself wrote (see
+        # _resolve_reference_url below). None (the default, and every
+        # existing call site before this parameter existed) falls back to
+        # always sending the asset's own already-stored URL, exactly as
+        # before.
+        self._storage = storage
+        self._presigned_url_expires_in_seconds = presigned_url_expires_in_seconds
 
     @property
     def _model_label(self) -> str:
@@ -369,7 +382,7 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
         urls: list[str] = []
         seen: set[str] = set()
         for asset in ordered:
-            url = self._absolute_asset_url(asset.url)
+            url = self._resolve_reference_url(asset)
             if url and url not in seen:
                 urls.append(url)
                 seen.add(url)
@@ -383,6 +396,28 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
         # which `references[0]` already is (Higgsfield hosts it for the
         # output-retention window; see docs/higgsfield-integration.md).
         return [selected.references[0]] if selected.references else []
+
+    def _resolve_reference_url(self, asset: CreativeBriefAsset) -> str | None:
+        """Phase 5 (private provider references): a business asset this
+        backend actually wrote to its current storage provider is fetched
+        by Higgsfield through a short-lived presigned GET URL — the
+        customer never manages or even sees this URL, and it stops
+        working shortly after Higgsfield uses it — rather than that
+        asset needing to be permanently, unlistedly public. Only applies
+        when `asset.storage_provider` matches this director's own current
+        storage provider (never guessed for a legacy row, an
+        externally-hosted URL, or a provider migration in progress);
+        every other case falls back to `_absolute_asset_url(asset.url)`
+        unchanged, exactly as before this method existed. A provider with
+        no signing concept (LocalStorageProvider) returns None from
+        presigned_url, which also falls back to the unchanged URL."""
+        if self._storage is not None and asset.storage_key and asset.storage_provider == self._storage.provider_name:
+            presigned = self._storage.presigned_url(
+                asset.storage_key, expires_in_seconds=self._presigned_url_expires_in_seconds
+            )
+            if presigned:
+                return presigned
+        return self._absolute_asset_url(asset.url)
 
     def _absolute_asset_url(self, asset_url: str) -> str | None:
         if asset_url.startswith("https://"):

@@ -14,15 +14,23 @@ from tests.test_browser_qa import _real_build_files
 
 
 class _InMemoryStorage(StorageProvider):
+    provider_name = "fake"
+
     def __init__(self) -> None:
         self.saved: dict[str, bytes] = {}
 
-    def save(self, *, storage_key: str, content: bytes) -> StoredFile:
+    def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
         self.saved[storage_key] = content
         return StoredFile(storage_key=storage_key)
 
     def delete(self, storage_key: str) -> None:
         self.saved.pop(storage_key, None)
+
+    def exists(self, storage_key: str) -> bool:
+        return storage_key in self.saved
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        return None
 
     def url_path(self, storage_key: str) -> str:
         return f"/uploads/{storage_key}"

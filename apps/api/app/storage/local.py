@@ -18,11 +18,14 @@ _SAFE_KEY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+/[a-zA-Z0-9_-]+(\.[a-zA-Z0-9]{1,
 
 
 class LocalStorageProvider(StorageProvider):
+    provider_name = "local"
+
     def __init__(self, *, root_dir: Path) -> None:
         self._root_dir = root_dir
         self._root_dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, *, storage_key: str, content: bytes) -> StoredFile:
+    def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
+        del content_type  # StaticFiles infers content-type from the extension at serve time — see this ABC's docstring.
         path = self._resolve(storage_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
@@ -30,6 +33,13 @@ class LocalStorageProvider(StorageProvider):
 
     def delete(self, storage_key: str) -> None:
         self._resolve(storage_key).unlink(missing_ok=True)
+
+    def exists(self, storage_key: str) -> bool:
+        return self._resolve(storage_key).is_file()
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        del storage_key, expires_in_seconds  # No signing concept in local dev/test — see this ABC method's docstring.
+        return None
 
     def load(self, storage_key: str) -> bytes:
         return self._resolve(storage_key).read_bytes()

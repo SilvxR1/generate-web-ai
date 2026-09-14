@@ -9,6 +9,7 @@ implementation shape already used elsewhere in this codebase.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import ClassVar
 
 
 @dataclass(frozen=True)
@@ -20,12 +21,46 @@ class StoredFile:
 
 
 class StorageProvider(ABC):
+    # A stable, persisted identity for "which provider actually wrote
+    # this object" (app.db.models.business_asset.BusinessAsset.storage_provider)
+    # — recorded once at upload time so a later caller (a broken-asset
+    # check, a presigned-URL request) never has to guess which provider's
+    # `exists`/`presigned_url` to call for an existing row, even if the
+    # server's *current* get_storage_provider() selection later changes.
+    provider_name: ClassVar[str]
+
     @abstractmethod
-    def save(self, *, storage_key: str, content: bytes) -> StoredFile: ...
+    def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
+        """`content_type` (e.g. 'image/jpeg') is stored alongside the
+        object when the provider supports it (R2/S3's own ContentType
+        metadata) so a later fetch — by a browser, or Higgsfield — gets
+        the real MIME type instead of a generic
+        'application/octet-stream'. LocalStorageProvider ignores it: its
+        StaticFiles mount already infers content-type from the file
+        extension at serve time."""
 
     @abstractmethod
     def delete(self, storage_key: str) -> None:
         """Idempotent: deleting an already-gone key must not raise."""
+
+    @abstractmethod
+    def exists(self, storage_key: str) -> bool:
+        """Real, on-demand existence check — never inferred from a
+        database row alone (P2.1 continuation: a BusinessAsset row
+        surviving a redeploy that silently destroyed
+        LocalStorageProvider's underlying files is exactly the bug this
+        method exists to catch, see app.services.asset_health)."""
+
+    @abstractmethod
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        """A short-lived, provider-fetchable URL for a private object —
+        for a Creative Director provider (Higgsfield) to fetch a
+        business's own reference asset without that asset needing to be
+        permanently, unlistedly public. Returns None when this provider
+        has no signing concept at all (LocalStorageProvider — there is
+        no "private" object to begin with in local dev/test); a caller
+        receiving None must fall back to `url_path` unchanged, never
+        treat it as an error."""
 
     @abstractmethod
     def url_path(self, storage_key: str) -> str:

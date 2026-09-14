@@ -36,6 +36,15 @@ export interface BusinessAssetInput {
   origin: "uploaded" | "imported" | "generated";
   storage_url: string;
   alt_text?: string | null;
+  /** Set only by a real, explicit backend check (POST .../assets/{id}/
+   * verify — app.services.asset_health.check_business_asset_availability)
+   * confirming this asset's underlying storage object is gone — a
+   * BusinessAsset DB row surviving a redeploy that silently destroyed the
+   * ephemeral local disk it was written to (the confirmed
+   * persistent-business-assets-r2 hotfix bug) is exactly what this
+   * catches. `undefined`/`null` means "presumed fine, or not yet
+   * checked" — never treated as broken; see `usable()` below. */
+  unavailable_reason?: string | null;
 }
 
 const GALLERY_CATEGORIES = new Set(["gallery", "project", "product", "before", "after", "team", "facility"]);
@@ -47,7 +56,9 @@ function originRank(origin: BusinessAssetInput["origin"]): number {
 }
 
 function usable(assets: readonly BusinessAssetInput[]): BusinessAssetInput[] {
-  return assets.filter((asset) => asset.category !== "low_quality" && asset.storage_url.trim().length > 0);
+  return assets.filter(
+    (asset) => asset.category !== "low_quality" && asset.storage_url.trim().length > 0 && !asset.unavailable_reason,
+  );
 }
 
 function toAssetConfig(asset: BusinessAssetInput, fallbackAlt: string): AssetConfig {

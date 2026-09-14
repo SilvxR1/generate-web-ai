@@ -108,11 +108,19 @@ class _FakeFrontendEngineer(FrontendEngineer):
 
 
 class _FakeStorage(StorageProvider):
-    def save(self, *, storage_key, content):
+    provider_name = "fake"
+
+    def save(self, *, storage_key, content, content_type=None):
         return StoredFile(storage_key=storage_key)
 
     def delete(self, storage_key):
         pass
+
+    def exists(self, storage_key):
+        return True
+
+    def presigned_url(self, storage_key, *, expires_in_seconds):
+        return None
 
     def url_path(self, storage_key):
         return f"/uploads/{storage_key}"

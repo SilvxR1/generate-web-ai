@@ -31,8 +31,38 @@ def _brief():
     return build_creative_brief(business_config=config)
 
 
-def _asset(*, kind: AssetKind, category: AssetCategory, url: str) -> CreativeBriefAsset:
-    return CreativeBriefAsset(id=uuid4(), kind=kind, category=category, origin=AssetOrigin.UPLOADED, url=url)
+def _asset(
+    *,
+    kind: AssetKind,
+    category: AssetCategory,
+    url: str,
+    storage_provider: str | None = None,
+    storage_key: str | None = None,
+) -> CreativeBriefAsset:
+    return CreativeBriefAsset(
+        id=uuid4(),
+        kind=kind,
+        category=category,
+        origin=AssetOrigin.UPLOADED,
+        url=url,
+        storage_provider=storage_provider,
+        storage_key=storage_key,
+    )
+
+
+class _FakeStorage:
+    """Records every presigned_url() call — no real R2/AWS call, no real
+    signing, anywhere in this module."""
+
+    provider_name = "r2"
+
+    def __init__(self, url: str | None = "https://pub-abc123.r2.dev/biz-1/logo.png?X-Amz-Signature=fake") -> None:
+        self._url = url
+        self.calls: list[dict] = []
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        self.calls.append({"storage_key": storage_key, "expires_in_seconds": expires_in_seconds})
+        return self._url
 
 
 class _FakeApiClient:
@@ -184,3 +214,99 @@ def test_create_directions_raises_when_zero_candidates_could_be_afforded():
     with pytest.raises(BudgetExceededError):
         director.create_directions(brief, [], budget)
     assert budget.credits_used == 0.0
+
+
+# --- Phase 5 hotfix: private provider references (presigned URLs) -------
+
+
+def test_reference_urls_use_a_presigned_url_for_an_asset_this_provider_wrote():
+    brief = _brief()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
+    client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
+    storage = _FakeStorage()
+    director = HiggsfieldApiCreativeDirector(
+        client, storage=storage, presigned_url_expires_in_seconds=600
+    )
+
+    assets = [
+        _asset(
+            kind=AssetKind.LOGO,
+            category=AssetCategory.LOGO,
+            url="https://pub-abc123.r2.dev/biz-1/logo.png",
+            storage_provider="r2",
+            storage_key="biz-1/logo.png",
+        )
+    ]
+    director.create_directions(brief, assets, budget)
+
+    assert client.calls[0]["image_references"] == [storage._url]
+    assert storage.calls == [{"storage_key": "biz-1/logo.png", "expires_in_seconds": 600}]
+
+
+def test_reference_urls_fall_back_to_the_stored_url_when_provider_does_not_match():
+    """A legacy row, an externally-hosted URL, or a provider migration in
+    progress — asset.storage_provider not matching this director's own
+    current storage provider must never guess; it falls back to the
+    already-stored (public) URL unchanged."""
+    brief = _brief()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
+    client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
+    storage = _FakeStorage()
+    director = HiggsfieldApiCreativeDirector(client, storage=storage)
+
+    assets = [
+        _asset(
+            kind=AssetKind.LOGO,
+            category=AssetCategory.LOGO,
+            url="https://cdn.example.com/logo.png",
+            storage_provider="local",
+            storage_key="biz-1/logo.png",
+        )
+    ]
+    director.create_directions(brief, assets, budget)
+
+    assert client.calls[0]["image_references"] == ["https://cdn.example.com/logo.png"]
+    assert storage.calls == []  # never asked a mismatched provider to sign anything
+
+
+def test_reference_urls_fall_back_when_storage_has_no_signing_concept():
+    brief = _brief()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
+    client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
+    storage = _FakeStorage(url=None)  # e.g. LocalStorageProvider's own presigned_url contract
+    director = HiggsfieldApiCreativeDirector(client, storage=storage)
+
+    assets = [
+        _asset(
+            kind=AssetKind.LOGO,
+            category=AssetCategory.LOGO,
+            url="https://cdn.example.com/logo.png",
+            storage_provider="r2",
+            storage_key="biz-1/logo.png",
+        )
+    ]
+    director.create_directions(brief, assets, budget)
+
+    assert client.calls[0]["image_references"] == ["https://cdn.example.com/logo.png"]
+
+
+def test_reference_urls_fall_back_without_a_storage_provider_configured():
+    """Backward compatible: every call site that constructed this
+    director before `storage` existed keeps working unchanged."""
+    brief = _brief()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
+    client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
+    director = HiggsfieldApiCreativeDirector(client)  # no storage= at all
+
+    assets = [
+        _asset(
+            kind=AssetKind.LOGO,
+            category=AssetCategory.LOGO,
+            url="https://cdn.example.com/logo.png",
+            storage_provider="r2",
+            storage_key="biz-1/logo.png",
+        )
+    ]
+    director.create_directions(brief, assets, budget)
+
+    assert client.calls[0]["image_references"] == ["https://cdn.example.com/logo.png"]

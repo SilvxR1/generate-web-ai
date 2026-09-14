@@ -18,6 +18,7 @@ import {
   listCreativeProviders,
   listWebsiteDrafts,
   publishWebsiteDraft,
+  replaceBusinessAsset,
   updateCreativeConfig,
   uploadBusinessAsset,
   uploadBusinessAssetsBatch,
@@ -152,6 +153,15 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
         onDelete={(assetId) =>
           deleteBusinessAsset(businessId, assetId, tenantId).then(() => {
             setAssets((prev) => ({ ...prev, data: (prev.data ?? []).filter((asset) => asset.id !== assetId) }));
+          })
+        }
+        onReplace={(assetId, file) =>
+          replaceBusinessAsset(businessId, assetId, file, tenantId).then((updated) => {
+            setAssets((prev) => ({
+              ...prev,
+              data: (prev.data ?? []).map((asset) => (asset.id === assetId ? updated : asset)),
+            }));
+            return updated;
           })
         }
       />

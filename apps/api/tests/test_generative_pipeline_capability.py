@@ -103,6 +103,49 @@ def test_reports_each_subsystem_independently(client: TestClient, tenant: Tenant
     assert body["artifact_storage_persistent"] is False
 
 
+def test_business_asset_storage_reported_separately_from_artifact_storage(
+    client: TestClient, tenant: Tenant, business
+):
+    """Phase 9 hotfix: an operator reading this diagnostic must never
+    have to assume artifact_storage's persistence already covered real
+    business uploads (Studio's AssetsPanel: logos, gallery photos) too —
+    even though, today, both share the exact same underlying
+    app.dependencies.get_storage_provider factory and R2 configuration."""
+    with (
+        patch("app.routers.creative.check_higgsfield_director_availability", return_value=(True, None)),
+        patch("app.routers.creative.check_frontend_engineer_availability", return_value=(True, None)),
+        patch("app.routers.creative.check_browser_qa_availability", return_value=(True, None)),
+    ):
+        response = client.get(
+            f"/businesses/{business.id}/generative-pipeline-capability", headers=_headers(tenant.id)
+        )
+
+    body = response.json()
+    assert body["business_asset_storage"]["available"] is True
+    assert body["business_asset_storage_persistent"] is False
+    assert "business asset uploads" in body["business_asset_storage"]["unavailable_reason"]
+    assert body["business_asset_storage"]["unavailable_reason"] != body["artifact_storage"]["unavailable_reason"]
+
+
+def test_business_asset_storage_persistent_when_r2_is_fully_configured(client: TestClient, tenant: Tenant, business):
+    with (
+        patch("app.routers.creative.check_higgsfield_director_availability", return_value=(True, None)),
+        patch("app.routers.creative.check_frontend_engineer_availability", return_value=(True, None)),
+        patch("app.routers.creative.check_browser_qa_availability", return_value=(True, None)),
+        patch("app.routers.creative.settings.r2_account_id", "acct-1"),
+        patch("app.routers.creative.settings.r2_access_key_id", "ak"),
+        patch("app.routers.creative.settings.r2_secret_access_key", "sk"),
+        patch("app.routers.creative.settings.r2_bucket_name", "gwa-artifacts"),
+    ):
+        response = client.get(
+            f"/businesses/{business.id}/generative-pipeline-capability", headers=_headers(tenant.id)
+        )
+
+    body = response.json()
+    assert body["business_asset_storage_persistent"] is True
+    assert body["business_asset_storage"]["unavailable_reason"] is None
+
+
 def test_artifact_storage_persistent_when_r2_is_fully_configured(client: TestClient, tenant: Tenant, business):
     with (
         patch("app.routers.creative.check_higgsfield_director_availability", return_value=(True, None)),

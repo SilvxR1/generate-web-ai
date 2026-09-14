@@ -47,6 +47,8 @@ def _validate_key(storage_key: str) -> None:
 
 
 class CloudflareR2StorageProvider(StorageProvider):
+    provider_name = "r2"
+
     def __init__(
         self,
         *,
@@ -75,9 +77,10 @@ class CloudflareR2StorageProvider(StorageProvider):
                 config=Config(signature_version="s3v4"),
             )
 
-    def save(self, *, storage_key: str, content: bytes) -> StoredFile:
+    def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
         _validate_key(storage_key)
-        self._client.put_object(Bucket=self._bucket, Key=storage_key, Body=content)
+        kwargs = {"ContentType": content_type} if content_type else {}
+        self._client.put_object(Bucket=self._bucket, Key=storage_key, Body=content, **kwargs)
         return StoredFile(storage_key=storage_key)
 
     def delete(self, storage_key: str) -> None:
@@ -88,6 +91,24 @@ class CloudflareR2StorageProvider(StorageProvider):
             # Idempotent per the StorageProvider contract — a delete of an
             # already-gone (or never-existed) key must not raise.
             pass
+
+    def exists(self, storage_key: str) -> bool:
+        _validate_key(storage_key)
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=storage_key)
+        except ClientError as exc:
+            status_code = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            error_code = exc.response.get("Error", {}).get("Code")
+            if status_code == 404 or error_code in ("404", "NoSuchKey", "NotFound"):
+                return False
+            raise
+        return True
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str:
+        _validate_key(storage_key)
+        return self._client.generate_presigned_url(
+            "get_object", Params={"Bucket": self._bucket, "Key": storage_key}, ExpiresIn=expires_in_seconds
+        )
 
     def load(self, storage_key: str) -> bytes:
         _validate_key(storage_key)

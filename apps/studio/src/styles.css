@@ -711,6 +711,30 @@ dd {
   color: light-dark(#4b5563, #9ca3af);
 }
 
+.assets-panel__card-alert {
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+  border-radius: 0;
+}
+
+.assets-panel__card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.assets-panel__replace {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: light-dark(#2563eb, #60a5fa);
+}
+
+.assets-panel__replace input[type="file"] {
+  display: none;
+}
+
 .assets-panel__upload-row {
   display: flex;
   flex-wrap: wrap;

@@ -48,6 +48,24 @@ class BusinessAsset(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base
     )
     origin: Mapped[AssetOrigin] = mapped_column(str_enum(AssetOrigin, 20), nullable=False)
     storage_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # Canonical storage identity (P2 continuation: persistent asset
+    # storage) — nullable because every asset registered before this
+    # column existed, and every asset registered via POST .../assets
+    # (an externally-hosted URL this codebase never uploaded), has
+    # neither: `storage_url` alone is that row's whole truth, exactly as
+    # before. Only a real upload through POST .../assets/upload(-batch)
+    # sets both, which is what lets app.services.asset_health verify
+    # existence and app.creative.higgsfield.director request a presigned
+    # URL — a caller must never guess a provider/key from storage_url's
+    # own shape.
+    storage_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Set only by an explicit, on-demand check (POST .../assets/{id}/verify
+    # — app.services.asset_health.check_business_asset_availability),
+    # never inferred or guessed: None means "presumed fine / not yet
+    # checked", never "confirmed healthy" — this row is never silently
+    # marked healthy just because nothing has looked yet.
+    unavailable_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
     original_filename: Mapped[str | None] = mapped_column(String(300), nullable=True)
     alt_text: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # Free-form provenance/classification metadata (e.g. a future

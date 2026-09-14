@@ -310,7 +310,9 @@ def get_internal_creative_director() -> InternalCreativeDirector:
     return InternalCreativeDirector()
 
 
-def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
+def get_optional_higgsfield_director(
+    storage: StorageProvider = Depends(get_storage_provider),
+) -> CreativeDirectorProvider | None:
     """Returns None (never raises) when neither production nor dev
     Higgsfield configuration is present — app.creative.director_orchestrator
     falls back to get_internal_creative_director when this returns None,
@@ -320,7 +322,12 @@ def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
     PRODUCTION (P2.1): prefers the official REST API
     (app.creative.higgsfield.api_client.HiggsfieldApiClient) whenever
     HIGGSFIELD_API_KEY_ID/HIGGSFIELD_API_KEY_SECRET are configured — a
-    server-side credential pair, safe to run unattended.
+    server-side credential pair, safe to run unattended. `storage` is the
+    same StorageProvider app.routers.creative's own upload endpoints use
+    (Phase 5: private provider references) — passed through so the
+    director can mint a short-lived presigned URL for a business asset it
+    recognizes as its own (asset.storage_provider matching), never a
+    second, independently-configured storage client.
 
     DEV/LOCAL ONLY: falls back to the `higgsfield` CLI's own local OAuth
     session (higgsfield_cli_enabled — see that setting's own docstring for
@@ -337,6 +344,8 @@ def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
             client,
             estimated_credits_per_call=settings.higgsfield_api_estimated_credits_per_call,
             asset_base_url=settings.internal_api_base_url,
+            storage=storage,
+            presigned_url_expires_in_seconds=settings.higgsfield_reference_presigned_url_expires_in_seconds,
         )
     if settings.higgsfield_cli_enabled:
         cli = HiggsfieldCli(
@@ -346,7 +355,9 @@ def get_optional_higgsfield_director() -> CreativeDirectorProvider | None:
     return None
 
 
-def get_creative_director() -> CreativeDirectorProvider:
+def get_creative_director(
+    storage: StorageProvider = Depends(get_storage_provider),
+) -> CreativeDirectorProvider:
     """The single creative-director selection point a router calls
     (app.routers.creative) — prefers Higgsfield when
     settings.higgsfield_cli_enabled, otherwise InternalCreativeDirector.
@@ -355,7 +366,7 @@ def get_creative_director() -> CreativeDirectorProvider:
     unavailable' state, only a cheaper/more expensive one. The returned
     instance's `.name` tells a caller which one was actually used —
     never silently presented as the other (P2.14)."""
-    return get_optional_higgsfield_director() or get_internal_creative_director()
+    return get_optional_higgsfield_director(storage) or get_internal_creative_director()
 
 
 def get_frontend_engineer(
