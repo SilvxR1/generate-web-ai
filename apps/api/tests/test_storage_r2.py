@@ -19,17 +19,30 @@ class _FakeS3Client:
 
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
+        self.content_types: dict[str, str] = {}
+        self.presigned_url_calls: list[dict] = []
 
-    def put_object(self, *, Bucket, Key, Body):  # noqa: N803 — matches boto3's own parameter casing
+    def put_object(self, *, Bucket, Key, Body, ContentType=None):  # noqa: N803 — matches boto3's own casing
         self.objects[Key] = Body
+        if ContentType:
+            self.content_types[Key] = ContentType
 
     def get_object(self, *, Bucket, Key):  # noqa: N803
         if Key not in self.objects:
             raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "not found"}}, "GetObject")
         return {"Body": _FakeBody(self.objects[Key])}
 
+    def head_object(self, *, Bucket, Key):  # noqa: N803
+        if Key not in self.objects:
+            raise ClientError({"Error": {"Code": "404", "Message": "not found"}}, "HeadObject")
+        return {"ContentLength": len(self.objects[Key])}
+
     def delete_object(self, *, Bucket, Key):  # noqa: N803
         self.objects.pop(Key, None)
+
+    def generate_presigned_url(self, operation, *, Params, ExpiresIn):  # noqa: N803
+        self.presigned_url_calls.append({"operation": operation, "params": Params, "expires_in": ExpiresIn})
+        return f"https://pub-abc123.r2.dev/{Params['Key']}?X-Amz-Expires={ExpiresIn}&X-Amz-Signature=fake"
 
 
 class _FakeBody:
@@ -94,3 +107,52 @@ def test_rejects_a_path_traversal_key(provider: CloudflareR2StorageProvider):
 def test_rejects_a_key_outside_the_storage_root_shape(provider: CloudflareR2StorageProvider):
     with pytest.raises(ValueError):
         provider.save(storage_key="biz-1/../../outside.png", content=b"pwned")
+
+
+def test_save_records_a_real_content_type(provider: CloudflareR2StorageProvider, fake_client: _FakeS3Client):
+    key = "biz-1/abc123.png"
+    provider.save(storage_key=key, content=b"x", content_type="image/png")
+
+    assert fake_client.content_types[key] == "image/png"
+
+
+def test_save_without_a_content_type_sends_none(provider: CloudflareR2StorageProvider, fake_client: _FakeS3Client):
+    key = "biz-1/abc123.png"
+    provider.save(storage_key=key, content=b"x")
+
+    assert key not in fake_client.content_types
+
+
+def test_exists_is_true_for_a_present_key(provider: CloudflareR2StorageProvider):
+    key = "biz-1/abc123.png"
+    provider.save(storage_key=key, content=b"x")
+
+    assert provider.exists(key) is True
+
+
+def test_exists_is_false_for_a_missing_key(provider: CloudflareR2StorageProvider):
+    """The exact production bug this hotfix exists to catch: a
+    BusinessAsset DB row can point at a storage_key whose real R2 object
+    was never actually written (or has since been removed) — exists()
+    must report that honestly rather than assuming presence."""
+    assert provider.exists("biz-1/never-uploaded.png") is False
+
+
+def test_presigned_url_returns_a_real_url_and_forwards_the_expiry(
+    provider: CloudflareR2StorageProvider, fake_client: _FakeS3Client
+):
+    key = "biz-1/abc123.png"
+    provider.save(storage_key=key, content=b"x")
+
+    url = provider.presigned_url(key, expires_in_seconds=600)
+
+    assert url is not None
+    assert key in url
+    assert fake_client.presigned_url_calls == [
+        {"operation": "get_object", "params": {"Bucket": "gwa-artifacts", "Key": key}, "expires_in": 600}
+    ]
+
+
+def test_presigned_url_rejects_a_path_traversal_key(provider: CloudflareR2StorageProvider):
+    with pytest.raises(ValueError):
+        provider.presigned_url("../../etc/passwd", expires_in_seconds=600)

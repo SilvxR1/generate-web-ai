@@ -27,6 +27,9 @@ class _FakeAsset:
     origin: AssetOrigin
     storage_url: str
     alt_text: str | None = None
+    storage_provider: str | None = None
+    storage_key: str | None = None
+    unavailable_reason: str | None = None
 
 
 @dataclass
@@ -181,3 +184,76 @@ def test_build_creative_brief_adds_testimonials_section_only_when_reviews_exist(
 
     assert "testimonials" not in without_reviews.required_sections
     assert "testimonials" in with_reviews.required_sections
+
+
+def test_build_creative_brief_excludes_an_asset_with_a_confirmed_unavailable_reason():
+    """Phase 6 hotfix (broken-asset detection): a BusinessAsset row whose
+    real storage object has been confirmed missing (app.services.
+    asset_health.check_business_asset_availability already ran and set
+    this) must never reach a generated site or a Higgsfield reference —
+    build_creative_brief is the single choke point every downstream
+    consumer's asset list comes from, so filtering here is enough."""
+    config = BusinessConfig(business_profile=_profile())
+    healthy = _FakeAsset(
+        id=uuid.uuid4(),
+        kind=AssetKind.IMAGE,
+        category=AssetCategory.GALLERY,
+        origin=AssetOrigin.UPLOADED,
+        storage_url="https://cdn.example.com/healthy.jpg",
+    )
+    broken = _FakeAsset(
+        id=uuid.uuid4(),
+        kind=AssetKind.LOGO,
+        category=AssetCategory.LOGO,
+        origin=AssetOrigin.UPLOADED,
+        storage_url="https://cdn.example.com/broken-logo.jpg",
+        unavailable_reason="Asset unavailable — please re-upload.",
+    )
+
+    brief = build_creative_brief(business_config=config, assets=[healthy, broken])
+
+    urls = [asset.url for asset in brief.available_assets]
+    assert "https://cdn.example.com/healthy.jpg" in urls
+    assert "https://cdn.example.com/broken-logo.jpg" not in urls
+
+
+def test_build_creative_brief_never_excludes_an_asset_that_was_simply_never_checked():
+    """None means 'presumed fine, or not yet checked' — never treated as
+    broken. Only a real, confirmed check (a non-None unavailable_reason)
+    excludes an asset."""
+    config = BusinessConfig(business_profile=_profile())
+    never_checked = _FakeAsset(
+        id=uuid.uuid4(),
+        kind=AssetKind.IMAGE,
+        category=AssetCategory.GALLERY,
+        origin=AssetOrigin.UPLOADED,
+        storage_url="https://cdn.example.com/never-checked.jpg",
+        unavailable_reason=None,
+    )
+
+    brief = build_creative_brief(business_config=config, assets=[never_checked])
+
+    assert [asset.url for asset in brief.available_assets] == ["https://cdn.example.com/never-checked.jpg"]
+
+
+def test_build_creative_brief_carries_storage_identity_through_for_healthy_assets():
+    """Phase 5 (private provider references): a CreativeDirectorProvider
+    needs storage_provider/storage_key on CreativeBriefAsset to know
+    which assets it can mint a presigned URL for — see
+    app.creative.higgsfield.director._resolve_reference_url."""
+    config = BusinessConfig(business_profile=_profile())
+    asset = _FakeAsset(
+        id=uuid.uuid4(),
+        kind=AssetKind.IMAGE,
+        category=AssetCategory.GALLERY,
+        origin=AssetOrigin.UPLOADED,
+        storage_url="https://pub-abc123.r2.dev/biz-1/photo.jpg",
+        storage_provider="r2",
+        storage_key="biz-1/photo.jpg",
+    )
+
+    brief = build_creative_brief(business_config=config, assets=[asset])
+
+    [brief_asset] = brief.available_assets
+    assert brief_asset.storage_provider == "r2"
+    assert brief_asset.storage_key == "biz-1/photo.jpg"

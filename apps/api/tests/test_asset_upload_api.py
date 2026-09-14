@@ -13,8 +13,9 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.db.models.tenant import Tenant
-from app.dependencies import get_session
+from app.dependencies import get_rate_limiter, get_session
 from app.main import app
+from app.security.rate_limit import InMemoryRateLimiter
 
 
 @pytest.fixture()
@@ -26,12 +27,27 @@ def client(session, tmp_path, monkeypatch: pytest.MonkeyPatch):
     # real apps/api/var/uploads a developer might be running against.
     monkeypatch.setattr(settings, "local_storage_dir", str(tmp_path / "uploads"))
     monkeypatch.setattr(settings, "max_upload_size_bytes", 1024)
+    # Isolates this test from whatever internal_api_base_url a developer's
+    # own environment happens to have configured (e.g. a docker-compose
+    # setup pointing it at host.docker.internal) — app.routers.creative's
+    # _public_base_url (Phase 8 hotfix) prefers a real configured value
+    # over the test client's own host, exactly as it should in production,
+    # so this test asserts against a known value instead of the ambient one.
+    monkeypatch.setattr(settings, "internal_api_base_url", "http://testserver")
 
     app.dependency_overrides[get_session] = _override_get_session
+    # A fresh limiter per test — otherwise every test in this module (many
+    # of which now call the shared asset_upload rate-limit bucket via
+    # upload/upload-batch/replace) would drain one process-wide
+    # InMemoryRateLimiter, causing later tests to fail with an unrelated
+    # 429 (same convention tests/test_generative_pipeline_capability.py
+    # already uses for its own rate-limited endpoint).
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_session, None)
+        app.dependency_overrides.pop(get_rate_limiter, None)
 
 
 def _headers(tenant_id: uuid.UUID) -> dict:
@@ -241,3 +257,141 @@ def test_batch_uploaded_assets_cannot_be_read_through_another_tenant(
 
     leaked = client.get(f"/businesses/{business.id}/assets", headers=_headers(other_tenant.id))
     assert leaked.status_code == 404
+
+
+# --- Canonical storage identity (Phase 3 hotfix) --------------------------
+
+
+def test_upload_records_canonical_storage_provider_and_key(client: TestClient, tenant: Tenant, business):
+    response = _upload(client, business.id, tenant.id)
+
+    body = response.json()
+    assert body["storage_provider"] == "local"
+    assert body["storage_key"] is not None
+    assert body["storage_key"] in body["storage_url"]
+    assert body["unavailable_reason"] is None
+
+
+# --- Broken-asset detection (Phase 6 hotfix) -------------------------------
+
+
+def test_verify_reports_no_unavailable_reason_for_a_real_present_file(client: TestClient, tenant: Tenant, business):
+    created = _upload(client, business.id, tenant.id)
+    asset_id = created.json()["id"]
+
+    response = client.post(f"/businesses/{business.id}/assets/{asset_id}/verify", headers=_headers(tenant.id))
+
+    assert response.status_code == 200
+    assert response.json()["unavailable_reason"] is None
+
+
+def test_verify_detects_a_db_row_whose_underlying_file_is_gone(
+    client: TestClient, tenant: Tenant, business, tmp_path
+):
+    """The exact confirmed production bug this hotfix exists to catch:
+    the BusinessAsset row survives, but Railway's ephemeral local disk
+    did not — verify_business_asset must report that honestly."""
+    created = _upload(client, business.id, tenant.id)
+    body = created.json()
+    storage_key = body["storage_url"].split("/uploads/", 1)[1]
+    (tmp_path / "uploads" / storage_key).unlink()
+
+    response = client.post(f"/businesses/{business.id}/assets/{body['id']}/verify", headers=_headers(tenant.id))
+
+    assert response.status_code == 200
+    assert response.json()["unavailable_reason"] == "Asset unavailable — please re-upload."
+
+    # Persisted, not just returned once — a later reader (Studio, a
+    # generation request) sees the same confirmed-broken state without
+    # re-checking.
+    listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert listed.json()[0]["unavailable_reason"] == "Asset unavailable — please re-upload."
+
+
+def test_verify_for_unknown_asset_is_404(client: TestClient, tenant: Tenant, business):
+    response = client.post(f"/businesses/{business.id}/assets/{uuid.uuid4()}/verify", headers=_headers(tenant.id))
+    assert response.status_code == 404
+
+
+def test_verify_cannot_be_run_through_another_tenant(
+    client: TestClient, tenant: Tenant, other_tenant: Tenant, business
+):
+    created = _upload(client, business.id, tenant.id)
+    asset_id = created.json()["id"]
+
+    response = client.post(f"/businesses/{business.id}/assets/{asset_id}/verify", headers=_headers(other_tenant.id))
+    assert response.status_code == 404
+
+
+# --- Re-upload / replacement (Phase 7 hotfix) ------------------------------
+
+
+def _replace(client: TestClient, business_id, asset_id, tenant_id, *, content=b"new-bytes", content_type="image/png"):
+    return client.post(
+        f"/businesses/{business_id}/assets/{asset_id}/replace",
+        headers=_headers(tenant_id),
+        files={"file": ("replacement.png", io.BytesIO(content), content_type)},
+    )
+
+
+def test_replace_repairs_the_same_asset_row_in_place(client: TestClient, tenant: Tenant, business, tmp_path):
+    created = _upload(client, business.id, tenant.id)
+    original = created.json()
+    original_key = original["storage_url"].split("/uploads/", 1)[1]
+    (tmp_path / "uploads" / original_key).unlink()  # simulate the lost Railway file
+
+    response = _replace(client, business.id, original["id"], tenant.id)
+
+    assert response.status_code == 200, response.text
+    updated = response.json()
+    assert updated["id"] == original["id"]  # same row — never a duplicate
+    assert updated["kind"] == original["kind"]
+    assert updated["category"] == original["category"]
+    assert updated["storage_url"] != original["storage_url"]
+    assert updated["unavailable_reason"] is None
+
+    new_key = updated["storage_url"].split("/uploads/", 1)[1]
+    assert (tmp_path / "uploads" / new_key).read_bytes() == b"new-bytes"
+
+    # Only one row exists — the fix never created a second, orphaned asset.
+    listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert len(listed.json()) == 1
+
+
+def test_replace_deletes_the_old_object_when_it_still_existed(client: TestClient, tenant: Tenant, business, tmp_path):
+    created = _upload(client, business.id, tenant.id)
+    original = created.json()
+    original_key = original["storage_url"].split("/uploads/", 1)[1]
+    assert (tmp_path / "uploads" / original_key).exists()
+
+    _replace(client, business.id, original["id"], tenant.id)
+
+    assert not (tmp_path / "uploads" / original_key).exists()
+
+
+def test_replace_rejects_a_content_type_not_allowed_for_the_existing_asset_kind(
+    client: TestClient, tenant: Tenant, business
+):
+    created = _upload(client, business.id, tenant.id, kind="logo")
+
+    response = _replace(client, business.id, created.json()["id"], tenant.id, content_type="application/x-msdownload")
+
+    assert response.status_code == 415
+
+
+def test_replace_for_unknown_asset_is_404(client: TestClient, tenant: Tenant, business):
+    response = _replace(client, business.id, uuid.uuid4(), tenant.id)
+    assert response.status_code == 404
+
+
+def test_replace_cannot_be_run_through_another_tenant(
+    client: TestClient, tenant: Tenant, other_tenant: Tenant, business
+):
+    created = _upload(client, business.id, tenant.id)
+    asset_id = created.json()["id"]
+
+    response = _replace(client, business.id, asset_id, other_tenant.id)
+    assert response.status_code == 404
+
+    still_broken = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert still_broken.json()[0]["id"] == asset_id  # untouched by the other tenant's attempt
