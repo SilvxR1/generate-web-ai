@@ -26,6 +26,10 @@ interface AssetsPanelProps {
    * sends itself. Kept as a secondary, "advanced" option. */
   onAdd: (payload: CreateAssetPayload) => Promise<BusinessAsset>;
   onDelete: (assetId: string) => Promise<void>;
+  /** POST .../assets/{id}/replace (Phase 7 hotfix) — repairs an existing
+   * asset row in place (e.g. one whose `unavailable_reason` shows its
+   * underlying file is confirmed gone) rather than creating a duplicate. */
+  onReplace: (assetId: string, file: File) => Promise<BusinessAsset>;
 }
 
 // Human-readable labels for AssetCategory — the raw enum values
@@ -91,7 +95,16 @@ function isLogo(asset: BusinessAsset): boolean {
  * one huge portrait photo dominate the page. Registering a URL already
  * hosted elsewhere is kept, but demoted to an "Advanced" disclosure —
  * not competitive with normal upload during onboarding. */
-export function AssetsPanel({ assets, isLoading, error, onUpload, onUploadBatch, onAdd, onDelete }: AssetsPanelProps) {
+export function AssetsPanel({
+  assets,
+  isLoading,
+  error,
+  onUpload,
+  onUploadBatch,
+  onAdd,
+  onDelete,
+  onReplace,
+}: AssetsPanelProps) {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
@@ -110,6 +123,8 @@ export function AssetsPanel({ assets, isLoading, error, onUpload, onUploadBatch,
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [lightboxAsset, setLightboxAsset] = useState<BusinessAsset | null>(null);
+  const [pendingReplaceId, setPendingReplaceId] = useState<string | null>(null);
+  const [replaceError, setReplaceError] = useState<{ assetId: string; message: string } | null>(null);
 
   const logo = (assets ?? []).find(isLogo) ?? null;
   const photos = (assets ?? []).filter((asset) => !isLogo(asset));
@@ -200,6 +215,18 @@ export function AssetsPanel({ assets, isLoading, error, onUpload, onUploadBatch,
     }
   }
 
+  async function handleReplace(assetId: string, file: File) {
+    setPendingReplaceId(assetId);
+    setReplaceError(null);
+    try {
+      await onReplace(assetId, file);
+    } catch (caught) {
+      setReplaceError({ assetId, message: friendlyErrorMessage(caught, "Could not re-upload this file.") });
+    } finally {
+      setPendingReplaceId(null);
+    }
+  }
+
   return (
     <div className="assets-panel">
       {error && <p className="banner banner--error">Could not load assets: {error}</p>}
@@ -210,7 +237,15 @@ export function AssetsPanel({ assets, isLoading, error, onUpload, onUploadBatch,
       <p className="field-hint">Used in the website's header. Upload one image — a new upload replaces it.</p>
       {logo && (
         <ul className="assets-panel__grid assets-panel__grid--logo">
-          <AssetCard asset={logo} onDelete={handleDelete} onEnlarge={setLightboxAsset} pendingDelete={pendingDeleteId === logo.id} />
+          <AssetCard
+            asset={logo}
+            onDelete={handleDelete}
+            onEnlarge={setLightboxAsset}
+            pendingDelete={pendingDeleteId === logo.id}
+            onReplace={handleReplace}
+            pendingReplace={pendingReplaceId === logo.id}
+            replaceError={replaceError?.assetId === logo.id ? replaceError.message : null}
+          />
         </ul>
       )}
       {logoError && <p className="banner banner--error">{logoError}</p>}
@@ -241,6 +276,9 @@ export function AssetsPanel({ assets, isLoading, error, onUpload, onUploadBatch,
               onDelete={handleDelete}
               onEnlarge={setLightboxAsset}
               pendingDelete={pendingDeleteId === asset.id}
+              onReplace={handleReplace}
+              pendingReplace={pendingReplaceId === asset.id}
+              replaceError={replaceError?.assetId === asset.id ? replaceError.message : null}
             />
           ))}
         </ul>
@@ -406,23 +444,59 @@ function AssetCard({
   onDelete,
   onEnlarge,
   pendingDelete,
+  onReplace,
+  pendingReplace,
+  replaceError,
 }: {
   asset: BusinessAsset;
   onDelete: (assetId: string) => void;
   onEnlarge: (asset: BusinessAsset) => void;
   pendingDelete: boolean;
+  onReplace: (assetId: string, file: File) => void;
+  pendingReplace: boolean;
+  replaceError: string | null;
 }) {
   const logo = isLogo(asset);
+  // Phase 6 hotfix: a real, on-demand check (POST .../assets/{id}/verify)
+  // already confirmed this asset's underlying file is gone — never
+  // inferred from the DB row alone. Shown as a repair action, not a
+  // dead end: re-upload fixes this exact asset in place (Phase 7).
+  const broken = asset.unavailable_reason != null;
   return (
     <li className={`assets-panel__card ${logo ? "assets-panel__card--logo" : "assets-panel__card--photo"}`}>
-      <button type="button" className="assets-panel__card-media" onClick={() => onEnlarge(asset)}>
+      <button
+        type="button"
+        className="assets-panel__card-media"
+        onClick={() => onEnlarge(asset)}
+        data-broken={broken ? "true" : "false"}
+      >
         <img src={asset.storage_url} alt={asset.alt_text ?? ""} />
       </button>
+      {(broken || replaceError) && (
+        <p className="banner banner--error assets-panel__card-alert" role="alert">
+          {replaceError ?? asset.unavailable_reason}
+        </p>
+      )}
       <div className="assets-panel__card-body">
         <span className="assets-panel__card-label">{PHOTO_CATEGORY_LABELS[asset.category] ?? asset.category}</span>
-        <button type="button" onClick={() => onDelete(asset.id)} disabled={pendingDelete}>
-          {pendingDelete ? "Removing…" : "Remove"}
-        </button>
+        <span className="assets-panel__card-actions">
+          <label className="assets-panel__replace">
+            {broken ? "Re-upload" : "Replace"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+              disabled={pendingReplace}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) onReplace(asset.id, file);
+              }}
+            />
+          </label>
+          <button type="button" onClick={() => onDelete(asset.id)} disabled={pendingDelete || pendingReplace}>
+            {pendingDelete ? "Removing…" : pendingReplace ? "Uploading…" : "Remove"}
+          </button>
+        </span>
       </div>
     </li>
   );

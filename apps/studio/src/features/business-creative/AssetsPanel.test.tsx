@@ -23,6 +23,9 @@ function photoAsset(overrides: Partial<BusinessAsset> = {}): BusinessAsset {
     category: "gallery",
     origin: "uploaded",
     storage_url: "https://api.example.com/uploads/biz-1/photo.jpg",
+    storage_provider: "local",
+    storage_key: "biz-1/photo.jpg",
+    unavailable_reason: null,
     original_filename: "photo.jpg",
     alt_text: null,
     generation_id: null,
@@ -57,6 +60,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={vi.fn()}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -89,6 +93,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={onUploadBatch}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -127,6 +132,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={onUploadBatch}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -153,6 +159,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={vi.fn()}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -177,6 +184,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={vi.fn()}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -197,6 +205,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={vi.fn()}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 
@@ -217,6 +226,7 @@ describe("AssetsPanel", () => {
         onUploadBatch={vi.fn()}
         onAdd={vi.fn()}
         onDelete={vi.fn()}
+        onReplace={vi.fn()}
       />,
     );
 

@@ -63,10 +63,18 @@ function CapabilityPanel({ capability }: { capability: GenerativePipelineCapabil
       <CapabilityRow
         label={
           capability.artifact_storage_persistent
-            ? "Artifact storage (persistent)"
-            : "Artifact storage (ephemeral — not persistent)"
+            ? "Generated artifact storage (persistent)"
+            : "Generated artifact storage (ephemeral — not persistent)"
         }
         capability={capability.artifact_storage}
+      />
+      <CapabilityRow
+        label={
+          capability.business_asset_storage_persistent
+            ? "Business asset storage (persistent)"
+            : "Business asset storage (ephemeral — not persistent)"
+        }
+        capability={capability.business_asset_storage}
       />
     </div>
   );

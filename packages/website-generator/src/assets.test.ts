@@ -83,6 +83,34 @@ describe("selectGalleryAssets", () => {
   });
 });
 
+describe("a confirmed-broken asset (persistent-business-assets-r2 hotfix)", () => {
+  it("is never selected as the logo", () => {
+    const broken = asset({ kind: "logo", category: "logo", unavailable_reason: "Asset unavailable — please re-upload." });
+    expect(selectLogoAsset([broken])).toBeUndefined();
+  });
+
+  it("is never selected as the hero image, even as the only hero_candidate", () => {
+    const broken = asset({ category: "hero_candidate", unavailable_reason: "Asset unavailable — please re-upload." });
+    expect(selectHeroAsset([broken])).toBeUndefined();
+  });
+
+  it("is excluded from the gallery while a healthy sibling asset still appears", () => {
+    const broken = asset({ category: "gallery", storage_url: "https://x/broken.jpg", unavailable_reason: "gone" });
+    const healthy = asset({ category: "gallery", storage_url: "https://x/healthy.jpg" });
+
+    const gallery = selectGalleryAssets([broken, healthy]);
+
+    expect(gallery.map((a) => a.storage_url)).toEqual(["https://x/healthy.jpg"]);
+  });
+
+  it("an asset with no unavailable_reason at all (undefined) is still usable", () => {
+    // undefined means "presumed fine, or not yet checked" — never treated
+    // as broken, same contract as an explicit null.
+    const neverChecked = asset({ category: "hero_candidate" });
+    expect(selectHeroAsset([neverChecked])).toBe(neverChecked);
+  });
+});
+
 describe("assetToImageConfig", () => {
   it("uses the asset's own alt text when present", () => {
     const result = assetToImageConfig(asset({ alt_text: "Bufanda tejida a mano" }), "fallback");
