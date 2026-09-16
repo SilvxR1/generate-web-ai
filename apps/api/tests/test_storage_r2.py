@@ -7,9 +7,10 @@ own docstring for why that's not a contract violation here), and the same
 path-traversal/unsafe-key guard LocalStorageProvider applies."""
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from app.storage import absolute_url_path
+from app.storage.errors import StorageProviderError
 from app.storage.r2 import CloudflareR2StorageProvider
 
 
@@ -21,8 +22,15 @@ class _FakeS3Client:
         self.objects: dict[str, bytes] = {}
         self.content_types: dict[str, str] = {}
         self.presigned_url_calls: list[dict] = []
+        # None = normal behavior; set to an exception instance to make
+        # the next/every put_object call raise it, simulating a real R2
+        # failure (bad credentials, wrong bucket, network error) without
+        # ever making a real network call.
+        self.put_object_error: Exception | None = None
 
     def put_object(self, *, Bucket, Key, Body, ContentType=None):  # noqa: N803 — matches boto3's own casing
+        if self.put_object_error is not None:
+            raise self.put_object_error
         self.objects[Key] = Body
         if ContentType:
             self.content_types[Key] = ContentType
@@ -156,3 +164,40 @@ def test_presigned_url_returns_a_real_url_and_forwards_the_expiry(
 def test_presigned_url_rejects_a_path_traversal_key(provider: CloudflareR2StorageProvider):
     with pytest.raises(ValueError):
         provider.presigned_url("../../etc/passwd", expires_in_seconds=600)
+
+
+# --- R2 failure mapping (hotfix: opaque 500 on /assets/{id}/replace) ------
+#
+# Before this hotfix, save() let a raw botocore exception (ClientError,
+# BotoCoreError) propagate straight out of CloudflareR2StorageProvider —
+# the exact same "opaque 500 instead of a structured error" class of bug
+# PR #19 fixed for HiggsfieldCreativeProvider, but never applied to the R2
+# storage layer PR #21 introduced. These two tests are the reproduction:
+# a bad credential/bucket/account-id (ClientError) or a network failure
+# (BotoCoreError/EndpointConnectionError) must surface as
+# StorageProviderError, the one exception type app.routers.creative
+# already knows how to map to a clean 502 — never the raw botocore type.
+
+
+def test_save_wraps_a_client_error_as_storage_provider_error(
+    provider: CloudflareR2StorageProvider, fake_client: _FakeS3Client
+):
+    fake_client.put_object_error = ClientError(
+        {"Error": {"Code": "SignatureDoesNotMatch", "Message": "bad credentials"}}, "PutObject"
+    )
+
+    with pytest.raises(StorageProviderError):
+        provider.save(storage_key="biz-1/abc123.png", content=b"x")
+
+    # Never partially recorded — a failed save leaves no trace to
+    # mistake for a real, fetchable object.
+    assert "biz-1/abc123.png" not in fake_client.objects
+
+
+def test_save_wraps_a_network_error_as_storage_provider_error(
+    provider: CloudflareR2StorageProvider, fake_client: _FakeS3Client
+):
+    fake_client.put_object_error = EndpointConnectionError(endpoint_url="https://acct-1.r2.cloudflarestorage.com")
+
+    with pytest.raises(StorageProviderError):
+        provider.save(storage_key="biz-1/abc123.png", content=b"x")
