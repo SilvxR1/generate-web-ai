@@ -13,9 +13,11 @@ from fastapi.testclient import TestClient
 
 from app.config import settings
 from app.db.models.tenant import Tenant
-from app.dependencies import get_rate_limiter, get_session
+from app.dependencies import get_rate_limiter, get_session, get_storage_provider
 from app.main import app
 from app.security.rate_limit import InMemoryRateLimiter
+from app.storage.errors import StorageProviderError
+from app.storage.provider import StorageProvider, StoredFile
 
 
 @pytest.fixture()
@@ -395,3 +397,95 @@ def test_replace_cannot_be_run_through_another_tenant(
 
     still_broken = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
     assert still_broken.json()[0]["id"] == asset_id  # untouched by the other tenant's attempt
+
+
+# --- Storage provider failure mapping (hotfix: opaque 500 on /replace) ----
+#
+# Reproduces the exact production failure: a real, live R2 upload attempt
+# whose underlying object write fails (bad credentials, wrong bucket,
+# network error) must come back as one clean, structured AppError
+# response — never an unmapped exception. See app.storage.errors and
+# app.storage.r2.CloudflareR2StorageProvider.save's own try/except for the
+# fix this reproduces.
+
+
+class _AlwaysFailingStorageProvider(StorageProvider):
+    """Stands in for a real StorageProvider whose underlying write fails —
+    exactly what CloudflareR2StorageProvider.save now raises
+    StorageProviderError for (bad credentials, wrong bucket, network
+    error), without this test ever touching real R2 or credentials."""
+
+    provider_name = "always-failing"
+
+    def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
+        raise StorageProviderError("simulated R2 failure: SignatureDoesNotMatch")
+
+    def delete(self, storage_key: str) -> None:
+        pass
+
+    def exists(self, storage_key: str) -> bool:
+        return False
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        return None
+
+    def load(self, storage_key: str) -> bytes:
+        raise StorageProviderError("simulated R2 failure")
+
+    def url_path(self, storage_key: str) -> str:
+        return f"/uploads/{storage_key}"
+
+
+@pytest.fixture()
+def failing_storage_client(client: TestClient):
+    """Same `client` fixture as every other test in this module, with the
+    real (Local) storage provider swapped for one whose save() always
+    raises StorageProviderError — the one extra override needed to
+    reproduce the production /replace 500 without real R2 credentials."""
+    app.dependency_overrides[get_storage_provider] = lambda: _AlwaysFailingStorageProvider()
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_storage_provider, None)
+
+
+def test_upload_maps_a_storage_provider_failure_to_a_clean_502(failing_storage_client: TestClient, tenant, business):
+    response = _upload(failing_storage_client, business.id, tenant.id)
+
+    assert response.status_code == 502, response.text
+    assert response.json()["error"]["code"] == "storage_provider_error"
+
+    # No half-created row — a failed upload must never leave an
+    # asset pointing at an object that was never actually written.
+    listed = failing_storage_client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    assert listed.json() == []
+
+
+def test_replace_maps_a_storage_provider_failure_to_a_clean_502_and_leaves_the_row_untouched(
+    client: TestClient, tenant: Tenant, business
+):
+    # Upload succeeds normally first (real local storage), then the
+    # provider is swapped to the always-failing one only for the replace
+    # attempt — mirrors the production sequence: an existing, working
+    # asset row, then one failed re-upload attempt against it.
+    created = _upload(client, business.id, tenant.id)
+    original = created.json()
+
+    app.dependency_overrides[get_storage_provider] = lambda: _AlwaysFailingStorageProvider()
+    try:
+        response = _replace(client, business.id, original["id"], tenant.id)
+    finally:
+        app.dependency_overrides.pop(get_storage_provider, None)
+
+    assert response.status_code == 502, response.text
+    assert response.json()["error"]["code"] == "storage_provider_error"
+
+    # The exact "so we don't create orphan objects" guarantee: a failed
+    # replace must never touch the existing row's storage fields — same
+    # provider/key/url as before the failed attempt, not half-updated.
+    still_there = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
+    unchanged = still_there.json()[0]
+    assert unchanged["id"] == original["id"]
+    assert unchanged["storage_provider"] == original["storage_provider"]
+    assert unchanged["storage_key"] == original["storage_key"]
+    assert unchanged["storage_url"] == original["storage_url"]

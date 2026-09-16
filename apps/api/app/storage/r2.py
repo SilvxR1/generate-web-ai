@@ -27,8 +27,9 @@ it, never inferred.
 import re
 
 from botocore.client import Config
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
+from app.storage.errors import StorageProviderError
 from app.storage.provider import StorageProvider, StoredFile
 
 # Same key-shape guard app.storage.local.LocalStorageProvider applies —
@@ -74,13 +75,27 @@ class CloudflareR2StorageProvider(StorageProvider):
                 # R2 has no regions of its own — "auto" is Cloudflare's
                 # own documented value for the S3-compatible API.
                 region_name="auto",
-                config=Config(signature_version="s3v4"),
+                # Explicit timeouts (botocore's own defaults are much
+                # longer, and can compound across retries): a
+                # misconfigured account_id/bucket/credential must fail
+                # fast, inside this process, where the app's own
+                # exception handling (and CORSMiddleware, which wraps it)
+                # can turn it into a real structured response — not hang
+                # long enough that Railway's edge proxy times the request
+                # out first and returns its own bare 500 instead, which is
+                # what an unhandled hang looks like to the browser (a 500
+                # with no CORS header, since the app's response pipeline
+                # never ran at all).
+                config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=10),
             )
 
     def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
         _validate_key(storage_key)
         kwargs = {"ContentType": content_type} if content_type else {}
-        self._client.put_object(Bucket=self._bucket, Key=storage_key, Body=content, **kwargs)
+        try:
+            self._client.put_object(Bucket=self._bucket, Key=storage_key, Body=content, **kwargs)
+        except (ClientError, BotoCoreError) as exc:
+            raise StorageProviderError(f"R2 upload failed for key {storage_key!r}: {exc}") from exc
         return StoredFile(storage_key=storage_key)
 
     def delete(self, storage_key: str) -> None:

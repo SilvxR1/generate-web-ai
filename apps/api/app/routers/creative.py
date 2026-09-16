@@ -100,6 +100,7 @@ from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRea
 from app.services.asset_health import check_business_asset_availability
 from app.services.business_service import BusinessNotFoundError, BusinessService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
+from app.storage.errors import StorageProviderError
 
 router = APIRouter(prefix="/businesses/{business_id}", tags=["creative"])
 
@@ -284,7 +285,10 @@ def _save_uploaded_asset(
         raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
 
     storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
-    storage.save(storage_key=storage_key, content=content, content_type=file.content_type)
+    try:
+        storage.save(storage_key=storage_key, content=content, content_type=file.content_type)
+    except StorageProviderError as exc:
+        raise AppError(str(exc), code="storage_provider_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
     # _public_base_url resolves however this API is actually reachable
     # externally (Phase 8: never a plain http:// URL when Railway's own
     # proxy forwards over http internally) — see that helper's own
@@ -543,7 +547,10 @@ def replace_business_asset(
         raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
 
     new_storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
-    storage.save(storage_key=new_storage_key, content=content, content_type=file.content_type)
+    try:
+        storage.save(storage_key=new_storage_key, content=content, content_type=file.content_type)
+    except StorageProviderError as exc:
+        raise AppError(str(exc), code="storage_provider_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
     new_storage_url = absolute_url_path(storage.url_path(new_storage_key), request_base_url=_public_base_url(request))
 
     old_storage_provider, old_storage_key = asset.storage_provider, asset.storage_key
