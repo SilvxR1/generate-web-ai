@@ -7,14 +7,22 @@ published OpenAPI spec at docs.higgsfield.ai/docs/openapi.json, never
 invented — see docs/higgsfield-integration.md for exactly what was checked
 and how.
 
-Endpoint/job-type mapping is deliberately an explicit, small allowlist
-(_ENDPOINT_PATHS) rather than a generic "pass any job_type as a path
-segment" — Nano Banana Pro (the CLI's own default model) does not appear
-anywhere in the published REST OpenAPI spec, so this client refuses to
-guess a path for it rather than silently hitting a URL that may not exist
-or may not mean what the name implies (see this module's own
-DEFAULT_JOB_TYPE and docs/higgsfield-integration.md's "REST endpoint
-verification" section for the exact paths confirmed).
+Model/endpoint selection is deliberately an explicit, small allowlist
+(_MODEL_REGISTRY, keyed by model id) rather than a generic "pass any
+job_type as a path segment" — this client refuses to guess a path (or a
+request-body shape — which JSON field, if any, carries reference images
+differs per model family) for a model id it doesn't have an explicit
+HiggsfieldModelConfig entry for. This is also the exact closed set
+HIGGSFIELD_API_MODEL (app.config.Settings, resolved by
+app.dependencies.get_optional_higgsfield_director) is validated against —
+never an arbitrary caller/env-supplied URL or path fragment; an
+unrecognized model id fails the same safe way a missing job_type always
+did (HiggsfieldApiUnavailableError, before any HTTP request), which
+app.creative.director_fallback.FallbackCreativeDirector treats as a
+pre-acceptance failure safe to degrade to InternalCreativeDirector. See
+docs/higgsfield-integration.md's "REST endpoint verification" section for
+exactly which paths/schemas were confirmed and why each registered model
+was chosen (including models considered and rejected).
 
 Never retries the submission (POST) call automatically — a retried submit
 would double-spend real Higgsfield credits — only the read-only status
@@ -25,6 +33,7 @@ a transient network error.
 import ipaddress
 import time
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -114,19 +123,105 @@ class HiggsfieldTimeoutError(HiggsfieldApiError):
     error above since Higgsfield's own state (if any) is unknown."""
 
 
-# Confirmed directly against the published OpenAPI spec
-# (docs.higgsfield.ai/docs/openapi.json) — every value here is a real path
-# from that document, never a guess. Extend this table (and re-verify
-# against the spec) before adding a new job type; never construct a path
-# from a job_type string.
-_ENDPOINT_PATHS: dict[str, str] = {
-    "nano-banana": "/nano-banana",
+@dataclass(frozen=True)
+class HiggsfieldModelConfig:
+    """One allowlisted Higgsfield REST model — every field here was read
+    directly off that model's own request schema in the published OpenAPI
+    spec (docs.higgsfield.ai/docs/openapi.json), never guessed. Extend
+    _MODEL_REGISTRY (and re-verify against the spec) before adding a new
+    model; never construct `endpoint` from a caller-supplied string."""
+
+    id: str
+    endpoint: str
+    supports_reference_images: bool
+    max_reference_images: int
+    supported_aspect_ratios: frozenset[str]
+    # Which JSON field (if any) carries reference image URL(s) — model
+    # families genuinely differ here, confirmed per-schema: nano-banana
+    # takes an `input_images` array of {"type": "image_url", "image_url":
+    # <url>} objects (0-8), while higgsfield-ai/soul/reference takes a
+    # single `image_reference_url` string (required, exactly one).
+    reference_image_param: Literal["input_images", "image_reference_url"] | None
+
+    def build_reference_payload(self, urls: list[str]) -> dict:
+        """Truncates `urls` to this model's own limit and shapes them into
+        exactly the field this model's schema expects — never both, never
+        neither. Returns {} for a model with no reference-image support at
+        all (or an empty `urls` list) — no field is sent rather than an
+        empty/null one, matching submit()'s pre-existing "no reference
+        means no reference" behavior."""
+        if not urls or not self.supports_reference_images or self.reference_image_param is None:
+            return {}
+        selected = urls[: self.max_reference_images]
+        if self.reference_image_param == "input_images":
+            return {"input_images": [{"type": "image_url", "image_url": url} for url in selected]}
+        return {"image_reference_url": selected[0]}
+
+
+# Every model below is a real, currently-documented Higgsfield REST
+# endpoint (docs.higgsfield.ai/docs/openapi.json) — see
+# docs/higgsfield-integration.md for the full evaluation, including models
+# considered and rejected (e.g. reve/remix: unverified entitlement on this
+# workspace plus a hard 2-image minimum that doesn't fit a business with
+# only one usable asset).
+_MODEL_REGISTRY: dict[str, HiggsfieldModelConfig] = {
+    # The original P2.1 default — a real, documented endpoint, but this
+    # workspace's API key returns 404 {"detail": "model_not_found"} for it
+    # (not entitled on this account/plan; see
+    # docs/higgsfield-integration.md's "Live proof result"). Kept
+    # registered (never silently removed) since it IS a legitimate
+    # Higgsfield model that may become available on this workspace later.
+    "nano-banana": HiggsfieldModelConfig(
+        id="nano-banana",
+        endpoint="/nano-banana",
+        supports_reference_images=True,
+        max_reference_images=8,
+        supported_aspect_ratios=frozenset(
+            {"auto", "1:1", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "16:9", "9:16", "21:9"}
+        ),
+        reference_image_param="input_images",
+    ),
+    # Candidate raised to replace nano-banana above (see
+    # docs/higgsfield-integration.md): same `higgsfield-ai/soul/` endpoint
+    # family as `higgsfield-ai/soul/standard`, which this workspace's key
+    # was already, separately, confirmed to recognize (403
+    # not_enough_credits — auth + model both accepted, only credits
+    # refused) — the strongest entitlement signal available without a
+    # real, billable call to this exact endpoint. Accepts exactly one
+    # reference image (`image_reference_url`, required), which fits a
+    # business that has at minimum a logo asset.
+    "higgsfield-ai/soul/reference": HiggsfieldModelConfig(
+        id="higgsfield-ai/soul/reference",
+        endpoint="/higgsfield-ai/soul/reference",
+        supports_reference_images=True,
+        max_reference_images=1,
+        supported_aspect_ratios=frozenset({"9:16", "16:9", "4:3", "3:4", "1:1", "2:3", "3:2"}),
+        reference_image_param="image_reference_url",
+    ),
 }
 
 DEFAULT_JOB_TYPE = "nano-banana"
 
+
+def resolve_model_config(model_id: str) -> HiggsfieldModelConfig:
+    """The ONE place a model id (HIGGSFIELD_API_MODEL, or a caller's own
+    job_type argument) is resolved to a real endpoint/request shape —
+    raises the same HiggsfieldApiUnavailableError a missing API key
+    causes, since both are "this integration cannot run right now"
+    configuration problems a caller (app.creative.director_fallback) can
+    safely treat identically. Never falls through to constructing a path
+    from `model_id` itself."""
+    config = _MODEL_REGISTRY.get(model_id)
+    if config is None:
+        raise HiggsfieldApiUnavailableError(
+            f"{model_id!r} has no known official Higgsfield REST endpoint in this client's allowlist "
+            f"({sorted(_MODEL_REGISTRY)}) — see this module's own docstring. Set HIGGSFIELD_API_MODEL to "
+            "one of the allowlisted ids."
+        )
+    return config
+
+
 _TERMINAL_STATUSES = frozenset({"completed", "failed", "nsfw", "canceled"})
-_MAX_INPUT_IMAGES = 8
 
 
 @dataclass
@@ -264,23 +359,21 @@ class HiggsfieldApiClient:
     ) -> _SubmitResponse:
         """Submits one generation request — never retried automatically
         (a retried POST could double-spend real credits; see this
-        module's own docstring)."""
-        path = _ENDPOINT_PATHS.get(job_type)
-        if path is None:
-            raise HiggsfieldApiError(
-                f"{job_type!r} has no known official Higgsfield REST endpoint in this client's allowlist "
-                f"({sorted(_ENDPOINT_PATHS)}) — see this module's own docstring."
-            )
+        module's own docstring). Raises HiggsfieldApiUnavailableError
+        (never a bare KeyError/generic error) for a `job_type` outside
+        _MODEL_REGISTRY — before any HTTP request, exactly like a missing
+        API key, so app.creative.director_fallback.FallbackCreativeDirector
+        can treat a misconfigured HIGGSFIELD_API_MODEL the same safe way."""
+        model = resolve_model_config(job_type)
+        path = model.endpoint
         body: dict = {"prompt": prompt}
         if aspect_ratio:
             body["aspect_ratio"] = aspect_ratio
         if num_images:
             body["num_images"] = num_images
         if image_references:
-            body["input_images"] = [
-                {"type": "image_url", "image_url": _validate_reference_url(url)}
-                for url in image_references[:_MAX_INPUT_IMAGES]
-            ]
+            validated = [_validate_reference_url(url) for url in image_references[: model.max_reference_images]]
+            body.update(model.build_reference_payload(validated))
 
         try:
             response = self._client.post(path, headers=self._headers(), json=body)

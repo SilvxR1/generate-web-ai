@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
+import { directorLabel } from "./directorLabel";
 import {
   createCreativeDirections,
   createGenerativeWebsiteDraft,
@@ -15,16 +16,6 @@ import {
   type WebsiteDraft,
   type WebsiteState,
 } from "../../lib/api";
-
-/** Which CreativeDirectorProvider actually produced a candidate —
- * never silently implies Higgsfield when InternalCreativeDirector
- * handled the request (P2.14). Falls back to "internal" only if
- * provider_metadata is somehow missing the field (never happens on a
- * real backend response, but keeps this component total). */
-function directorLabel(direction: CreativeDirection): string {
-  const provider = direction.provider_metadata?.provider;
-  return provider === "higgsfield" ? "Creative Director: Higgsfield" : "Creative Director: Internal fallback";
-}
 
 function CapabilityRow({
   label,

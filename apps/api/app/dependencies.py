@@ -14,6 +14,7 @@ from app.analytics_events.provider import AnalyticsProvider, InternalAnalyticsPr
 from app.automation.n8n import N8nClient
 from app.config import settings
 from app.creative.director import CreativeDirectorProvider
+from app.creative.director_fallback import FallbackCreativeDirector
 from app.creative.director_internal import InternalCreativeDirector
 from app.creative.frontend_engine import FrontendEngineer, frontend_engineer_from_settings
 from app.creative.higgsfield import (
@@ -342,6 +343,7 @@ def get_optional_higgsfield_director(
         )
         return HiggsfieldApiCreativeDirector(
             client,
+            job_type=settings.higgsfield_api_model,
             estimated_credits_per_call=settings.higgsfield_api_estimated_credits_per_call,
             asset_base_url=settings.internal_api_base_url,
             storage=storage,
@@ -359,14 +361,23 @@ def get_creative_director(
     storage: StorageProvider = Depends(get_storage_provider),
 ) -> CreativeDirectorProvider:
     """The single creative-director selection point a router calls
-    (app.routers.creative) — prefers Higgsfield when
-    settings.higgsfield_cli_enabled, otherwise InternalCreativeDirector.
-    Always constructs successfully (mirrors get_internal_creative_provider's
-    'never fails to construct' shape): there is no 'creative direction
-    unavailable' state, only a cheaper/more expensive one. The returned
-    instance's `.name` tells a caller which one was actually used —
-    never silently presented as the other (P2.14)."""
-    return get_optional_higgsfield_director(storage) or get_internal_creative_director()
+    (app.routers.creative) — prefers Higgsfield when configured, wrapped
+    in FallbackCreativeDirector (app.creative.director_fallback) so a
+    Higgsfield workspace/config problem caught before any billable
+    generation is accepted degrades to InternalCreativeDirector instead of
+    making the whole workflow unusable. Always constructs successfully
+    (mirrors get_internal_creative_provider's 'never fails to construct'
+    shape): there is no 'creative direction unavailable' state, only a
+    cheaper/more expensive one. Each returned CreativeDirection's own
+    `provider_metadata['provider']` tells a caller which one actually ran
+    for that candidate — never silently presented as the other (P2.14).
+    `storage` is threaded into get_optional_higgsfield_director exactly as
+    before FallbackCreativeDirector existed (Phase 5: private provider
+    references) — wrapping the primary director for fallback purposes
+    must never drop its own R2 presigned-URL wiring."""
+    return FallbackCreativeDirector(
+        primary=get_optional_higgsfield_director(storage), fallback=get_internal_creative_director()
+    )
 
 
 def get_frontend_engineer(

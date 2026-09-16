@@ -92,10 +92,82 @@ separately confirm Nano Banana access for that workspace/plan.
 own model catalog (`higgsfield model list`), but **does not appear
 anywhere in the public REST OpenAPI spec** — only base `/nano-banana` is
 officially exposed via REST today. `HiggsfieldApiClient` refuses to guess
-a path for it (`_ENDPOINT_PATHS` is a small, explicit allowlist, not a
+a path for it (`_MODEL_REGISTRY` is a small, explicit allowlist, not a
 generic "pass any job_type as a path segment"); using Pro via REST would
 require either a documented endpoint appearing later or direct
 confirmation from Higgsfield support.
+
+## Model registry — evaluating an alternative to nano-banana (P2.1 continuation)
+
+The `model_not_found` result above never resolved and became a
+production blocker: Studio's "Generate creative directions" surfaced
+"Higgsfield generation is currently unavailable for this workspace" for
+every real business. `app.creative.higgsfield.api_client` now holds an
+explicit `HiggsfieldModelConfig` / `_MODEL_REGISTRY` (never a single
+hardcoded model) so the production model is a configuration choice
+(`HIGGSFIELD_API_MODEL`, see `app.config.Settings`), not a code change.
+
+**Full current image-generation catalog** (from the same published
+OpenAPI spec, re-fetched fresh — every video-only model (veo3.1,
+kling-video, minimax hailuo, bytedance seedance, sora-2, wan-25-preview)
+is out of scope for a still-image Creative Director and omitted below):
+
+| Endpoint | Reference images | Notes |
+| --- | --- | --- |
+| `POST /nano-banana` | `input_images` array, 0–8 | Confirmed `404 model_not_found` on this workspace. |
+| `POST /higgsfield-ai/soul/standard` | none | No image input field at all — cannot ground a generation in real business assets. Previously probed: `403 not_enough_credits` (auth + model recognized). |
+| `POST /higgsfield-ai/soul/character` | `image_reference_url` + required `custom_reference_id`/`custom_reference_strength` | Needs a pre-registered "custom reference" (character) id with no REST endpoint to create one in this spec — an out-of-band Higgsfield Cloud dependency, not self-sufficient via REST alone. |
+| `POST /higgsfield-ai/soul/reference` | `image_reference_url`, exactly 1 (required) | **Selected candidate** — see below. |
+| `POST /flux-pro/kontext/max/text-to-image` | none | Prompt-only in this REST schema (despite Flux Kontext's general image-editing reputation) — not usable for business-asset grounding. |
+| `POST /reve/edit` | `image_url`, exactly 1 (required) | Single-image edit semantics (modifies one input), a different capability shape than "explore several directions from references." |
+| `POST /reve/remix` | `image_urls` array, **2–4 required** (`minItems: 2`) | Rejected: a business with only one usable asset (e.g. logo only) cannot call this endpoint at all, and this workspace's entitlement for it is completely unverified (no historical signal either way). |
+| `POST /reve/text-to-image` | none | Prompt-only. |
+
+**Selected candidate: `higgsfield-ai/soul/reference`.** Rationale:
+
+1. Same `higgsfield-ai/soul/` endpoint family as `soul/standard`, which
+   this workspace's key was already confirmed (above) to recognize —
+   `403 not_enough_credits`, not `404 model_not_found` — the strongest
+   entitlement signal available *without* a real, billable call to this
+   exact endpoint (Higgsfield's REST API exposes no models-list/
+   entitlement-discovery endpoint of any kind — confirmed by enumerating
+   every path in the spec; the only GET is `/requests/{id}/status`, which
+   proves key validity, not per-model entitlement).
+2. Accepts exactly one reference image, which fits a business that has at
+   minimum a logo asset (never a hard multi-image minimum a thin asset
+   library can't satisfy, unlike `reve/remix`).
+3. No out-of-band setup dependency (unlike `soul/character`'s
+   `custom_reference_id`).
+4. `style_id` (a Higgsfield "Soul Style") is optional, not required — so
+   this integration never needs to pre-select from a style catalog.
+
+**This has NOT been confirmed against the real API** — Phase 2 of this
+evaluation found no non-billable way to check a *specific* endpoint's
+entitlement (see above: no models-list endpoint exists), and Higgsfield
+documents no way to distinguish "not entitled" from "entitled, just out of
+credits" without actually submitting to that exact endpoint. Switching
+`HIGGSFIELD_API_MODEL` to `higgsfield-ai/soul/reference` in production
+requires a real, potentially billable API call and operator approval
+first — see the `hotfix/p2-higgsfield-model-fallback` PR for the exact
+request proposed and its status.
+
+## Internal fallback (P2.1 continuation)
+
+`app.creative.director_fallback.FallbackCreativeDirector` now wraps
+whichever Higgsfield director `app.dependencies.get_optional_higgsfield_director`
+constructs (or `None`): a pre-acceptance failure (`HIGGSFIELD_API_MODEL`
+unset/unrecognized, missing credentials, a 401, or the configured model
+returning `404 model_not_found`) degrades that one `create_directions`
+call to `InternalCreativeDirector` rather than failing the whole
+workflow — tagged `provider_metadata = {"provider": "internal_fallback",
+"fallback_reason": "higgsfield_model_unavailable" | "higgsfield_unavailable"
+| "higgsfield_not_configured"}` so Studio and observability never imply a
+Higgsfield-generated result came from Higgsfield when it didn't (P2.14).
+A failure reached only by polling an *already-accepted* Higgsfield job
+(insufficient credits, a timeout, `failed`/`nsfw`/`canceled`, or any
+failure after at least one candidate already succeeded) is never eligible
+for fallback — see that module's own docstring for the exact double-billing
+argument.
 
 **No cost-estimate endpoint exists in the REST API**, and no generation
 response ever reports actual credits spent (confirmed against the same

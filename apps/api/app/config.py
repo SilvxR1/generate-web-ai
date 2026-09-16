@@ -131,6 +131,17 @@ class Settings(BaseSettings):
     # URL is worthless to anyone who happens to see it logged/cached
     # afterward — this is never a URL the customer manages or sees.
     higgsfield_reference_presigned_url_expires_in_seconds: int = 600
+    # Which allowlisted Higgsfield REST model the production Creative
+    # Director submits generation requests to — see
+    # app.creative.higgsfield.api_client's own _MODEL_REGISTRY (never an
+    # arbitrary path/URL: a value outside that registry is rejected the
+    # same safe way missing credentials are — see
+    # app.creative.director_fallback.FallbackCreativeDirector — rather
+    # than crashing or guessing an endpoint). Default matches the
+    # original P2.1 integration; override once a workspace entitlement
+    # gap (see docs/higgsfield-integration.md) is confirmed resolved for
+    # a different registered model.
+    higgsfield_api_model: str = "nano-banana"
 
     # HiggsfieldCli/HiggsfieldCreativeDirector-over-CLI — retained ONLY for
     # local development and the manually-run real_provider test
