@@ -258,8 +258,11 @@ def test_existing_business_config_is_reused_not_recreated(
     response = _post_creative_directions(client, cositas_business, tenant)
 
     assert response.status_code == 201
-    # The real business_name from the ALREADY-PERSISTED config reached the prompt.
-    assert all("Cositas y Puntos" in call["prompt"] for call in fake.calls)
+    # Facts from the ALREADY-PERSISTED config (its real description) reached the prompt. The business
+    # name itself is deliberately NOT sent (P2.2): with generated text forbidden, naming the business
+    # invites the image model to bake it into the picture.
+    assert all("amigurumi" in call["prompt"].lower() for call in fake.calls)
+    assert all("cositas y puntos" not in call["prompt"].lower() for call in fake.calls)
 
 
 def test_existing_business_assets_are_passed_into_the_workflow(

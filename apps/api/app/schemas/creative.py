@@ -7,6 +7,8 @@ from app.domain.enums import (
     AssetCategory,
     AssetKind,
     AssetOrigin,
+    AssetPurpose,
+    BrandStrategy,
     CreativeGenerationStatus,
     CreativeGenerationType,
     CreativeLevel,
@@ -194,6 +196,13 @@ class CreateDirectionsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hard_limit: float | None = Field(default=None, gt=0)
+    # P2.2: what the generated visual is for, and per-request overrides of
+    # the business's own configured brand strategy / creative level. All
+    # optional — omitted, the business's configuration applies and the
+    # purpose defaults to HERO, so `{"hard_limit": 2.0}` behaves as before.
+    purpose: AssetPurpose | None = None
+    brand_mode: BrandStrategy | None = None
+    creative_level: CreativeLevel | None = None
 
 
 class DevelopDirectionRequest(BaseModel):

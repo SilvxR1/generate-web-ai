@@ -13,34 +13,45 @@ interchangeable generation backends:
     session (app.creative.higgsfield.cli.HiggsfieldCli) — never selected
     in production; see docs/higgsfield-integration.md for why.
 
-Workflow (shared by both, P2.3):
-  STEP A: create_directions — three distinct prompt explorations, each
-    grounded in real CreativeBrief facts (never generic), each costed
-    *before* the real generation call it pays for, recorded on the
-    caller's CreativeBudget.
-  STEP D: develop_direction — three further explorations anchored to the
-    *same* generated reference once a direction is selected, deepening
-    detail/composition rather than starting a new concept.
+P2.2: this module is a PROVIDER ADAPTER, not the creative system.
+Creative strategy — asset purpose, brand mode, reference selection and
+semantics, text/logo policy, negative constraints — lives in the
+provider-independent domain layer (app.domain.creative.spec /
+prompt_composer). This module only: asks that layer for a
+CreativeGenerationSpec, resolves the spec's ranked references to
+provider-usable locations (presigned R2 URL / local path) within the
+model's own limit, translates the composed prompt into Higgsfield's
+payload (app.creative.higgsfield.translation), runs the job, and records
+provider metadata, budget and provenance.
 
-Never asks Higgsfield to choose one of this platform's own preexisting
-design families/templates — every prompt is built from `brief`'s real
-facts plus an explicit instruction to propose a genuinely different
-composition/interaction/visual-metaphor concept, and the resulting
-CreativeDirection's `visual_language`/`experience` fields are populated
-from that same prompt text (traceable, never separately invented).
+Workflow (shared by both, P2.3):
+  STEP A: create_directions — three visual explorations, each composed
+    from real CreativeBrief facts, each costed *before* the real
+    generation call it pays for, recorded on the caller's CreativeBudget.
+  STEP D: develop_direction — three further explorations anchored to the
+    *same* generated reference once a direction is selected.
 """
 
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from uuid import UUID
 
 from app.creative.director import CreativeDirectorProvider
 from app.creative.factual_safety import constraints_for_brief
-from app.creative.higgsfield.api_client import DEFAULT_JOB_TYPE, HiggsfieldApiClient
+from app.creative.higgsfield.api_client import (
+    DEFAULT_JOB_TYPE,
+    HiggsfieldApiClient,
+    HiggsfieldApiUnavailableError,
+    HiggsfieldModelConfig,
+    resolve_model_config,
+)
 from app.creative.higgsfield.cli import HiggsfieldCli, resolve_local_reference
 from app.creative.higgsfield.models import HiggsfieldJobResult
+from app.creative.higgsfield.translation import to_higgsfield_prompt
 from app.domain.creative import CreativeBrief, CreativeBriefAsset
+from app.domain.creative.asset_validation import GeneratedAssetInfo, GeneratedAssetValidator, MetadataAssetValidator
 from app.domain.creative.budget import CreativeBudget
 from app.domain.creative.direction import (
     ContentStrategy,
@@ -49,63 +60,83 @@ from app.domain.creative.direction import (
     ExperienceDirection,
     VisualLanguage,
 )
-from app.domain.enums import AssetCategory, AssetKind, CreativeProviderName
+from app.domain.creative.prompt_composer import DEVELOP_ANGLES, EXPLORATION_ANGLES, compose_prompt
+from app.domain.creative.provenance import COST_SEMANTICS, build_creative_provenance
+from app.domain.creative.spec import (
+    CreativeGenerationSpec,
+    ReferenceSpec,
+    ReferenceUsage,
+    build_generation_spec,
+)
+from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel, CreativeProviderName
 from app.storage.provider import StorageProvider
 
 CLI_DEFAULT_IMAGE_MODEL = "nano_banana_pro"
 
-_EXPLORATION_ANGLES: tuple[str, ...] = (
-    "a bespoke visual metaphor drawn directly from the core craft/product itself, treated as the site's "
-    "dominant graphic language",
-    "a navigation/interaction concept where wayfinding is embedded in the scene itself rather than a "
-    "conventional navbar",
-    "an editorial, trust-oriented composition built around real photography and hierarchy, for a visitor "
-    "who needs to be convinced quickly",
-)
-
-_DEVELOP_ANGLES: tuple[str, ...] = (
-    "the same exact world and visual language, showing how it adapts to a narrow mobile/portrait viewport",
-    "the same exact world and visual language, showing a close, tactile detail/texture shot",
-    "the same exact world and visual language, showing the primary conversion moment (contact/CTA) inside it",
-)
+_DEFAULT_REFERENCE_CANDIDATES = 3
 
 
-def _build_prompt(brief: CreativeBrief, angle: str, *, continuation_of: str | None = None) -> str:
-    facts = (
-        f"Business: {brief.business_name} ({brief.industry}). "
-        + (f"Description: {brief.description}. " if brief.description else "")
-        + (f"Target customer: {brief.target_customer}. " if brief.target_customer else "")
-        + (f"Visual style so far: {brief.visual_style}. " if brief.visual_style else "")
+def _narrative(brief: CreativeBrief, spec: CreativeGenerationSpec, angle: str) -> str:
+    """Human-readable concept narrative (business context for Studio and
+    the frontend engine). NOT the provider prompt — that is composed
+    separately and deliberately omits the business name."""
+    parts = [f"Business: {brief.business_name} ({brief.industry})."]
+    if brief.description:
+        parts.append(f"Description: {brief.description}.")
+    if brief.target_customer:
+        parts.append(f"Target customer: {brief.target_customer}.")
+    parts.append(
+        f"Visual exploration for the {spec.purpose.value} image ({spec.brand_mode.value} brand mode): {angle}."
     )
-    if continuation_of:
-        return (
-            f"Continue this exact world and visual language (do not deviate): {continuation_of}. {facts} "
-            f"Now propose: {angle}. No watermark, no browser chrome, no lorem ipsum, high quality."
-        )
-    return (
-        f"{facts} Propose a genuinely bespoke digital creative direction using {angle}. "
-        "Do not invent business facts not stated above. No watermark, no browser chrome, no lorem ipsum, "
-        "high quality reference image for a website creative-direction exploration."
+    return " ".join(parts)
+
+
+def _asset_info(job: HiggsfieldJobResult, *, model: str) -> GeneratedAssetInfo:
+    images = job.raw.get("images") if isinstance(job.raw, dict) else None
+    if isinstance(images, list):
+        urls = [image["url"] for image in images if isinstance(image, dict) and isinstance(image.get("url"), str)]
+        first = images[0] if images and isinstance(images[0], dict) else {}
+    else:
+        urls = [job.result_url] if job.result_url else []
+        first = {}
+    width, height = first.get("width"), first.get("height")
+    return GeneratedAssetInfo(
+        provider_completed=job.status == "completed",
+        result_urls=urls,
+        width=width if isinstance(width, int) else None,
+        height=height if isinstance(height, int) else None,
+        job_id=job.job_id,
+        model=model,
     )
 
 
 class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
-    """Shared create_directions/develop_direction orchestration — angle
-    selection, prompt building, budget bookkeeping, CreativeDirection
+    """Shared create_directions/develop_direction orchestration — spec
+    preparation, budget bookkeeping, validation, CreativeDirection
     assembly — identical regardless of which generation backend a
-    subclass wraps. Every subclass supplies only: how to estimate a
-    call's cost, how to actually run one generation, which reference
-    image URL(s)/path(s) to send, and what to anchor a develop_direction
-    continuation on."""
+    subclass wraps. Every subclass supplies only backend-specific
+    mechanics: cost estimate, running one generation, resolving
+    references to locations that backend can use, and its own limits."""
 
     name = CreativeProviderName.HIGGSFIELD
     _credits_are_estimated: bool = False
+    _validator: GeneratedAssetValidator = MetadataAssetValidator()
 
     @property
     @abstractmethod
     def _model_label(self) -> str:
         """Recorded on CreativeBudgetCallRecord.model / generation_metadata
         — never a credential, just which model/job_type actually ran."""
+
+    @property
+    @abstractmethod
+    def _reference_candidate_limit(self) -> int:
+        """How many ranked reference candidates the spec should carry."""
+
+    @property
+    @abstractmethod
+    def _max_provider_references(self) -> int:
+        """How many references the backend/model will actually accept."""
 
     @abstractmethod
     def _estimate_cost(self, prompt: str) -> float:
@@ -115,15 +146,22 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         under-estimate large enough to blow the caller's real intent."""
 
     @abstractmethod
-    def _create_job(self, prompt: str, references: list[str]) -> HiggsfieldJobResult:
+    def _create_job(self, prompt: str, references: list[str], aspect_ratio: str | None) -> HiggsfieldJobResult:
         """Runs exactly one real, credit-consuming generation call and
         blocks until it reaches a terminal state."""
 
     @abstractmethod
-    def _reference_urls_for(self, assets: Sequence[CreativeBriefAsset]) -> list[str]:
-        """Which reference material to ground the *first* exploration
-        call in — never every asset in the library (see each subclass's
-        own docstring)."""
+    def _resolve_references(
+        self, references: Sequence[ReferenceSpec], assets_by_id: Mapping[UUID, CreativeBriefAsset]
+    ) -> list[tuple[ReferenceSpec, str]]:
+        """Resolve the spec's ranked reference candidates, in order, to
+        locations this backend can use — silently skipping any it cannot
+        resolve (a next-ranked candidate then takes its place)."""
+
+    @abstractmethod
+    def _supported_aspect_ratio(self, requested: str) -> str | None:
+        """`requested` if this backend/model supports it, else None (the
+        parameter is then omitted and the model's own default applies)."""
 
     @abstractmethod
     def _anchor_for_develop(self, selected: CreativeDirection) -> list[str]:
@@ -131,30 +169,52 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         direction during develop_direction — never a fresh, unrelated
         asset selection."""
 
+    def _prepare_spec(
+        self, brief: CreativeBrief, assets: Sequence[CreativeBriefAsset]
+    ) -> tuple[CreativeGenerationSpec, list[str]]:
+        spec = build_generation_spec(brief, assets, max_reference_candidates=self._reference_candidate_limit)
+        resolved = self._resolve_references(spec.reference_assets, {asset.id: asset for asset in assets})
+        used = resolved[: self._max_provider_references]
+        return spec.with_used_references([reference for reference, _ in used]), [location for _, location in used]
+
     def _spend_and_create(
-        self, prompt: str, *, references: list[str], budget: CreativeBudget, operation: str, iteration: int
+        self,
+        prompt: str,
+        *,
+        references: list[str],
+        aspect_ratio: str | None,
+        budget: CreativeBudget,
+        operation: str,
+        iteration: int,
     ) -> tuple[HiggsfieldJobResult, float, int]:
         started = time.monotonic()
         credits = self._estimate_cost(prompt)
         budget.record_spend(
             credits, provider=self.name.value, operation=operation, model=self._model_label, iteration=iteration
         )
-        job = self._create_job(prompt, references)
+        job = self._create_job(prompt, references, aspect_ratio)
         duration_ms = int((time.monotonic() - started) * 1000)
         return job, credits, duration_ms
 
     def create_directions(
         self, brief: CreativeBrief, assets: Sequence[CreativeBriefAsset], budget: CreativeBudget
     ) -> list[CreativeDirection]:
-        references = self._reference_urls_for(assets)
+        spec, references = self._prepare_spec(brief, assets)
+        aspect_ratio = self._supported_aspect_ratio(spec.output.aspect_ratio)
         candidates: list[CreativeDirection] = []
         last_error: Exception | None = None
 
-        for iteration, angle in enumerate(_EXPLORATION_ANGLES, start=1):
-            prompt = _build_prompt(brief, angle)
+        for iteration, angle in enumerate(EXPLORATION_ANGLES, start=1):
+            composed = compose_prompt(brief, spec, angle=angle)
+            prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
-                    prompt, references=references, budget=budget, operation="create_directions", iteration=iteration
+                    prompt,
+                    references=references,
+                    aspect_ratio=aspect_ratio,
+                    budget=budget,
+                    operation="create_directions",
+                    iteration=iteration,
                 )
             except Exception as exc:  # noqa: BLE001 — budget refusal or a real backend failure both stop exploration here
                 last_error = exc
@@ -166,12 +226,23 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                 )
                 break
 
+            validation = self._validator.validate(spec, _asset_info(job, model=self._model_label))
+            provenance = build_creative_provenance(
+                spec=spec,
+                composed=composed,
+                validation=validation,
+                provider=self.name.value,
+                model=self._model_label,
+                job_id=job.job_id,
+                estimated_generation_units=credits,
+                angle=angle,
+            )
             candidates.append(
                 CreativeDirection(
                     concept=CreativeConcept(
                         name=f"{brief.business_name} — direction {iteration}",
                         rationale=f"Explored via {angle}.",
-                        narrative=prompt,
+                        narrative=_narrative(brief, spec, angle),
                     ),
                     visual_language=VisualLanguage(
                         mood=angle,
@@ -182,7 +253,7 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                         graphic_language=angle,
                     ),
                     experience=ExperienceDirection(
-                        navigation_concept=angle if iteration == 2 else "to be interpreted from the reference image",
+                        navigation_concept="to be interpreted from the reference image",
                         storytelling_model=f"arrival -> {brief.conversion_objective}",
                         interaction_concepts=[],
                         motion_concepts=[],
@@ -200,13 +271,17 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                         "job_type": self._model_label,
                         "job_id": job.job_id,
                         "angle": angle,
+                        "purpose": spec.purpose.value,
                     },
                     generation_metadata={
                         "credits_used": credits,
                         "credits_are_estimated": self._credits_are_estimated,
+                        "estimated_generation_units": credits,
+                        "cost_semantics": COST_SEMANTICS,
                         "duration_ms": duration_ms,
                         "stage": "initial_direction",
                         "iteration": iteration,
+                        "creative_spec": provenance,
                     },
                 )
             )
@@ -234,6 +309,29 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
             )
         return candidates
 
+    def _develop_spec(
+        self, selected: CreativeDirection, brief: CreativeBrief, anchor: list[str]
+    ) -> tuple[CreativeBrief, CreativeGenerationSpec]:
+        """A continuation keeps the intent of the direction it deepens
+        (purpose/brand mode/level recorded in its provenance), never
+        whatever the request-time default happens to be."""
+        recorded = selected.generation_metadata.get("creative_spec")
+        recorded = recorded if isinstance(recorded, dict) else {}
+        updates: dict = {}
+        try:
+            updates["asset_purpose"] = AssetPurpose(recorded["purpose"])
+            updates["brand_strategy"] = BrandStrategy(recorded["brand_mode"])
+            updates["creative_level"] = CreativeLevel(recorded["creative_level"])
+        except (KeyError, ValueError):
+            updates = {}
+        effective_brief = brief.model_copy(update=updates) if updates else brief
+        spec = build_generation_spec(effective_brief, [], max_reference_candidates=0)
+        if anchor:
+            spec = spec.with_used_references(
+                [ReferenceSpec(asset_id=None, usage=ReferenceUsage.STYLE, source="previous_generation")]
+            )
+        return effective_brief, spec
+
     def develop_direction(
         self,
         selected: CreativeDirection,
@@ -244,13 +342,21 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         del assets
         developed = selected.model_copy(deep=True)
         anchor = self._anchor_for_develop(selected)
-        continuation = selected.concept.rationale
+        effective_brief, spec = self._develop_spec(selected, brief, anchor)
+        aspect_ratio = self._supported_aspect_ratio(spec.output.aspect_ratio)
+        continuation = selected.concept.rationale.rstrip(".")
 
-        for iteration, angle in enumerate(_DEVELOP_ANGLES, start=1):
-            prompt = _build_prompt(brief, angle, continuation_of=f"{continuation} ({brief.business_name})")
+        for iteration, angle in enumerate(DEVELOP_ANGLES, start=1):
+            composed = compose_prompt(effective_brief, spec, angle=angle, continuation_of=continuation)
+            prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
-                    prompt, references=anchor, budget=budget, operation="develop_direction", iteration=iteration
+                    prompt,
+                    references=anchor,
+                    aspect_ratio=aspect_ratio,
+                    budget=budget,
+                    operation="develop_direction",
+                    iteration=iteration,
                 )
             except Exception:  # noqa: BLE001 — stop deepening, keep whatever references were already gathered
                 budget.record_failure(
@@ -266,6 +372,7 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                 **developed.generation_metadata,
                 f"develop_iteration_{iteration}_credits": credits,
                 f"develop_iteration_{iteration}_duration_ms": duration_ms,
+                "develop_prompt_version": composed.version,
             }
 
         developed.generation_metadata["stage"] = "developed"
@@ -289,39 +396,45 @@ class HiggsfieldCliCreativeDirector(_HiggsfieldDirectorBase):
     def _model_label(self) -> str:
         return self._image_model
 
+    @property
+    def _reference_candidate_limit(self) -> int:
+        return _DEFAULT_REFERENCE_CANDIDATES
+
+    @property
+    def _max_provider_references(self) -> int:
+        return 1
+
     def _estimate_cost(self, prompt: str) -> float:
         return self._cli.estimate_cost(self._image_model, prompt=prompt)
 
-    def _create_job(self, prompt: str, references: list[str]) -> HiggsfieldJobResult:
+    def _create_job(self, prompt: str, references: list[str], aspect_ratio: str | None) -> HiggsfieldJobResult:
         return self._cli.create(
-            self._image_model, prompt=prompt, image_references=references or None, aspect_ratio="16:9"
+            self._image_model, prompt=prompt, image_references=references or None, aspect_ratio=aspect_ratio
         )
 
-    def _reference_urls_for(self, assets: Sequence[CreativeBriefAsset]) -> list[str]:
+    def _supported_aspect_ratio(self, requested: str) -> str | None:
+        return requested
+
+    def _resolve_references(
+        self, references: Sequence[ReferenceSpec], assets_by_id: Mapping[UUID, CreativeBriefAsset]
+    ) -> list[tuple[ReferenceSpec, str]]:
         if self._local_storage_root is None:
             return []
-        preferred = sorted(assets, key=lambda asset: 0 if asset.kind is AssetKind.LOGO else 1)
-        for asset in preferred:
+        resolved: list[tuple[ReferenceSpec, str]] = []
+        for reference in references:
+            asset = assets_by_id.get(reference.asset_id) if reference.asset_id else None
+            if asset is None:
+                continue
             local_path = resolve_local_reference(asset.url, local_storage_root=self._local_storage_root)
             if local_path:
-                return [local_path]
-        return []
+                resolved.append((reference, local_path))
+        return resolved
 
     def _anchor_for_develop(self, selected: CreativeDirection) -> list[str]:
         # The CLI auto-resolves a previous job id as a reference — never a
         # re-upload of the same generated image.
         job_id = selected.provider_metadata.get("job_id")
         return [job_id] if job_id else []
-
-
-def _asset_priority(asset: CreativeBriefAsset) -> int:
-    if asset.kind is AssetKind.LOGO:
-        return 0
-    if asset.category in (AssetCategory.HERO_CANDIDATE, AssetCategory.PRODUCT):
-        return 1
-    if asset.category is AssetCategory.LOW_QUALITY:
-        return 99
-    return 2
 
 
 class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
@@ -337,7 +450,7 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
         job_type: str = DEFAULT_JOB_TYPE,
         estimated_credits_per_call: float = 2.0,
         asset_base_url: str = "",
-        max_reference_assets: int = 3,
+        max_reference_assets: int = _DEFAULT_REFERENCE_CANDIDATES,
         storage: StorageProvider | None = None,
         presigned_url_expires_in_seconds: int = 600,
     ) -> None:
@@ -361,34 +474,60 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
     def _model_label(self) -> str:
         return self._job_type
 
+    def _model_config(self) -> HiggsfieldModelConfig | None:
+        """None for a model id outside the allowlist: submit() raises the
+        structured HiggsfieldApiUnavailableError for it before any HTTP
+        request, exactly as it always has — never raised from here, so
+        the failure keeps flowing through the same budget/fallback path."""
+        try:
+            return resolve_model_config(self._job_type)
+        except HiggsfieldApiUnavailableError:
+            return None
+
+    @property
+    def _reference_candidate_limit(self) -> int:
+        return self._max_reference_assets
+
+    @property
+    def _max_provider_references(self) -> int:
+        config = self._model_config()
+        if config is None:
+            return self._max_reference_assets
+        return config.max_reference_images if config.supports_reference_images else 0
+
     def _estimate_cost(self, prompt: str) -> float:
         del prompt  # No REST cost-estimate endpoint exists — see this class's own _credits_are_estimated flag.
         return self._estimated_credits_per_call
 
-    def _create_job(self, prompt: str, references: list[str]) -> HiggsfieldJobResult:
+    def _create_job(self, prompt: str, references: list[str], aspect_ratio: str | None) -> HiggsfieldJobResult:
         return self._client.create(
-            self._job_type, prompt=prompt, image_references=references or None, aspect_ratio="16:9"
+            self._job_type, prompt=prompt, image_references=references or None, aspect_ratio=aspect_ratio
         )
 
-    def _reference_urls_for(self, assets: Sequence[CreativeBriefAsset]) -> list[str]:
-        """Phase 4: real client imagery, by public HTTPS URL — logo first,
-        then a representative hero/product image, then a small number of
-        other strong real images. Never every asset in the library, and
-        never a fabricated placeholder when real assets exist."""
-        ordered = sorted(
-            (a for a in assets if a.kind is AssetKind.LOGO or a.category is not AssetCategory.LOW_QUALITY),
-            key=_asset_priority,
-        )
-        urls: list[str] = []
+    def _supported_aspect_ratio(self, requested: str) -> str | None:
+        config = self._model_config()
+        if config is None or requested in config.supported_aspect_ratios:
+            return requested
+        return None
+
+    def _resolve_references(
+        self, references: Sequence[ReferenceSpec], assets_by_id: Mapping[UUID, CreativeBriefAsset]
+    ) -> list[tuple[ReferenceSpec, str]]:
+        """The spec has already ranked and classified the candidates
+        (purpose/usage aware); this only turns each into a URL Higgsfield
+        can fetch, skipping any that cannot be resolved — never a
+        fabricated placeholder when real assets exist."""
+        resolved: list[tuple[ReferenceSpec, str]] = []
         seen: set[str] = set()
-        for asset in ordered:
+        for reference in references:
+            asset = assets_by_id.get(reference.asset_id) if reference.asset_id else None
+            if asset is None:
+                continue
             url = self._resolve_reference_url(asset)
             if url and url not in seen:
-                urls.append(url)
+                resolved.append((reference, url))
                 seen.add(url)
-            if len(urls) >= self._max_reference_assets:
-                break
-        return urls
+        return resolved
 
     def _anchor_for_develop(self, selected: CreativeDirection) -> list[str]:
         # REST has no "reference by job id" concept — continuation is

@@ -186,6 +186,19 @@ class CreativeLevel(StrEnum):
     CINEMATIC = "cinematic"
 
 
+class AssetPurpose(StrEnum):
+    """The website role a generated visual is meant to play (P2.2). It
+    materially changes composition, density and reference selection in
+    app.domain.creative.spec / prompt_composer — never a label only."""
+
+    HERO = "hero"
+    SECTION = "section"
+    BACKGROUND = "background"
+    PRODUCT = "product"
+    EDITORIAL = "editorial"
+    TEXTURE = "texture"
+
+
 class CreativeProviderName(StrEnum):
     """Which CreativeProvider implementation (app.creative.provider)
     produced or should produce a CreativeGeneration. Stored via str_enum
