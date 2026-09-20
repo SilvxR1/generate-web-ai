@@ -12,6 +12,7 @@ from app.creative.higgsfield.translation import to_higgsfield_prompt
 from app.domain.business_config import BrandColors, BusinessConfig, BusinessProfile, ServiceOffering
 from app.domain.business_config.examples import EXAMPLE_COSITAS_Y_PUNTOS_CONFIG
 from app.domain.creative.brief import CreativeBrief, CreativeBriefAsset, build_creative_brief
+from app.domain.creative.planning import plan_generation
 from app.domain.creative.prompt_composer import (
     DEVELOP_ANGLES,
     EXPLORATION_ANGLES,
@@ -63,12 +64,13 @@ def _cositas_brief(**overrides) -> CreativeBrief:
 
 
 def _spec(brief: CreativeBrief, assets, *, single_reference: bool = True) -> CreativeGenerationSpec:
-    spec = build_generation_spec(brief, assets)
+    spec = plan_generation(brief, list(assets)).spec
     return spec.with_used_references(spec.reference_assets[:1] if single_reference else spec.reference_assets)
 
 
 def _compose(brief: CreativeBrief, assets=(), **kwargs) -> tuple[ComposedCreativePrompt, str]:
-    composed = compose_prompt(brief, _spec(brief, list(assets)), angle=ANGLE, **kwargs)
+    plan = plan_generation(brief, list(assets))
+    composed = compose_prompt(brief, plan.spec, angle=ANGLE, profile=plan.profile, **kwargs)
     return composed, to_higgsfield_prompt(composed).lower()
 
 
@@ -76,21 +78,19 @@ def _blob(lines: list[str]) -> str:
     return " ".join(lines).lower()
 
 
-def test_cositas_hero_with_logo_as_identity_never_asks_to_recreate_the_logo():
-    """Regression scenario from the first real production generation: the
-    logo (three overlapping circles plus the business name) was recreated
-    and text was hallucinated. The composed prompt must make the reference
-    guidance, not the subject."""
+def test_cositas_hero_never_shows_the_model_the_logo_and_forbids_recreating_it():
+    """Regression scenario from two real production generations: the logo
+    (three overlapping circles plus the business name) was recreated and
+    text was hallucinated even when the prompt marked it as identity
+    guidance. P2.3: the logo is not sent at all, so the prompt describes no
+    logo reference and only forbids drawing one."""
     brief = _cositas_brief()
     composed, text = _compose(brief, [_logo()])
-    references = _blob(composed.reference_instructions)
 
-    assert "official brand logo" in references
-    assert "palette" in references and "geometric language" in references and "brand character" in references
-    assert "do not reproduce" in references
-    assert "place the logo" in references  # ...explicitly forbidden, not requested
+    assert "no reference images are supplied" in _blob(composed.reference_instructions)
+    assert "official brand logo" not in _blob(composed.reference_instructions)
     assert "recreate this logo" not in text and "reproduce this logo" not in text
-    assert "create an original image" in text  # a NEW visual, not a re-rendering of the reference
+    assert "create an original image" in text  # a NEW visual, not a re-rendering of a reference
     assert "do not recreate, redraw or approximate the official logo" in _blob(composed.negative_constraints)
 
 
@@ -204,12 +204,19 @@ def test_brand_modes_materially_change_the_composed_direction():
     assert "constrain" in directions[BrandStrategy.NEW_DIRECTION]
 
 
-def test_new_direction_treats_the_logo_as_palette_only_and_evolve_as_identity():
-    new_direction, _ = _compose(_cositas_brief(brand_strategy=BrandStrategy.NEW_DIRECTION), [_logo()])
-    evolve, _ = _compose(_cositas_brief(brand_strategy=BrandStrategy.EVOLVE), [_logo()])
+def test_if_a_caller_ever_supplies_a_logo_reference_the_composer_still_forbids_reproducing_it():
+    """A safety net only: the reference strategy never sends a logo, but the
+    composer must not become unsafe if a future caller does."""
+    brief = _cositas_brief()
+    base = plan_generation(brief, []).spec
 
-    assert "only to take its colour palette" in _blob(new_direction.reference_instructions)
-    assert "understand palette, geometric language" in _blob(evolve.reference_instructions)
+    for usage, needle in (
+        (ReferenceUsage.IDENTITY, "understand palette, geometric language"),
+        (ReferenceUsage.PALETTE, "only to take its colour palette"),
+    ):
+        spec = base.with_used_references([ReferenceSpec(asset_id=uuid4(), usage=usage)])
+        text = _blob(compose_prompt(brief, spec, angle=ANGLE).reference_instructions)
+        assert needle in text and "do not reproduce" in text and "place the logo" in text
 
 
 def test_brand_palette_is_used_strictly_when_preserving_and_only_as_a_start_when_evolving():
@@ -264,8 +271,8 @@ def test_no_references_states_that_none_are_supplied_instead_of_describing_phant
 
 
 def test_only_references_actually_used_are_described():
-    brief = _cositas_brief()
-    spec = build_generation_spec(brief, [_logo(), _image(AssetCategory.GALLERY)])
+    brief = _cositas_brief(purpose=AssetPurpose.SECTION)
+    spec = plan_generation(brief, [_image(AssetCategory.HERO_CANDIDATE), _image(AssetCategory.GALLERY)]).spec
     assert len(spec.reference_assets) == 2
 
     one = compose_prompt(brief, spec.with_used_references(spec.reference_assets[:1]), angle=ANGLE)
@@ -277,8 +284,8 @@ def test_only_references_actually_used_are_described():
 
 
 def test_real_photography_reference_is_style_not_subject():
-    brief = _cositas_brief()
-    spec = build_generation_spec(brief, [_image(AssetCategory.GALLERY)])
+    brief = _cositas_brief(purpose=AssetPurpose.EDITORIAL)
+    spec = plan_generation(brief, [_image(AssetCategory.GALLERY)]).spec
     composed = compose_prompt(brief, spec, angle=ANGLE)
 
     assert "only its mood, lighting and material feel" in _blob(composed.reference_instructions)
@@ -287,8 +294,8 @@ def test_real_photography_reference_is_style_not_subject():
 
 def test_continuation_keeps_the_same_world_and_describes_the_previous_image():
     brief = _cositas_brief()
-    spec = build_generation_spec(brief, [], max_reference_candidates=0).with_used_references(
-        [ReferenceSpec(asset_id=None, usage=ReferenceUsage.STYLE, source="previous_generation")]
+    spec = build_generation_spec(
+        brief, [ReferenceSpec(asset_id=None, usage=ReferenceUsage.STYLE, source="previous_generation")]
     )
 
     composed = compose_prompt(brief, spec, angle=DEVELOP_ANGLES[0], continuation_of="Explored via a metaphor")

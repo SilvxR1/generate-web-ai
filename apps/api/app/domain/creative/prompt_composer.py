@@ -21,6 +21,7 @@ import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.domain.creative.brand_profile import BrandVisualProfile, build_brand_visual_profile
 from app.domain.creative.brief import CreativeBrief
 from app.domain.creative.spec import (
     PROMPT_VERSION,
@@ -222,23 +223,25 @@ def _reference_instruction(index: int, total: int, reference: ReferenceSpec) -> 
             )
 
 
-def _uses_logo_reference(spec: CreativeGenerationSpec) -> bool:
-    return any(ref.usage in (ReferenceUsage.IDENTITY, ReferenceUsage.PALETTE) for ref in spec.reference_assets)
-
-
-def _palette_guidance(brief: CreativeBrief, spec: CreativeGenerationSpec) -> str | None:
+def _brand_identity_lines(profile: BrandVisualProfile, spec: CreativeGenerationSpec) -> list[str]:
+    """Brand identity communicated as TEXT from the BrandVisualProfile — the
+    logo image itself is never sent to the model (P2.3). Only what the
+    profile reliably knows is stated; missing information is stated as
+    missing, never assumed."""
     if spec.brand_mode is BrandStrategy.NEW_DIRECTION:
-        return None
-    colors = brief.brand_colors
-    if colors is not None:
+        return []
+    lines: list[str] = []
+    if profile.palette:
         stance = "Use" if spec.brand_mode is BrandStrategy.PRESERVE else "Start from"
-        return (
-            f"{stance} the brand palette: primary {colors.primary}, secondary {colors.secondary}, "
-            f"accent {colors.accent}."
-        )
-    if _uses_logo_reference(spec):
-        return "Derive the colour palette from the supplied reference."
-    return None
+        colors = ", ".join(f"{color.role} {color.value}" for color in profile.palette)
+        lines.append(f"{stance} the brand palette: {colors}.")
+    if profile.visual_style:
+        lines.append(f"Brand visual style (from business settings): {profile.visual_style}.")
+    if profile.geometry:
+        lines.append("Brand geometric language: " + "; ".join(profile.geometry) + ".")
+    if not lines:
+        lines.append("No verified brand palette or visual style is available: do not assume one.")
+    return lines
 
 
 def compose_prompt(
@@ -247,7 +250,9 @@ def compose_prompt(
     *,
     angle: str,
     continuation_of: str | None = None,
+    profile: BrandVisualProfile | None = None,
 ) -> ComposedCreativePrompt:
+    profile = profile or build_brand_visual_profile(brief, [])
     facts = _verified_facts(brief)
     role = _PURPOSE_ROLE[spec.purpose]
     level = _LEVEL_DIRECTION[spec.creative_level]
@@ -255,7 +260,7 @@ def compose_prompt(
     business_lines = [*facts]
     if not brief.description and not brief.services:
         business_lines.append(
-            "No further verified business details are available: rely on the industry and reference cues only, "
+            "No further verified business details are available: rely on the industry only, "
             "and do not invent products, projects or claims."
         )
 
@@ -264,9 +269,7 @@ def compose_prompt(
         f"Overall feel: {level}.",
         _BRAND_MODE_DIRECTION[spec.brand_mode],
     ]
-    palette = _palette_guidance(brief, spec)
-    if palette:
-        interpretation.append(palette)
+    interpretation.extend(_brand_identity_lines(profile, spec))
     if continuation_of:
         interpretation.insert(
             0, f"Continue the same world and visual language as the previous exploration ({continuation_of})."
@@ -295,7 +298,7 @@ def compose_prompt(
     negatives.extend(_GENERAL_NEGATIVES)
     if spec.purpose is not AssetPurpose.TEXTURE:
         negatives.append("no duplicated or repeated subjects")
-    if brief.logo_url or _uses_logo_reference(spec):
+    if brief.logo_url or profile.has_official_logo:
         negatives.append(_LOGO_NEGATIVE)
 
     output_lines = [
@@ -319,6 +322,8 @@ def compose_prompt(
             "text_policy": spec.text_policy.value,
             "reference_usages": [ref.usage.value for ref in spec.reference_assets],
             "business_name_in_prompt": False,
+            "brand_profile_version": profile.version,
+            "brand_profile_sources": list(profile.sources),
             "angle": angle,
             "is_continuation": continuation_of is not None,
         },

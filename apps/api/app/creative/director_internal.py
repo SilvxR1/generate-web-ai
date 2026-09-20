@@ -33,6 +33,8 @@ from app.domain.creative.direction import (
     ExperienceDirection,
     VisualLanguage,
 )
+from app.domain.creative.planning import plan_generation
+from app.domain.creative.provenance import build_internal_provenance
 from app.domain.enums import CreativeProviderName
 
 
@@ -43,6 +45,10 @@ class InternalCreativeDirector(CreativeDirectorProvider):
         self, brief: CreativeBrief, assets: Sequence[CreativeBriefAsset], budget: CreativeBudget
     ) -> list[CreativeDirection]:
         del budget  # No spend: the internal director makes no provider calls.
+        # Consumes the same provider-independent plan as any provider, so its
+        # provenance states the same intent — and, honestly, that nothing was
+        # generated and nothing was sent to an image model.
+        plan = plan_generation(brief, assets)
         direction = CreativeDirection(
             concept=CreativeConcept(
                 name=f"{brief.business_name} — existing brand direction",
@@ -76,7 +82,12 @@ class InternalCreativeDirector(CreativeDirectorProvider):
             references=[],
             constraints=constraints_for_brief(brief),
             provider_metadata={"provider": self.name.value, "strategy": "existing_brand_and_theme"},
-            generation_metadata={"credits_used": 0.0, "stage": "initial_direction", "candidate_count": 1},
+            generation_metadata={
+                "credits_used": 0.0,
+                "stage": "initial_direction",
+                "candidate_count": 1,
+                "creative_spec": build_internal_provenance(plan),
+            },
             is_recommended=True,
             selection_rationale=(
                 "Only candidate: InternalCreativeDirector has no exploratory capability, so nothing to "

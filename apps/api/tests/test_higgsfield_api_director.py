@@ -11,15 +11,23 @@ from uuid import uuid4
 
 import pytest
 
+from app.creative.higgsfield.api_client import HiggsfieldReferenceAssetError
 from app.creative.higgsfield.director import HiggsfieldApiCreativeDirector
 from app.creative.higgsfield.models import HiggsfieldJobResult
 from app.domain.business_config import BusinessConfig, BusinessProfile
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
 from app.domain.creative.budget import BudgetExceededError, CreativeBudget
-from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, BusinessVertical, CreativeBudgetTier
+from app.domain.enums import (
+    AssetCategory,
+    AssetKind,
+    AssetOrigin,
+    AssetPurpose,
+    BusinessVertical,
+    CreativeBudgetTier,
+)
 
 
-def _brief():
+def _brief(purpose: AssetPurpose | None = None):
     config = BusinessConfig(
         business_profile=BusinessProfile(
             name="Cositas y Puntos",
@@ -28,7 +36,14 @@ def _brief():
             description="Amigurumi hechos a mano.",
         )
     )
-    return build_creative_brief(business_config=config)
+    return build_creative_brief(business_config=config, purpose=purpose)
+
+
+def _product_brief():
+    """P2.3: only a real product image is a legitimate provider reference for
+    the reference-resolution mechanics these tests cover — an official logo
+    is never sent to a generation model."""
+    return _brief(AssetPurpose.PRODUCT)
 
 
 def _asset(
@@ -123,57 +138,78 @@ def test_create_directions_stops_gracefully_on_budget_exhaustion():
     assert budget.credits_used == 3.0
 
 
-def test_reference_urls_prefer_logo_then_hero_never_every_asset():
-    brief = _brief()
+def test_reference_urls_are_real_product_images_only_never_the_logo_or_every_asset():
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient(
         [_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")]
     )
-    director = HiggsfieldApiCreativeDirector(client, estimated_credits_per_call=1.0, max_reference_assets=2)
+    director = HiggsfieldApiCreativeDirector(client, estimated_credits_per_call=1.0)
+
+    def product(name: str):
+        return _asset(kind=AssetKind.IMAGE, category=AssetCategory.PRODUCT, url=f"https://cdn.example.com/{name}.png")
 
     assets = [
-        _asset(kind=AssetKind.IMAGE, category=AssetCategory.OTHER, url="https://cdn.example.com/other.png"),
-        _asset(kind=AssetKind.IMAGE, category=AssetCategory.HERO_CANDIDATE, url="https://cdn.example.com/hero.png"),
         _asset(kind=AssetKind.LOGO, category=AssetCategory.LOGO, url="https://cdn.example.com/logo.png"),
+        _asset(kind=AssetKind.IMAGE, category=AssetCategory.OTHER, url="https://cdn.example.com/other.png"),
         _asset(kind=AssetKind.IMAGE, category=AssetCategory.LOW_QUALITY, url="https://cdn.example.com/bad.png"),
+        product("p1"),
+        product("p2"),
+        product("p3"),
+        product("p4"),
     ]
 
     director.create_directions(brief, assets, budget)
 
     first_call_refs = client.calls[0]["image_references"]
-    assert first_call_refs == ["https://cdn.example.com/logo.png", "https://cdn.example.com/hero.png"]
+    assert first_call_refs == [f"https://cdn.example.com/{name}.png" for name in ("p1", "p2", "p3")]
+    assert "https://cdn.example.com/logo.png" not in first_call_refs  # an official logo is never sent
     assert "https://cdn.example.com/bad.png" not in first_call_refs  # never a LOW_QUALITY asset
-    assert len(first_call_refs) == 2  # capped at max_reference_assets, never every asset in the library
+    assert len(first_call_refs) == 3  # capped by the strategy, never every asset in the library
 
 
 def test_reference_urls_resolve_a_root_relative_asset_url_against_asset_base_url():
-    brief = _brief()
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient(
         [_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")]
     )
     director = HiggsfieldApiCreativeDirector(client, asset_base_url="https://api.example.com")
 
-    assets = [_asset(kind=AssetKind.LOGO, category=AssetCategory.LOGO, url="/uploads/biz/logo.png")]
+    assets = [_asset(kind=AssetKind.IMAGE, category=AssetCategory.PRODUCT, url="/uploads/biz/product.png")]
     director.create_directions(brief, assets, budget)
 
-    assert client.calls[0]["image_references"] == ["https://api.example.com/uploads/biz/logo.png"]
+    assert client.calls[0]["image_references"] == ["https://api.example.com/uploads/biz/product.png"]
 
 
-def test_reference_urls_are_empty_without_asset_base_url_for_a_root_relative_url():
-    brief = _brief()
+def test_an_optional_style_reference_that_cannot_be_resolved_is_dropped_not_fabricated():
+    brief = _brief(AssetPurpose.SECTION)
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient(
         [_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")]
     )
     director = HiggsfieldApiCreativeDirector(client)  # no asset_base_url configured
 
-    assets = [_asset(kind=AssetKind.LOGO, category=AssetCategory.LOGO, url="/uploads/biz/logo.png")]
+    assets = [_asset(kind=AssetKind.IMAGE, category=AssetCategory.GALLERY, url="/uploads/biz/gallery.png")]
     director.create_directions(brief, assets, budget)
 
     # Honest degradation, never a fabricated substitute image: no usable
     # reference URL means no reference is sent, not a crash.
     assert client.calls[0]["image_references"] is None
+
+
+def test_a_required_product_reference_that_cannot_be_resolved_stops_before_any_spend():
+    brief = _product_brief()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
+    client = _FakeApiClient([_job("r-1", "https://x/1.png")])
+    director = HiggsfieldApiCreativeDirector(client)  # no asset_base_url: a root-relative URL can't resolve
+
+    assets = [_asset(kind=AssetKind.IMAGE, category=AssetCategory.PRODUCT, url="/uploads/biz/product.png")]
+    with pytest.raises(HiggsfieldReferenceAssetError):
+        director.create_directions(brief, assets, budget)
+
+    assert client.calls == []  # nothing submitted
+    assert budget.credits_used == 0.0  # nothing spent
 
 
 def test_develop_direction_anchors_on_the_selected_result_url_not_a_job_id():
@@ -220,7 +256,7 @@ def test_create_directions_raises_when_zero_candidates_could_be_afforded():
 
 
 def test_reference_urls_use_a_presigned_url_for_an_asset_this_provider_wrote():
-    brief = _brief()
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
     storage = _FakeStorage()
@@ -230,8 +266,8 @@ def test_reference_urls_use_a_presigned_url_for_an_asset_this_provider_wrote():
 
     assets = [
         _asset(
-            kind=AssetKind.LOGO,
-            category=AssetCategory.LOGO,
+            kind=AssetKind.IMAGE,
+            category=AssetCategory.PRODUCT,
             url="https://pub-abc123.r2.dev/biz-1/logo.png",
             storage_provider="r2",
             storage_key="biz-1/logo.png",
@@ -248,7 +284,7 @@ def test_reference_urls_fall_back_to_the_stored_url_when_provider_does_not_match
     progress — asset.storage_provider not matching this director's own
     current storage provider must never guess; it falls back to the
     already-stored (public) URL unchanged."""
-    brief = _brief()
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
     storage = _FakeStorage()
@@ -256,8 +292,8 @@ def test_reference_urls_fall_back_to_the_stored_url_when_provider_does_not_match
 
     assets = [
         _asset(
-            kind=AssetKind.LOGO,
-            category=AssetCategory.LOGO,
+            kind=AssetKind.IMAGE,
+            category=AssetCategory.PRODUCT,
             url="https://cdn.example.com/logo.png",
             storage_provider="local",
             storage_key="biz-1/logo.png",
@@ -270,7 +306,7 @@ def test_reference_urls_fall_back_to_the_stored_url_when_provider_does_not_match
 
 
 def test_reference_urls_fall_back_when_storage_has_no_signing_concept():
-    brief = _brief()
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
     storage = _FakeStorage(url=None)  # e.g. LocalStorageProvider's own presigned_url contract
@@ -278,8 +314,8 @@ def test_reference_urls_fall_back_when_storage_has_no_signing_concept():
 
     assets = [
         _asset(
-            kind=AssetKind.LOGO,
-            category=AssetCategory.LOGO,
+            kind=AssetKind.IMAGE,
+            category=AssetCategory.PRODUCT,
             url="https://cdn.example.com/logo.png",
             storage_provider="r2",
             storage_key="biz-1/logo.png",
@@ -293,15 +329,15 @@ def test_reference_urls_fall_back_when_storage_has_no_signing_concept():
 def test_reference_urls_fall_back_without_a_storage_provider_configured():
     """Backward compatible: every call site that constructed this
     director before `storage` existed keeps working unchanged."""
-    brief = _brief()
+    brief = _product_brief()
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     client = _FakeApiClient([_job("r-1", "https://x/1.png"), _job("r-2", "https://x/2.png"), _job("r-3", "https://x/3.png")])
     director = HiggsfieldApiCreativeDirector(client)  # no storage= at all
 
     assets = [
         _asset(
-            kind=AssetKind.LOGO,
-            category=AssetCategory.LOGO,
+            kind=AssetKind.IMAGE,
+            category=AssetCategory.PRODUCT,
             url="https://cdn.example.com/logo.png",
             storage_provider="r2",
             storage_key="biz-1/logo.png",

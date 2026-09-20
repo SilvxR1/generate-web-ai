@@ -40,6 +40,7 @@ import httpx
 
 from app.creative.errors import CreativeProviderRequestError
 from app.creative.higgsfield.models import HiggsfieldJobResult
+from app.domain.creative.model_routing import CapabilityVerification, ModelCapabilities, OutputKind, RegisteredModel
 
 
 class HiggsfieldApiError(CreativeProviderRequestError):
@@ -84,6 +85,21 @@ class HiggsfieldModelUnavailableError(HiggsfieldApiError):
     endpoint is documented in the public OpenAPI spec. Distinct from a
     generic 404 (e.g. a stale request_id) since it names the specific
     model/endpoint that failed."""
+
+
+class HiggsfieldNoSuitableModelError(HiggsfieldModelUnavailableError):
+    """P2.3: no registered Higgsfield model satisfies this generation's
+    requirements (e.g. no model that generates without a reference when
+    the strategy withholds every asset), or the request can't be honestly
+    satisfied (PRODUCT with no real product image). Raised BEFORE any
+    submission, so nothing was spent. A subclass of
+    HiggsfieldModelUnavailableError so FallbackCreativeDirector degrades to
+    the internal director — with its own explicit reason — instead of
+    inappropriately pushing an asset through a model that would accept it."""
+
+    def __init__(self, message: str, *, reason_code: str, detail: str | None = None) -> None:
+        super().__init__(message, detail=detail)
+        self.reason_code = reason_code
 
 
 class HiggsfieldReferenceAssetError(HiggsfieldApiError):
@@ -142,6 +158,24 @@ class HiggsfieldModelConfig:
     # <url>} objects (0-8), while higgsfield-ai/soul/reference takes a
     # single `image_reference_url` string (required, exactly one).
     reference_image_param: Literal["input_images", "image_reference_url"] | None
+    # P2.3 capability metadata. `requires_reference` is True only for a model
+    # that cannot run without a reference image; `verified_by` records how
+    # this entry's capabilities were established (never guessed).
+    requires_reference: bool = False
+    verified_by: CapabilityVerification = CapabilityVerification.EARLIER_OFFICIAL_SPEC
+
+    def capabilities(self) -> ModelCapabilities:
+        return ModelCapabilities(
+            output=OutputKind.IMAGE,
+            supports_reference=self.supports_reference_images,
+            requires_reference=self.requires_reference,
+            max_reference_images=self.max_reference_images if self.supports_reference_images else 0,
+            supported_aspect_ratios=self.supported_aspect_ratios,
+            # Which reference roles a model handles well is not documented
+            # for any registered model: unknown, not guessed.
+            reference_roles=None,
+            verified_by=self.verified_by,
+        )
 
     def build_reference_payload(self, urls: list[str]) -> dict:
         """Truncates `urls` to this model's own limit and shapes them into
@@ -180,6 +214,9 @@ _MODEL_REGISTRY: dict[str, HiggsfieldModelConfig] = {
             {"auto", "1:1", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "16:9", "9:16", "21:9"}
         ),
         reference_image_param="input_images",
+        # Present in an earlier published spec; absent from the current one
+        # (v2.0.0) and 404 on this workspace. Registered, never preferred.
+        verified_by=CapabilityVerification.EARLIER_OFFICIAL_SPEC,
     ),
     # Candidate raised to replace nano-banana above (see
     # docs/higgsfield-integration.md): same `higgsfield-ai/soul/` endpoint
@@ -197,8 +234,37 @@ _MODEL_REGISTRY: dict[str, HiggsfieldModelConfig] = {
         max_reference_images=1,
         supported_aspect_ratios=frozenset({"9:16", "16:9", "4:3", "3:4", "1:1", "2:3", "3:2"}),
         reference_image_param="image_reference_url",
+        # Requires exactly one reference image. Not in the current published
+        # spec (v2.0.0), but it completed two real production generations on
+        # this workspace — verified by observation, not by the spec.
+        requires_reference=True,
+        verified_by=CapabilityVerification.OBSERVED_IN_PRODUCTION,
+    ),
+    # Prompt-only text-to-image: the one image model in the CURRENT official
+    # spec (docs.higgsfield.ai/docs/openapi.json, v2.0.0). Body: prompt
+    # (required), num_images, resolution (2K/4K), aspect_ratio. No reference
+    # input at all, so it can generate a hero/background/texture without
+    # being handed a logo. Not exercised in production yet.
+    "higgsfield-ai/soul/standard": HiggsfieldModelConfig(
+        id="higgsfield-ai/soul/standard",
+        endpoint="/higgsfield-ai/soul/standard",
+        supports_reference_images=False,
+        max_reference_images=0,
+        supported_aspect_ratios=frozenset({"1:1", "4:3", "3:4", "3:2", "2:3", "5:4", "4:5", "16:9", "9:16", "21:9"}),
+        reference_image_param=None,
+        verified_by=CapabilityVerification.CURRENT_OFFICIAL_SPEC,
     ),
 }
+
+
+def registered_models() -> list[RegisteredModel]:
+    """Every allowlisted model as a router candidate (provider-independent
+    capabilities) — the allowlist itself is unchanged and remains the only
+    way an endpoint can be reached."""
+    return [
+        RegisteredModel(provider="higgsfield", model_id=config.id, capabilities=config.capabilities())
+        for config in _MODEL_REGISTRY.values()
+    ]
 
 DEFAULT_JOB_TYPE = "nano-banana"
 

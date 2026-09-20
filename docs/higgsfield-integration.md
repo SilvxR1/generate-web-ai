@@ -97,6 +97,12 @@ generic "pass any job_type as a path segment"); using Pro via REST would
 require either a documented endpoint appearing later or direct
 confirmation from Higgsfield support.
 
+> **P2.3 update.** The published spec was re-checked (v2.0.0): it now lists `higgsfield-ai/soul/standard` (prompt-only
+> text-to-image) as its only image model — `nano-banana` and `soul/reference` are no longer in it, although
+> `soul/reference` completed real production generations. The registry records how each model was verified, and model
+> selection is capability-based: see [p2-3-brand-reference-model-routing.md](p2-3-brand-reference-model-routing.md). The
+> table below is the historical P2.1 evaluation.
+
 ## Model registry — evaluating an alternative to nano-banana (P2.1 continuation)
 
 The `model_not_found` result above never resolved and became a

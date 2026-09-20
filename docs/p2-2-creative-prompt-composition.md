@@ -1,5 +1,11 @@
 # P2.2 — Creative direction and prompt composition
 
+> **Superseded in part by P2.3.** Real generations showed that marking a logo `IDENTITY` does not stop a
+> reference-conditioned model recreating it. Reference *selection* now lives in
+> `app/domain/creative/reference_strategy.py` and the official logo is never sent to a model — see
+> [p2-3-brand-reference-model-routing.md](p2-3-brand-reference-model-routing.md). Composition, text policy, validation
+> and provenance described below still apply.
+
 ## Why
 
 The first real production Higgsfield generation (`higgsfield-ai/soul/reference`, real Cositas y Puntos logo as the

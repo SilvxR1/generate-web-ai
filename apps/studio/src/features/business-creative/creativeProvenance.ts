@@ -33,6 +33,14 @@ export const LEVEL_OPTIONS: { value: CreativeGenerationLevel | ""; label: string
   { value: "cinematic", label: "Cinematic" },
 ];
 
+const BRAND_SOURCE_LABELS: Record<string, string> = {
+  official_logo: "Official logo",
+  official_logo_palette: "Official logo colors",
+  brand_config_colors: "Brand colors",
+  brand_config_style: "Brand style",
+  brand_config_typography: "Brand typography",
+};
+
 export interface ProvenanceRow {
   label: string;
   value: string;
@@ -80,14 +88,35 @@ export function provenanceRows(direction: CreativeDirection): ProvenanceRow[] {
   const level = labelFor(LEVEL_OPTIONS, spec.creative_level);
   if (level) rows.push({ label: "Creative level", value: level });
 
+  // P2.3: what informed the brand profile is shown separately from what was
+  // actually sent to the image model — an official logo is a brand source
+  // but is never a generation reference.
+  const brandProfile = asRecord(spec.brand_profile);
+  if (brandProfile) {
+    const sources = Array.isArray(brandProfile.sources)
+      ? brandProfile.sources.map((source) => BRAND_SOURCE_LABELS[String(source)]).filter((label) => label)
+      : [];
+    rows.push({ label: "Brand sources", value: sources.length > 0 ? sources.join(", ") : "None recorded" });
+  }
+
   const references = Array.isArray(spec.references) ? spec.references.map(asRecord).filter((ref) => ref !== null) : [];
   rows.push({
-    label: "References used",
+    label: "Generation references",
     value:
       references.length === 0
-        ? "None"
+        ? "None (brand assets inform the prompt as text only)"
         : references.map((ref, index) => `${index + 1}. ${String(ref?.asset_category ?? "asset")} (${String(ref?.usage)})`).join("; "),
   });
+
+  const selection = asRecord(spec.model_selection);
+  if (selection && typeof selection.reason === "string") {
+    rows.push({
+      label: "Model choice",
+      value: selection.reason.startsWith("configured_model_satisfies")
+        ? "Configured model"
+        : "Selected by capability for this request",
+    });
+  }
 
   const validation = validationSummary(asRecord(spec.validation));
   if (validation) rows.push({ label: "Validation", value: validation });
