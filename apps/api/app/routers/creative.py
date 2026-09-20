@@ -22,6 +22,7 @@ from app.creative.higgsfield import (
     HiggsfieldGenerationFailedError,
     HiggsfieldInsufficientCreditsError,
     HiggsfieldModelUnavailableError,
+    HiggsfieldNoSuitableModelError,
     HiggsfieldRateLimitedError,
     HiggsfieldReferenceAssetError,
     HiggsfieldTimeoutError,
@@ -1068,6 +1069,11 @@ _HIGGSFIELD_ERROR_MAP: dict[type[Exception], tuple[str, int, str]] = {
         "higgsfield_insufficient_credits",
         status.HTTP_503_SERVICE_UNAVAILABLE,
         "Higgsfield does not have enough API credits to generate creative directions right now.",
+    ),
+    HiggsfieldNoSuitableModelError: (
+        "higgsfield_no_suitable_model",
+        status.HTTP_422_UNPROCESSABLE_CONTENT,
+        "No available Higgsfield model can satisfy this generation with the business's real assets.",
     ),
     HiggsfieldModelUnavailableError: (
         "higgsfield_model_unavailable",

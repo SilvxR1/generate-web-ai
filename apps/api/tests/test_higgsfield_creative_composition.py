@@ -1,4 +1,5 @@
-"""HiggsfieldApiCreativeDirector consuming the P2.2 composed spec.
+"""HiggsfieldApiCreativeDirector consuming the P2.3 plan, reference strategy
+and model router.
 
 The real HiggsfieldApiClient is used over an httpx.MockTransport (no
 network, no real Higgsfield call, no spend anywhere in this module), so
@@ -11,7 +12,16 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.creative.higgsfield.api_client import HiggsfieldApiClient, HiggsfieldInsufficientCreditsError
+from app.creative.director_fallback import FallbackCreativeDirector
+from app.creative.director_internal import InternalCreativeDirector
+from app.creative.higgsfield import director as director_module
+from app.creative.higgsfield.api_client import (
+    HiggsfieldApiClient,
+    HiggsfieldApiUnavailableError,
+    HiggsfieldInsufficientCreditsError,
+    HiggsfieldNoSuitableModelError,
+    registered_models,
+)
 from app.creative.higgsfield.director import HiggsfieldApiCreativeDirector
 from app.domain.business_config import BusinessConfig, BusinessProfile
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
@@ -24,11 +34,13 @@ from app.domain.enums import (
     BrandStrategy,
     BusinessVertical,
     CreativeBudgetTier,
+    CreativeLevel,
 )
 
-SOUL = "higgsfield-ai/soul/reference"
+SOUL_REFERENCE = "higgsfield-ai/soul/reference"
+SOUL_STANDARD = "higgsfield-ai/soul/standard"
 NANO = "nano-banana"
-PRESIGNED = "https://acct.r2.cloudflarestorage.com/biz/logo.png?X-Amz-Signature=SECRETSIG"
+PRESIGNED = "https://acct.r2.cloudflarestorage.com/biz/product.png?X-Amz-Signature=SECRETSIG"
 RESULT_URL = "https://d3example.cloudfront.net/out.png"
 
 
@@ -47,7 +59,7 @@ class _Gateway:
     """httpx.MockTransport handler recording every POST (a billable
     submission) and answering polls with a completed job."""
 
-    def __init__(self, *, fail_with: int | None = None, result_url: str = RESULT_URL) -> None:
+    def __init__(self, *, fail_with: tuple[int, str] | None = None, result_url: str = RESULT_URL) -> None:
         self.posts: list[dict] = []
         self._fail_with = fail_with
         self._result_url = result_url
@@ -56,7 +68,8 @@ class _Gateway:
         if request.method == "POST":
             self.posts.append({"path": request.url.path, "body": json.loads(request.content)})
             if self._fail_with:
-                return httpx.Response(self._fail_with, json={"detail": "not_enough_credits"})
+                status, detail = self._fail_with
+                return httpx.Response(status, json={"detail": detail})
             n = len(self.posts)
             return httpx.Response(
                 200,
@@ -70,7 +83,7 @@ class _Gateway:
         return httpx.Response(200, json={"status": "completed", "images": [{"url": self._result_url}]})
 
 
-def _director(gateway: _Gateway, model: str, **kwargs) -> HiggsfieldApiCreativeDirector:
+def _director(gateway: _Gateway, model: str = SOUL_REFERENCE, **kwargs) -> HiggsfieldApiCreativeDirector:
     http_client = httpx.Client(transport=httpx.MockTransport(gateway), base_url="https://api.higgsfield.ai")
     client = HiggsfieldApiClient(key_id="kid", key_secret="ksecret", http_client=http_client)
     kwargs.setdefault("storage", _FakeStorage())
@@ -107,7 +120,13 @@ def _asset(
 
 
 def _r2_logo() -> CreativeBriefAsset:
-    return _asset(AssetKind.LOGO, AssetCategory.LOGO, url="https://pub.example/logo.png", r2_key="biz/logo.png")
+    return _asset(AssetKind.LOGO, AssetCategory.LOGO, url="https://pub.example/logo.jpg", r2_key="biz/logo.jpg")
+
+
+def _r2_product() -> CreativeBriefAsset:
+    return _asset(
+        AssetKind.IMAGE, AssetCategory.PRODUCT, url="https://pub.example/product.png", r2_key="biz/product.png"
+    )
 
 
 def _run(director, assets, *, hard_limit=None, **brief_kwargs):
@@ -116,228 +135,356 @@ def _run(director, assets, *, hard_limit=None, **brief_kwargs):
     return brief, budget, director.create_directions(brief, assets, budget)
 
 
-def test_soul_reference_sends_exactly_one_reference_on_its_own_endpoint_field():
-    gateway = _Gateway()
-    assets = [
-        _asset(AssetKind.IMAGE, AssetCategory.HERO_CANDIDATE),
-        _asset(AssetKind.IMAGE, AssetCategory.GALLERY),
-        _r2_logo(),
-    ]
-
-    _run(_director(gateway, SOUL), assets)
-
-    body = gateway.posts[0]["body"]
-    assert gateway.posts[0]["path"] == "/higgsfield-ai/soul/reference"
-    assert body["image_reference_url"] == PRESIGNED  # the R2-backed logo, resolved via a presigned URL
-    assert "input_images" not in body
-    assert isinstance(body["image_reference_url"], str)  # one reference, never a list
-    assert body["aspect_ratio"] == "16:9"
+# --- the Cositas regression: HERO + PRESERVE + PROFESSIONAL + real logo --------
 
 
-def test_the_prompt_sent_treats_the_logo_as_identity_and_forbids_text():
-    gateway = _Gateway()
-
-    _run(_director(gateway, SOUL), [_r2_logo()])
-
-    prompt = gateway.posts[0]["body"]["prompt"].lower()
-    assert "cositas" not in prompt  # the name would invite the model to render it
-    assert "official brand logo" in prompt
-    assert "do not reproduce, redraw, imitate or place the logo" in prompt
-    assert "no words, letters, numbers or typography" in prompt
-    assert "negative space" in prompt
-    assert "avoid:" in prompt
-
-
-def test_provenance_lists_reference_asset_ids_but_never_the_presigned_url():
+def test_cositas_regression_the_logo_is_never_sent_and_soul_reference_is_not_used():
+    """The real experiments: soul/reference + the logo recreated the logo and
+    its name twice. Same request now: the logo informs the brand profile only,
+    nothing visual is sent, and a no-reference model is routed to."""
     gateway = _Gateway()
     logo = _r2_logo()
 
-    _, _, candidates = _run(_director(gateway, SOUL), [logo])
+    _, _, [candidate, *_] = _run(
+        _director(gateway, SOUL_REFERENCE),  # HIGGSFIELD_API_MODEL as configured in production
+        [logo],
+        hard_limit=2.0,
+        purpose=AssetPurpose.HERO,
+        brand_strategy=BrandStrategy.PRESERVE,
+        creative_level=CreativeLevel.PROFESSIONAL,
+    )
 
-    [candidate] = candidates[:1]
-    serialized = json.dumps(candidate.generation_metadata) + json.dumps(candidate.provider_metadata)
+    [post] = gateway.posts
+    assert post["path"] == "/higgsfield-ai/soul/standard"  # NOT /higgsfield-ai/soul/reference
+    assert "image_reference_url" not in post["body"] and "input_images" not in post["body"]
+    assert post["body"]["aspect_ratio"] == "16:9"
+
     spec = candidate.generation_metadata["creative_spec"]
-    assert spec["references"] == [
-        {
-            "asset_id": str(logo.id),
-            "usage": "identity",
-            "asset_kind": "logo",
-            "asset_category": "logo",
-            "source": "business_asset",
-        }
+    assert spec["brand_source_asset_ids"] == [str(logo.id)]  # the logo informed the profile...
+    assert spec["provider_reference_asset_ids"] == []  # ...and was NOT sent to the model
+    assert spec["references"] == []
+    assert spec["model"] == SOUL_STANDARD == candidate.provider_metadata["job_type"]
+    assert spec["model_selection"]["selected"] == SOUL_STANDARD
+    assert spec["model_selection"]["reason"].startswith("configured_model_unsuitable:requires_a_reference")
+    assert {"model_id": SOUL_REFERENCE, "reason": "requires_a_reference_but_none_is_wanted"} in spec["model_selection"][
+        "rejected"
     ]
-    assert spec["purpose"] == "hero" and spec["provider"] == "higgsfield" and spec["model"] == SOUL
-    assert spec["job_id"] == "r-1" and spec["prompt_version"]
-    assert spec["validation"]["status"] == "passed"
-    assert "SECRETSIG" not in serialized and "X-Amz" not in serialized and PRESIGNED not in serialized
-    assert "ksecret" not in serialized and "kid" not in serialized.replace("provider", "")
+    assert spec["reference_strategy"]["policy"] == "no_visual_reference"
+    assert spec["text_policy"] == "no_generated_text"
 
 
-def test_estimated_units_are_labelled_as_an_internal_estimate_not_provider_cost():
+def test_hero_background_and_texture_with_a_logo_only_business_send_nothing_visual():
+    for purpose in (AssetPurpose.HERO, AssetPurpose.BACKGROUND, AssetPurpose.TEXTURE):
+        gateway = _Gateway()
+
+        _run(_director(gateway), [_r2_logo()], hard_limit=2.0, purpose=purpose)
+
+        body = gateway.posts[0]["body"]
+        assert gateway.posts[0]["path"] == "/higgsfield-ai/soul/standard"
+        assert "image_reference_url" not in body and "input_images" not in body
+
+
+def test_the_prompt_conveys_no_logo_no_name_and_forbids_text():
     gateway = _Gateway()
 
-    _, budget, [candidate] = _run(_director(gateway, SOUL), [_r2_logo()], hard_limit=2.0)
+    _run(_director(gateway), [_r2_logo()], hard_limit=2.0)
 
-    meta = candidate.generation_metadata
-    assert meta["credits_used"] == 2.0 == meta["estimated_generation_units"]  # legacy key kept, alias added
-    assert meta["credits_are_estimated"] is True
-    assert "not_provider" in meta["cost_semantics"]
+    prompt = gateway.posts[0]["body"]["prompt"].lower()
+    assert "cositas" not in prompt  # the name is never reintroduced
+    assert "no reference images are supplied" in prompt
+    assert "the supplied reference" not in prompt
+    assert "no words, letters, numbers or typography" in prompt
+    assert "do not recreate, redraw or approximate the official logo" in prompt
+    assert "negative space" in prompt
 
 
-def test_hard_limit_two_at_the_default_estimate_makes_exactly_one_provider_submission():
+# --- product references and the legitimate soul/reference path --------------------
+
+
+def test_a_real_product_image_is_a_required_reference_and_soul_reference_still_works():
     gateway = _Gateway()
+    storage = _FakeStorage()
+    product = _r2_product()
 
-    _, budget, candidates = _run(_director(gateway, SOUL), [_r2_logo()], hard_limit=2.0)
+    _, _, [candidate, *_] = _run(
+        _director(gateway, SOUL_REFERENCE, storage=storage),
+        [_r2_logo(), product],
+        hard_limit=2.0,
+        purpose=AssetPurpose.PRODUCT,
+    )
 
-    assert len(gateway.posts) == 1
-    assert len(candidates) == 1
-    assert budget.credits_used == 2.0
+    [post] = gateway.posts
+    assert post["path"] == "/higgsfield-ai/soul/reference"
+    assert post["body"]["image_reference_url"] == PRESIGNED  # exactly one, via the R2 presign
+    assert isinstance(post["body"]["image_reference_url"], str)
+    assert storage.keys == ["biz/product.png"]  # only the product was signed — never the logo
+    assert "real product" in post["body"]["prompt"].lower()
+    assert post["body"]["aspect_ratio"] == "1:1"
+    spec = candidate.generation_metadata["creative_spec"]
+    assert spec["provider_reference_asset_ids"] == [str(product.id)]
+    assert spec["references"][0]["usage"] == "product"
+    assert spec["model_selection"]["reason"] == "configured_model_satisfies_requirements"
 
 
-def test_without_a_tight_limit_budget_behaviour_is_unchanged_three_explorations():
+def test_a_product_request_without_a_real_product_image_stops_before_any_submission():
     gateway = _Gateway()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    brief = build_creative_brief(business_config=_config(), purpose=AssetPurpose.PRODUCT)
 
-    _, _, candidates = _run(_director(gateway, SOUL), [_r2_logo()])
+    with pytest.raises(HiggsfieldNoSuitableModelError) as excinfo:
+        _director(gateway).create_directions(brief, [_r2_logo()], budget)
 
-    assert len(gateway.posts) == 3 and len(candidates) == 3
-    assert {c.generation_metadata["creative_spec"]["angle"] for c in candidates} != set()
-    assert len({c.provider_metadata["angle"] for c in candidates}) == 3
+    assert excinfo.value.reason_code == "product_reference_missing"
+    assert gateway.posts == [] and budget.credits_used == 0.0  # nothing submitted, nothing spent
 
 
-def test_next_ranked_reference_is_used_when_the_top_one_cannot_be_resolved():
+def test_product_reference_is_never_the_logo_even_when_only_the_logo_exists():
     gateway = _Gateway()
-    unresolvable_logo = _asset(AssetKind.LOGO, AssetCategory.LOGO, url="http://insecure.example/logo.png")
-    hero = _asset(AssetKind.IMAGE, AssetCategory.HERO_CANDIDATE, url="https://cdn.example.com/hero.png")
-
-    _, _, [candidate, *_] = _run(_director(gateway, SOUL), [unresolvable_logo, hero])
-
-    assert gateway.posts[0]["body"]["image_reference_url"] == "https://cdn.example.com/hero.png"
-    used = candidate.generation_metadata["creative_spec"]["references"]
-    assert [r["asset_id"] for r in used] == [str(hero.id)]  # provenance reflects what was really sent
-    assert used[0]["usage"] == "composition"
+    with pytest.raises(HiggsfieldNoSuitableModelError):
+        _run(_director(gateway), [_r2_logo()], purpose=AssetPurpose.PRODUCT)
+    assert gateway.posts == []
 
 
-def test_product_purpose_selects_the_real_product_image_over_the_logo():
+def test_nano_banana_still_receives_its_own_reference_field_for_optional_style_references():
     gateway = _Gateway()
-    product = _asset(AssetKind.IMAGE, AssetCategory.PRODUCT, url="https://cdn.example.com/product.png")
+    photo = _asset(AssetKind.IMAGE, AssetCategory.GALLERY, url="https://cdn.example.com/gallery.png")
 
-    _run(_director(gateway, SOUL), [_r2_logo(), product], purpose=AssetPurpose.PRODUCT)
-
-    body = gateway.posts[0]["body"]
-    assert body["image_reference_url"] == "https://cdn.example.com/product.png"
-    assert "real product" in body["prompt"].lower()
-    assert body["aspect_ratio"] == "1:1"
-
-
-def test_nano_banana_still_receives_several_references_in_its_own_field():
-    gateway = _Gateway()
-    assets = [
-        _r2_logo(),
-        _asset(AssetKind.IMAGE, AssetCategory.HERO_CANDIDATE, url="https://cdn.example.com/hero.png"),
-        _asset(AssetKind.IMAGE, AssetCategory.GALLERY, url="https://cdn.example.com/gallery.png"),
-    ]
-
-    _run(_director(gateway, NANO), assets)
+    _run(_director(gateway, NANO), [_r2_logo(), photo], hard_limit=2.0, purpose=AssetPurpose.SECTION)
 
     body = gateway.posts[0]["body"]
     assert gateway.posts[0]["path"] == "/nano-banana"
-    assert len(body["input_images"]) == 3
+    assert body["input_images"] == [{"type": "image_url", "image_url": "https://cdn.example.com/gallery.png"}]
     assert "image_reference_url" not in body
 
 
-def test_no_assets_sends_no_reference_and_says_so_in_the_prompt():
+def test_nano_banana_hero_needs_no_reference():
     gateway = _Gateway()
 
-    _run(_director(gateway, NANO), [])
+    _run(_director(gateway, NANO), [_r2_logo()], hard_limit=2.0)
 
-    body = gateway.posts[0]["body"]
-    assert "input_images" not in body and "image_reference_url" not in body
-    assert "no reference images are supplied" in body["prompt"].lower()
+    assert gateway.posts[0]["path"] == "/nano-banana"
+    assert "input_images" not in gateway.posts[0]["body"]
 
 
-def test_unavailable_assets_are_excluded_end_to_end():
+def test_an_optional_reference_that_cannot_be_resolved_reroutes_to_a_no_reference_model():
     gateway = _Gateway()
-    broken = SimpleNamespace(
-        id=uuid4(),
-        kind=AssetKind.LOGO,
-        category=AssetCategory.LOGO,
-        origin=AssetOrigin.UPLOADED,
-        storage_url="https://cdn.example.com/broken.png",
-        storage_provider=None,
-        storage_key=None,
-        unavailable_reason="object_missing",
-        alt_text=None,
-    )
-    healthy = SimpleNamespace(
-        id=uuid4(),
-        kind=AssetKind.IMAGE,
-        category=AssetCategory.GALLERY,
-        origin=AssetOrigin.UPLOADED,
-        storage_url="https://cdn.example.com/healthy.png",
-        storage_provider=None,
-        storage_key=None,
-        unavailable_reason=None,
-        alt_text=None,
-    )
-    brief = build_creative_brief(business_config=_config(), assets=[broken, healthy])
-    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    unresolvable = _asset(AssetKind.IMAGE, AssetCategory.GALLERY, url="http://insecure.example/g.png")
 
-    _director(gateway, SOUL).create_directions(brief, brief.available_assets, budget)
+    _, _, [candidate, *_] = _run(
+        _director(gateway, SOUL_REFERENCE), [unresolvable], hard_limit=2.0, purpose=AssetPurpose.SECTION
+    )
+
+    assert gateway.posts[0]["path"] == "/higgsfield-ai/soul/standard"  # soul/reference can't run reference-less
+    assert candidate.generation_metadata["creative_spec"]["provider_reference_asset_ids"] == []
+
+
+def test_an_optional_reference_is_dropped_when_the_selected_model_cannot_take_one():
+    gateway = _Gateway()
+    photo = _asset(AssetKind.IMAGE, AssetCategory.GALLERY, url="https://cdn.example.com/g.png")
+
+    _, _, [candidate, *_] = _run(
+        _director(gateway, SOUL_STANDARD), [photo], hard_limit=2.0, purpose=AssetPurpose.EDITORIAL
+    )
+
+    assert gateway.posts[0]["path"] == "/higgsfield-ai/soul/standard"
+    assert "image_reference_url" not in gateway.posts[0]["body"]
+    assert candidate.generation_metadata["creative_spec"]["model_selection"]["dropped_optional_references"] is True
+
+
+# --- unavailable assets, non-images, provenance safety -------------------------------
+
+
+def test_unavailable_and_non_image_assets_are_never_references():
+    def row(kind, unavailable_reason=None):
+        return SimpleNamespace(
+            id=uuid4(),
+            kind=kind,
+            category=AssetCategory.PRODUCT,
+            origin=AssetOrigin.UPLOADED,
+            storage_url="https://cdn.example.com/x.png",
+            storage_provider=None,
+            storage_key=None,
+            unavailable_reason=unavailable_reason,
+            alt_text=None,
+        )
+
+    broken, video, healthy = row(AssetKind.IMAGE, "object_missing"), row(AssetKind.VIDEO), row(AssetKind.IMAGE)
+    healthy.storage_url = "https://cdn.example.com/healthy.png"
+    brief = build_creative_brief(
+        business_config=_config(), assets=[broken, video, healthy], purpose=AssetPurpose.PRODUCT
+    )
+    gateway = _Gateway()
+
+    _director(gateway).create_directions(
+        brief, brief.available_assets, CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    )
 
     assert gateway.posts[0]["body"]["image_reference_url"] == "https://cdn.example.com/healthy.png"
 
 
-def test_unsupported_aspect_ratio_is_omitted_rather_than_sent():
-    director = _director(_Gateway(), SOUL)
-    assert director._supported_aspect_ratio("16:9") == "16:9"
-    assert director._supported_aspect_ratio("21:9") is None  # not in soul/reference's supported set
+def test_provenance_never_contains_presigned_urls_credentials_or_the_business_name():
+    gateway = _Gateway()
+    _, _, [candidate, *_] = _run(
+        _director(gateway), [_r2_logo(), _r2_product()], hard_limit=2.0, purpose=AssetPurpose.PRODUCT
+    )
+
+    serialized = json.dumps(candidate.generation_metadata) + json.dumps(candidate.provider_metadata)
+
+    for forbidden in ("SECRETSIG", "X-Amz", "r2.cloudflarestorage", "ksecret", "Authorization", "://"):
+        assert forbidden not in serialized
+    assert "Cositas" not in json.dumps(candidate.generation_metadata)
 
 
-def test_a_failed_validation_is_recorded_but_the_paid_result_is_still_returned():
-    gateway = _Gateway(result_url="https://d3example.cloudfront.net/out.gif")
+def test_estimated_units_are_still_labelled_as_an_internal_estimate():
+    _, _, [candidate, *_] = _run(_director(_Gateway()), [_r2_logo()], hard_limit=2.0)
 
-    _, _, [candidate, *_] = _run(_director(gateway, SOUL), [_r2_logo()], hard_limit=2.0)
-
-    validation = candidate.generation_metadata["creative_spec"]["validation"]
-    assert validation["status"] == "failed"
-    assert validation["visual_qa"] == "not_performed"
-    assert candidate.references == ["https://d3example.cloudfront.net/out.gif"]
+    meta = candidate.generation_metadata
+    assert meta["credits_used"] == 2.0 == meta["estimated_generation_units"]
+    assert meta["credits_are_estimated"] is True and "not_provider" in meta["cost_semantics"]
 
 
-def test_the_concept_narrative_keeps_the_business_name_for_studio_and_the_frontend_engine():
-    _, _, candidates = _run(_director(_Gateway(), SOUL), [_r2_logo()], hard_limit=2.0)
-    assert "Cositas y Puntos" in candidates[0].concept.narrative
+# --- budget, submissions, errors, fallback ---------------------------------------------
 
 
-def test_provider_errors_stay_structured_and_only_one_submission_is_attempted():
-    gateway = _Gateway(fail_with=403)
+def test_hard_limit_two_still_permits_exactly_one_submission():
+    gateway = _Gateway()
+
+    _, budget, candidates = _run(_director(gateway), [_r2_logo()], hard_limit=2.0)
+
+    assert len(gateway.posts) == 1 and len(candidates) == 1
+    assert budget.credits_used == 2.0
+
+
+def test_default_budget_behaviour_is_unchanged_three_explorations():
+    gateway = _Gateway()
+
+    _, _, candidates = _run(_director(gateway), [_r2_logo()])
+
+    assert len(gateway.posts) == 3 and len(candidates) == 3
+    assert len({c.provider_metadata["angle"] for c in candidates}) == 3
+
+
+def test_provider_errors_stay_structured_with_a_single_submission_and_no_reroute_retry():
+    gateway = _Gateway(fail_with=(403, "not_enough_credits"))
 
     with pytest.raises(HiggsfieldInsufficientCreditsError):
-        _run(_director(gateway, SOUL), [_r2_logo()])
+        _run(_director(gateway), [_r2_logo()])
 
-    assert len(gateway.posts) == 1  # no retry, no second exploration after a failure
+    assert len(gateway.posts) == 1
 
 
-def test_develop_keeps_the_purpose_and_brand_mode_of_the_direction_it_deepens():
+def test_an_unknown_configured_model_still_fails_before_any_spend():
     gateway = _Gateway()
-    director = _director(gateway, SOUL)
-    brief, budget, [selected, *_] = _run(
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    brief = build_creative_brief(business_config=_config())
+
+    with pytest.raises(HiggsfieldApiUnavailableError):
+        _director(gateway, "some-invented-model").create_directions(brief, [_r2_logo()], budget)
+
+    assert gateway.posts == [] and budget.credits_used == 0.0
+
+
+def test_when_no_registered_model_qualifies_the_fallback_is_explicit_and_no_asset_is_forced_through(monkeypatch):
+    """Only a reference-required model registered: a HERO cannot be honestly
+    generated, so the system falls back — it does NOT push the logo through
+    soul/reference just to make generation possible."""
+    monkeypatch.setattr(
+        director_module, "registered_models", lambda: [m for m in registered_models() if m.model_id == SOUL_REFERENCE]
+    )
+    gateway = _Gateway()
+    fallback = FallbackCreativeDirector(primary=_director(gateway), fallback=InternalCreativeDirector())
+    brief = build_creative_brief(business_config=_config())
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    logo = _r2_logo()
+
+    [direction] = fallback.create_directions(brief, [logo], budget)
+
+    assert gateway.posts == []  # nothing submitted to Higgsfield
+    assert budget.credits_used == 0.0
+    assert direction.provider_metadata["provider"] == "internal_fallback"  # never presented as a Higgsfield image
+    assert direction.provider_metadata["fallback_reason"] == "higgsfield_no_suitable_model"
+    assert direction.provider_metadata["fallback_detail"] == "no_registered_model_satisfies_requirements"
+    assert direction.references == []
+    spec = direction.generation_metadata["creative_spec"]
+    assert spec["provider"] == "internal" and spec["generated_image"] is False
+    assert spec["provider_reference_asset_ids"] == [] and spec["brand_source_asset_ids"] == [str(logo.id)]
+
+
+def test_an_unsatisfiable_product_request_falls_back_explicitly_too():
+    gateway = _Gateway()
+    fallback = FallbackCreativeDirector(primary=_director(gateway), fallback=InternalCreativeDirector())
+    brief = build_creative_brief(business_config=_config(), purpose=AssetPurpose.PRODUCT)
+
+    [direction] = fallback.create_directions(
+        brief, [_r2_logo()], CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
+    )
+
+    assert gateway.posts == []
+    assert direction.provider_metadata["fallback_reason"] == "higgsfield_no_suitable_model"
+    assert direction.provider_metadata["fallback_detail"] == "product_reference_missing"
+
+
+# --- develop ---------------------------------------------------------------------------------
+
+
+def test_develop_continues_from_the_previous_result_on_a_reference_capable_model_and_keeps_the_purpose():
+    gateway = _Gateway()
+    director = _director(gateway)
+    _, _, [selected, *_] = _run(
         director,
         [_r2_logo()],
         hard_limit=2.0,
         purpose=AssetPurpose.BACKGROUND,
         brand_strategy=BrandStrategy.NEW_DIRECTION,
     )
-    default_brief = build_creative_brief(business_config=_config())  # request-time defaults: HERO / configured mode
+    assert gateway.posts[0]["path"] == "/higgsfield-ai/soul/standard"
+    default_brief = build_creative_brief(business_config=_config())  # request-time defaults: HERO
 
     developed = director.develop_direction(
         selected, default_brief, [], CreativeBudget.for_tier(CreativeBudgetTier.STANDARD)
     )
 
-    develop_prompt = gateway.posts[-1]["body"]["prompt"].lower()
-    assert "full-width background" in develop_prompt  # not silently switched to a hero
-    assert "continue the same world" in develop_prompt
-    assert "cositas" not in develop_prompt
-    assert gateway.posts[-1]["body"]["image_reference_url"] == RESULT_URL  # anchored on the previous result
+    continuation = gateway.posts[-1]
+    assert continuation["path"] == "/higgsfield-ai/soul/reference"  # a text-only model can't continue from an image
+    assert continuation["body"]["image_reference_url"] == RESULT_URL  # the previous GENERATED image, not the logo
+    prompt = continuation["body"]["prompt"].lower()
+    assert "full-width background" in prompt and "continue the same world" in prompt and "cositas" not in prompt
     assert developed.generation_metadata["stage"] == "developed"
     assert developed.generation_metadata["creative_spec"]["purpose"] == "background"
+
+
+def test_develop_is_skipped_safely_when_no_model_can_continue_from_an_image(monkeypatch):
+    gateway = _Gateway()
+    director = _director(gateway)
+    _, _, [selected, *_] = _run(director, [_r2_logo()], hard_limit=2.0)
+    monkeypatch.setattr(
+        director_module, "registered_models", lambda: [m for m in registered_models() if m.model_id == SOUL_STANDARD]
+    )
+    posts_before = len(gateway.posts)
+
+    developed = director.develop_direction(
+        selected,
+        build_creative_brief(business_config=_config()),
+        [],
+        CreativeBudget.for_tier(CreativeBudgetTier.STANDARD),
+    )
+
+    assert len(gateway.posts) == posts_before  # nothing submitted
+    assert developed.generation_metadata["develop_skipped_reason"] == "no_registered_model_satisfies_requirements"
+
+
+def test_develop_without_a_previous_result_is_skipped():
+    gateway = _Gateway()
+    director = _director(gateway)
+    _, _, [selected, *_] = _run(director, [_r2_logo()], hard_limit=2.0)
+    selected.references = []
+
+    developed = director.develop_direction(
+        selected,
+        build_creative_brief(business_config=_config()),
+        [],
+        CreativeBudget.for_tier(CreativeBudgetTier.STANDARD),
+    )
+
+    assert len(gateway.posts) == 1
+    assert developed.generation_metadata["develop_skipped_reason"] == "no_previous_result_to_continue_from"

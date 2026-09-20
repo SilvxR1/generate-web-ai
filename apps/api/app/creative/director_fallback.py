@@ -31,7 +31,11 @@ InternalCreativeDirector.
 from collections.abc import Sequence
 
 from app.creative.director import CreativeDirectorProvider
-from app.creative.higgsfield.api_client import HiggsfieldApiUnavailableError, HiggsfieldModelUnavailableError
+from app.creative.higgsfield.api_client import (
+    HiggsfieldApiUnavailableError,
+    HiggsfieldModelUnavailableError,
+    HiggsfieldNoSuitableModelError,
+)
 from app.domain.creative import CreativeBrief, CreativeBriefAsset
 from app.domain.creative.budget import CreativeBudget
 from app.domain.creative.direction import CreativeDirection
@@ -40,12 +44,15 @@ from app.domain.enums import CreativeProviderName
 NOT_CONFIGURED_REASON = "higgsfield_not_configured"
 
 
-def _tag_as_fallback(candidates: list[CreativeDirection], *, reason: str) -> list[CreativeDirection]:
+def _tag_as_fallback(
+    candidates: list[CreativeDirection], *, reason: str, detail: str | None = None
+) -> list[CreativeDirection]:
     for candidate in candidates:
         candidate.provider_metadata = {
             **candidate.provider_metadata,
             "provider": "internal_fallback",
             "fallback_reason": reason,
+            **({"fallback_detail": detail} if detail else {}),
         }
     return candidates
 
@@ -77,13 +84,21 @@ class FallbackCreativeDirector(CreativeDirectorProvider):
             return _tag_as_fallback(
                 self._fallback.create_directions(brief, assets, budget), reason=NOT_CONFIGURED_REASON
             )
+        detail: str | None = None
         try:
             return self._primary.create_directions(brief, assets, budget)
+        except HiggsfieldNoSuitableModelError as exc:
+            # P2.3: raised before any submission — no registered model can
+            # honestly satisfy the request (e.g. nothing generates without
+            # the reference the strategy withheld). Never a reason to push an
+            # inappropriate asset through a model that would accept it.
+            reason = "higgsfield_no_suitable_model"
+            detail = exc.reason_code
         except HiggsfieldModelUnavailableError:
             reason = "higgsfield_model_unavailable"
         except HiggsfieldApiUnavailableError:
             reason = "higgsfield_unavailable"
-        return _tag_as_fallback(self._fallback.create_directions(brief, assets, budget), reason=reason)
+        return _tag_as_fallback(self._fallback.create_directions(brief, assets, budget), reason=reason, detail=detail)
 
     def develop_direction(
         self,

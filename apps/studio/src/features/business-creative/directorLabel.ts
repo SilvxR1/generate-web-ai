@@ -8,6 +8,7 @@ const FALLBACK_REASON_LABELS: Record<string, string> = {
   higgsfield_model_unavailable: "Higgsfield model unavailable",
   higgsfield_unavailable: "Higgsfield is not configured correctly",
   higgsfield_not_configured: "Higgsfield is not configured on this server",
+  higgsfield_no_suitable_model: "No suitable Higgsfield model for this request",
 };
 
 /** Which CreativeDirectorProvider actually produced a candidate —

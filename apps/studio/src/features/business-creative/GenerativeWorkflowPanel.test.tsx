@@ -44,6 +44,12 @@ describe("directorLabel", () => {
     ).toBe("Creative Director: Internal fallback — Higgsfield is not configured on this server");
   });
 
+  it("explains when no suitable Higgsfield model could satisfy the request", () => {
+    expect(
+      directorLabel(direction({ provider: "internal_fallback", fallback_reason: "higgsfield_no_suitable_model" })),
+    ).toBe("Creative Director: Internal fallback — No suitable Higgsfield model for this request");
+  });
+
   it("falls back to the plain label for an unrecognized reason code, never a raw machine code", () => {
     const label = directorLabel(direction({ provider: "internal_fallback", fallback_reason: "something_new" }));
     expect(label).toBe("Creative Director: Internal fallback");

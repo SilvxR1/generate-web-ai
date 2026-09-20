@@ -15,9 +15,9 @@ from app.domain.creative.asset_validation import (
     ValidationStatus,
 )
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
+from app.domain.creative.planning import plan_generation
 from app.domain.creative.prompt_composer import EXPLORATION_ANGLES, compose_prompt
 from app.domain.creative.provenance import COST_SEMANTICS, build_creative_provenance
-from app.domain.creative.spec import build_generation_spec
 from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, BusinessVertical
 
 _VALIDATOR = MetadataAssetValidator()
@@ -33,7 +33,7 @@ def _spec():
         origin=AssetOrigin.UPLOADED,
         url="https://cdn.example.com/logo.png",
     )
-    return brief, build_generation_spec(brief, [logo]), logo
+    return brief, plan_generation(brief, [logo]).spec, logo
 
 
 def _good(**overrides) -> GeneratedAssetInfo:
@@ -150,11 +150,19 @@ def test_provenance_records_asset_ids_and_semantics_but_no_urls_or_secrets():
         job_id="job-1",
         estimated_generation_units=2.0,
         angle=EXPLORATION_ANGLES[0],
+        plan=plan_generation(brief, [logo]),
     )
     serialized = json.dumps(provenance)
 
-    assert provenance["references"][0]["asset_id"] == str(logo.id)
-    assert provenance["references"][0]["usage"] == "identity"
+    # The logo informed the brand profile but was NOT sent to the provider.
+    assert provenance["brand_source_asset_ids"] == [str(logo.id)]
+    assert provenance["provider_reference_asset_ids"] == []
+    assert provenance["references"] == []
+    assert provenance["reference_strategy"]["policy"] == "no_visual_reference"
+    assert provenance["reference_strategy"]["withheld"] == [
+        {"asset_id": str(logo.id), "reason": "logo_informs_brand_profile_only"}
+    ]
+    assert provenance["brand_profile"]["has_official_logo"] is True
     assert provenance["purpose"] == "hero"
     assert provenance["brand_mode"] == brief.brand_strategy.value
     assert provenance["creative_level"] == brief.creative_level.value

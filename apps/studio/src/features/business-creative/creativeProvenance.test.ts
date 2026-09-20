@@ -33,7 +33,16 @@ function direction(overrides: Partial<CreativeDirection> = {}): CreativeDirectio
         purpose: "hero",
         brand_mode: "preserve",
         creative_level: "premium",
-        references: [{ asset_id: "a-1", usage: "identity", asset_category: "logo", asset_kind: "logo" }],
+        // P2.3: the official logo informed the brand profile but was NOT sent
+        // to the image model, so there are no generation references.
+        brand_profile: { sources: ["official_logo", "brand_config_colors"] },
+        brand_source_asset_ids: ["logo-1"],
+        provider_reference_asset_ids: [],
+        references: [],
+        model_selection: {
+          selected: "higgsfield-ai/soul/standard",
+          reason: "configured_model_unsuitable:requires_a_reference_but_none_is_wanted; selected_by_capability",
+        },
         validation: { status: "passed", checks: [] },
       },
     },
@@ -80,8 +89,49 @@ describe("provenanceRows", () => {
     expect(text).toContain("Purpose: Hero image");
     expect(text).toContain("Brand mode: Preserve");
     expect(text).toContain("Creative level: Premium");
-    expect(text).toContain("References used: 1. logo (identity)");
+    expect(text).toContain("Brand sources: Official logo, Brand colors");
+    expect(text).toContain("Generation references: None (brand assets inform the prompt as text only)");
+    expect(text).toContain("Model choice: Selected by capability for this request");
     expect(text).toContain("Validation: Passed metadata checks (visual quality not yet checked)");
+  });
+
+  it("shows a real product reference and the configured model when one was actually sent", () => {
+    const product = direction({
+      generation_metadata: {
+        creative_spec: {
+          purpose: "product",
+          brand_profile: { sources: ["official_logo"] },
+          provider_reference_asset_ids: ["p-1"],
+          references: [{ asset_id: "p-1", usage: "product", asset_category: "product", asset_kind: "image" }],
+          model_selection: { reason: "configured_model_satisfies_requirements" },
+          validation: { status: "passed", checks: [] },
+        },
+      },
+    });
+
+    const text = asText(provenanceRows(product));
+
+    expect(text).toContain("Brand sources: Official logo");
+    expect(text).toContain("Generation references: 1. product (product)");
+    expect(text).toContain("Model choice: Configured model");
+  });
+
+  it("keeps showing pre-P2.3 provenance that has no brand profile or model selection", () => {
+    const legacy = direction({
+      generation_metadata: {
+        creative_spec: {
+          purpose: "hero",
+          references: [{ asset_id: "a-1", usage: "identity", asset_category: "logo" }],
+          validation: { status: "passed", checks: [] },
+        },
+      },
+    });
+
+    const text = asText(provenanceRows(legacy));
+
+    expect(text).toContain("Generation references: 1. logo (identity)");
+    expect(text).not.toContain("Brand sources");
+    expect(text).not.toContain("Model choice");
   });
 
   it("never claims visual quality was verified", () => {
@@ -107,7 +157,7 @@ describe("provenanceRows", () => {
 
     const text = asText(provenanceRows(failed));
     expect(text).toContain("Validation: Failed: expected media type");
-    expect(text).toContain("References used: None");
+    expect(text).toContain("Generation references: None");
   });
 
   it("never exposes any URL, presigned or provider-hosted", () => {
