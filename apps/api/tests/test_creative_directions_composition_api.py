@@ -162,6 +162,27 @@ def test_the_original_hard_limit_only_body_no_longer_sends_the_logo_to_the_model
     assert direction["credits_used"] == 2.0
 
 
+def test_the_response_records_visual_intent_grounding_and_context_decisions_without_business_text(
+    client: TestClient, session: Session, tenant: Tenant, cositas: Business
+):
+    _logo(session, cositas)
+    gateway = _Gateway()
+    app.dependency_overrides[get_creative_director] = lambda: _director(gateway)
+
+    response = _post(client, cositas, tenant, {"hard_limit": 2.0})
+
+    assert response.status_code == 201
+    spec = response.json()[0]["generation_metadata"]["creative_spec"]
+    assert spec["visual_intent"] in {"atmospheric", "abstract_brand", "subject_editorial"}
+    assert spec["subject_grounding"] == "conceptual"
+    assert spec["interface_policy"] == "no_interface_depiction"
+    excluded_fields = {item["field"] for item in spec["creative_context"]["excluded"]}
+    assert {"business_name", "description"} <= excluded_fields
+    prompt = gateway.posts[0]["body"]["prompt"].lower()
+    assert "standalone visual asset" in prompt and "no website or webpage" in prompt
+    assert "artesana" not in prompt and "cositas" not in prompt  # neither the name nor the raw description
+
+
 def test_purpose_brand_mode_and_level_flow_through_the_spec_the_strategy_and_the_router(
     client: TestClient, session: Session, tenant: Tenant, cositas: Business
 ):

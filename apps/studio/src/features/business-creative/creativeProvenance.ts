@@ -41,6 +41,21 @@ const BRAND_SOURCE_LABELS: Record<string, string> = {
   brand_config_typography: "Brand typography",
 };
 
+// P2.4: what the image depicts (separate from where it is used) and how
+// truthful its subject is. Plain-language labels only — never prompt text.
+const VISUAL_INTENT_LABELS: Record<string, string> = {
+  product_grounded: "Real product",
+  subject_editorial: "Editorial",
+  abstract_brand: "Abstract (brand)",
+  atmospheric: "Atmospheric",
+};
+
+const SUBJECT_GROUNDING_LABELS: Record<string, string> = {
+  grounded: "Grounded in a real reference",
+  conceptual: "Conceptual (not a real product or place)",
+  unknown: "Unknown",
+};
+
 export interface ProvenanceRow {
   label: string;
   value: string;
@@ -87,6 +102,10 @@ export function provenanceRows(direction: CreativeDirection): ProvenanceRow[] {
   if (brandMode) rows.push({ label: "Brand mode", value: brandMode });
   const level = labelFor(LEVEL_OPTIONS, spec.creative_level);
   if (level) rows.push({ label: "Creative level", value: level });
+  const intent = typeof spec.visual_intent === "string" ? VISUAL_INTENT_LABELS[spec.visual_intent] : undefined;
+  if (intent) rows.push({ label: "Visual intent", value: intent });
+  const grounding = typeof spec.subject_grounding === "string" ? SUBJECT_GROUNDING_LABELS[spec.subject_grounding] : undefined;
+  if (grounding) rows.push({ label: "Subject grounding", value: grounding });
 
   // P2.3: what informed the brand profile is shown separately from what was
   // actually sent to the image model — an official logo is a brand source

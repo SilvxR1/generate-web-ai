@@ -116,6 +116,43 @@ describe("provenanceRows", () => {
     expect(text).toContain("Model choice: Configured model");
   });
 
+  it("shows the visual intent and subject grounding, in plain language and without prompt internals", () => {
+    const editorial = direction({
+      generation_metadata: {
+        creative_spec: {
+          purpose: "hero",
+          visual_intent: "subject_editorial",
+          subject_grounding: "conceptual",
+          creative_context: { included_fields: ["services"], excluded: [{ field: "description" }] },
+          references: [],
+          validation: { status: "passed", checks: [] },
+        },
+      },
+    });
+
+    const text = asText(provenanceRows(editorial));
+
+    expect(text).toContain("Visual intent: Editorial");
+    expect(text).toContain("Subject grounding: Conceptual (not a real product or place)");
+    expect(text).not.toContain("description");
+    expect(text).not.toContain("creative_context");
+  });
+
+  it("labels a grounded real-product image and ignores unknown intent codes", () => {
+    const product = direction({
+      generation_metadata: {
+        creative_spec: { visual_intent: "product_grounded", subject_grounding: "grounded", references: [] },
+      },
+    });
+    expect(asText(provenanceRows(product))).toContain("Visual intent: Real product");
+    expect(asText(provenanceRows(product))).toContain("Subject grounding: Grounded in a real reference");
+
+    const future = direction({
+      generation_metadata: { creative_spec: { visual_intent: "something_new", references: [] } },
+    });
+    expect(asText(provenanceRows(future))).not.toContain("Visual intent");
+  });
+
   it("keeps showing pre-P2.3 provenance that has no brand profile or model selection", () => {
     const legacy = direction({
       generation_metadata: {

@@ -31,7 +31,7 @@ from app.domain.enums import AssetCategory, AssetKind, AssetPurpose, BrandStrate
 # Bump whenever composed-prompt wording/structure changes materially, so a
 # persisted asset can always be traced to the composition rules that
 # produced it.
-PROMPT_VERSION = "p2.3-v1"
+PROMPT_VERSION = "p2.4-v1"
 
 
 class ReferenceUsage(StrEnum):
@@ -54,6 +54,15 @@ class TextPolicy(StrEnum):
     rather than silently relaxing this default."""
 
     NO_GENERATED_TEXT = "no_generated_text"
+
+
+class InterfacePolicy(StrEnum):
+    """Generated website imagery is a standalone picture, never a depiction
+    of a website, browser, app or interface — even though it will later be
+    placed inside one (P2.4: an image asked for a "website hero" was drawn
+    as a webpage mockup)."""
+
+    NO_INTERFACE_DEPICTION = "no_interface_depiction"
 
 
 class ReferenceSpec(BaseModel):
@@ -88,6 +97,7 @@ class CreativeGenerationSpec(BaseModel):
     brand_mode: BrandStrategy
     creative_level: CreativeLevel
     text_policy: TextPolicy = TextPolicy.NO_GENERATED_TEXT
+    interface_policy: InterfacePolicy = InterfacePolicy.NO_INTERFACE_DEPICTION
     # References intended for the provider, best first. Empty is the
     # normal case for HERO/BACKGROUND/TEXTURE. A provider uses the first
     # ones it can actually resolve, up to its model's limit, then calls

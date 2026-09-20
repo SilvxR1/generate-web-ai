@@ -90,7 +90,7 @@ def test_cositas_hero_never_shows_the_model_the_logo_and_forbids_recreating_it()
     assert "no reference images are supplied" in _blob(composed.reference_instructions)
     assert "official brand logo" not in _blob(composed.reference_instructions)
     assert "recreate this logo" not in text and "reproduce this logo" not in text
-    assert "create an original image" in text  # a NEW visual, not a re-rendering of a reference
+    assert "standalone visual asset" in text  # a NEW picture, not a re-rendering of a reference
     assert "do not recreate, redraw or approximate the official logo" in _blob(composed.negative_constraints)
 
 
@@ -104,23 +104,30 @@ def test_the_business_name_is_never_in_the_prompt_sent_to_the_provider():
     assert composed.debug["business_name_in_prompt"] is False
 
 
-def test_the_business_name_is_scrubbed_from_free_text_facts_too():
-    config = BusinessConfig(
+def _services_config(*names: str) -> BusinessConfig:
+    return BusinessConfig(
         business_profile=BusinessProfile(
             name="Cositas y Puntos",
             slug="cositas-y-puntos",
             industry=BusinessVertical.OTHER,
             description="Cositas y Puntos hace amigurumis. Visita COSITAS Y PUNTOS en Instagram.",
             services=[
-                ServiceOffering(id="svc-1", name="Llaveros de Cositas y Puntos", description="Llaveros de lana.")
+                ServiceOffering(id=f"svc-{index}", name=name, description="Descripcion.")
+                for index, name in enumerate(names, start=1)
             ],
         )
     )
+
+
+def test_the_business_name_and_free_text_never_reach_the_prompt_only_clean_service_labels_do():
+    config = _services_config("Llaveros de Cositas y Puntos", "Amigurumis artesanales")
+
     composed, text = _compose(build_creative_brief(business_config=config))
 
-    assert "cositas" not in text
-    assert "the business" in text
-    assert "amigurumis" in text  # the verified fact itself survives
+    assert "cositas" not in text  # neither the free-text description nor a service label carrying the name
+    assert "instagram" not in text
+    assert "amigurumis artesanales" in text  # the clean, structured service label survives
+    assert composed.debug["raw_business_description_in_prompt"] is False
 
 
 def test_no_generated_text_adds_explicit_anti_text_constraints():
@@ -131,7 +138,9 @@ def test_no_generated_text_adds_explicit_anti_text_constraints():
         "no words, letters, numbers or typography",
         "no captions, slogans, watermarks or signatures",
         "no fake logos",
-        "no user-interface elements",
+        "no pseudo-text, decorative lettering or text-like marks",
+        "no interface or navigation labels",
+        "no signs, labels or packaging containing text",
     ):
         assert required in negatives
 
@@ -142,8 +151,9 @@ def test_hero_expresses_hero_specific_composition_requirements():
 
     assert "focal" in composition
     assert "negative space" in composition
-    assert "overlay" in composition  # room for the real HTML heading/CTA
     assert "cropping" in composition  # responsive crop tolerance
+    for interface_word in ("heading", "call-to-action", "cta", "navigation", "button", "website"):
+        assert interface_word not in composition  # placement rules never prime interface imagery
     assert "16:9" in _blob(composed.output_instructions)
 
 
@@ -244,23 +254,25 @@ def test_missing_business_information_never_becomes_invented_claims():
     brief = build_creative_brief(business_config=config)
     composed, _ = _compose(brief)
 
-    assert composed.verified_facts == [f"Industry: {brief.industry}."]  # nothing beyond what the brief states
-    assert "no further verified business details" in composed.positive_prompt.lower()
-    assert "do not invent" in composed.positive_prompt.lower()
+    assert composed.verified_facts == []  # nothing verified, so nothing stated as fact
+    context = _blob(composed.creative_context)
+    assert "no verified subject information is available" in context
+    assert "do not depict specific products, projects, people or premises" in context
+    assert "do not invent" in context
+    everything = _blob(composed.creative_context) + composed.positive_prompt.lower()
     for invented in ("handmade", "bestselling", "award", "years of experience", "ceramic", "collection", "%"):
-        assert invented not in composed.positive_prompt.lower()
+        assert invented not in everything
     assert "no invented products, projects, people or testimonials" in _blob(composed.negative_constraints)
 
 
 def test_verified_facts_and_creative_interpretation_are_kept_apart():
-    brief = _cositas_brief()
+    brief = build_creative_brief(business_config=_services_config("Amigurumis artesanales"))
     composed, _ = _compose(brief, [_logo()])
 
-    assert any("amigurumi" in fact.lower() for fact in composed.verified_facts)
+    assert any("amigurumis artesanales" in fact.lower() for fact in composed.verified_facts)
     assert not any(ANGLE in fact for fact in composed.verified_facts)
     assert any(ANGLE in line for line in composed.creative_interpretation)
-    assert "creative interpretation, not business claims" in composed.positive_prompt.lower()
-    assert "verified facts only" in composed.positive_prompt.lower()
+    assert not any("amigurumis" in line.lower() for line in composed.brand_profile)  # brand section: brand info only
 
 
 def test_no_references_states_that_none_are_supplied_instead_of_describing_phantom_ones():
@@ -325,11 +337,24 @@ def test_composition_is_deterministic_and_versioned():
 def test_translation_flattens_every_section_including_an_explicit_avoid_clause():
     composed, text = _compose(_cositas_brief(), [_logo()])
 
-    for header in ("business context", "visual direction", "references:", "composition:", "output:", "avoid:"):
+    for header in (
+        "output contract:",
+        "placement:",
+        "visual intent:",
+        "verified creative context:",
+        "brand visual profile:",
+        "composition:",
+        "subject truth:",
+        "text policy:",
+        "interface policy:",
+        "references:",
+        "output:",
+        "avoid:",
+    ):
         assert header in text
     assert composed.negative_constraints[0].lower() in text
 
 
 def test_a_typical_prompt_stays_compact():
     _, text = _compose(_cositas_brief(), [_logo()])
-    assert len(text) < 3000
+    assert len(text) < 3800  # bounded: policies appear once as instructions and once as negatives, not endlessly

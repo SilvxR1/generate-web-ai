@@ -258,11 +258,15 @@ def test_existing_business_config_is_reused_not_recreated(
     response = _post_creative_directions(client, cositas_business, tenant)
 
     assert response.status_code == 201
-    # Facts from the ALREADY-PERSISTED config (its real description) reached the prompt. The business
-    # name itself is deliberately NOT sent (P2.2): with generated text forbidden, naming the business
-    # invites the image model to bake it into the picture.
-    assert all("amigurumi" in call["prompt"].lower() for call in fake.calls)
+    # The ALREADY-PERSISTED config was read (its free-text description is recorded as excluded), but
+    # neither the business name (P2.2) nor its free-text description (P2.4) reaches the image prompt:
+    # operational prose made an image model draw a webpage, and naming the business invites it to
+    # bake the name into the picture.
     assert all("cositas y puntos" not in call["prompt"].lower() for call in fake.calls)
+    assert all("standalone visual asset" in call["prompt"].lower() for call in fake.calls)
+    excluded = response.json()[0]["generation_metadata"]["creative_spec"]["creative_context"]["excluded"]
+    reason = "free_text_may_carry_operational_or_digital_context"
+    assert {"field": "description", "reason": reason, "count": 1} in excluded
 
 
 def test_existing_business_assets_are_read_but_the_official_logo_is_not_sent_to_the_model(
