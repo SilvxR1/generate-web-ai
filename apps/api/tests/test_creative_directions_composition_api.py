@@ -178,9 +178,14 @@ def test_the_response_records_visual_intent_grounding_and_context_decisions_with
     assert spec["interface_policy"] == "no_interface_depiction"
     excluded_fields = {item["field"] for item in spec["creative_context"]["excluded"]}
     assert {"business_name", "description"} <= excluded_fields
+    assert spec["visual_subject_source"] in {"none", "material_family_from_verified_labels", "single_verified_category"}
+    assert spec["scene_plan"]["aspect_ratio"] == "16:9" and spec["scene_plan"]["subject_side"] in {"right", "none"}
+    assert spec["scene_plan_version"] and spec["generation_contract_version"]
     prompt = gateway.posts[0]["body"]["prompt"].lower()
-    assert "standalone visual asset" in prompt and "no website or webpage" in prompt
+    assert "wide 16:9" in prompt and "negative space" in prompt and "no webpage" not in prompt.split("\nno ")[0]
     assert "artesana" not in prompt and "cositas" not in prompt  # neither the name nor the raw description
+    for web_word in ("website", "hero", "page layout", "ecommerce"):
+        assert web_word not in prompt.split("\nno ")[0]  # placement is composition, not web vocabulary
 
 
 def test_purpose_brand_mode_and_level_flow_through_the_spec_the_strategy_and_the_router(
@@ -202,7 +207,7 @@ def test_purpose_brand_mode_and_level_flow_through_the_spec_the_strategy_and_the
     assert (spec["purpose"], spec["brand_mode"], spec["creative_level"]) == ("background", "new_direction", "cinematic")
     assert spec["model_selection"]["requirements"]["aspect_ratio"] == "16:9"
     prompt = gateway.posts[0]["body"]["prompt"].lower()
-    assert "full-width background" in prompt and "cinematic" in prompt
+    assert "no dominant subject" in prompt and "dramatic" in prompt  # background composition, cinematic lighting
 
 
 def test_a_product_request_uses_the_real_product_image_via_soul_reference_and_r2_presigning(

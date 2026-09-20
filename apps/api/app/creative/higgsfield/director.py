@@ -66,6 +66,12 @@ from app.domain.creative.direction import (
     ExperienceDirection,
     VisualLanguage,
 )
+from app.domain.creative.generation_contract import (
+    GenerationContract,
+    InvalidGenerationContractError,
+    assert_valid_generation_contract,
+    build_generation_contract,
+)
 from app.domain.creative.model_routing import (
     CreativeGenerationRequirements,
     ModelSelection,
@@ -73,9 +79,10 @@ from app.domain.creative.model_routing import (
     select_model,
 )
 from app.domain.creative.planning import GenerationPlan, plan_generation, requirements_for
-from app.domain.creative.prompt_composer import DEVELOP_ANGLES, compose_prompt, exploration_angles_for
+from app.domain.creative.prompt_composer import DEVELOP_ANGLES, compose_prompt
 from app.domain.creative.provenance import COST_SEMANTICS, build_creative_provenance
 from app.domain.creative.reference_strategy import ReferencePolicy, ReferenceStrategy
+from app.domain.creative.scene_plan import VisualScenePlan, plan_scenes
 from app.domain.creative.spec import (
     CreativeGenerationSpec,
     ReferenceSpec,
@@ -83,6 +90,7 @@ from app.domain.creative.spec import (
     build_generation_spec,
 )
 from app.domain.creative.visual_intent import SubjectGrounding, VisualIntent, VisualIntentKind
+from app.domain.creative.visual_subject import select_visual_subject
 from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel, CreativeProviderName
 from app.storage.provider import StorageProvider
 
@@ -102,6 +110,12 @@ def _narrative(brief: CreativeBrief, spec: CreativeGenerationSpec, angle: str) -
         f"Visual exploration for the {spec.purpose.value} image ({spec.brand_mode.value} brand mode): {angle}."
     )
     return " ".join(parts)
+
+
+def _variant_label(scene: VisualScenePlan) -> str:
+    """A short, human-readable label for one deterministic scene variant."""
+    side = "" if scene.subject_side.value in ("none", "center") else f", subject {scene.subject_side.value}"
+    return f"{scene.medium}, {scene.framing.lower()}{side}"
 
 
 def _asset_info(job: HiggsfieldJobResult, *, model: str) -> GeneratedAssetInfo:
@@ -205,7 +219,22 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
             selection = self._route(requirements.model_copy(update={"optional_reference_count": 0}))
             used = []
         spec = plan.spec.with_used_references([reference for reference, _ in used])
+        # The contract is validated BEFORE any spend: an invalid contract
+        # (e.g. a scene that needs product fidelity without a grounded
+        # reference, or one asking for an interface) never reaches a provider.
+        for variant in range(len(plan.scenes)):
+            try:
+                assert_valid_generation_contract(
+                    plan.contract_for(variant, spec.reference_assets),
+                    candidate_aspect_ratios=self._candidate_aspect_ratios(),
+                )
+            except InvalidGenerationContractError as exc:
+                raise HiggsfieldNoSuitableModelError(str(exc), reason_code=exc.reason_code) from exc
         return selection, spec, [location for _, location in used]
+
+    def _candidate_aspect_ratios(self) -> list[frozenset[str] | None] | None:
+        """Aspect ratios the candidate models support (None = not checkable)."""
+        return None
 
     def _spend_and_create(
         self,
@@ -235,10 +264,10 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         candidates: list[CreativeDirection] = []
         last_error: Exception | None = None
 
-        for iteration, angle in enumerate(exploration_angles_for(plan.intent), start=1):
-            composed = compose_prompt(
-                brief, spec, angle=angle, profile=plan.profile, context=plan.context, intent=plan.intent
-            )
+        for iteration in range(1, len(plan.scenes) + 1):
+            contract = plan.contract_for(iteration - 1, spec.reference_assets)
+            angle = _variant_label(contract.scene)
+            composed = compose_prompt(contract)
             prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
@@ -272,6 +301,7 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                 angle=angle,
                 plan=plan,
                 selection=selection,
+                contract=contract,
             )
             candidates.append(
                 CreativeDirection(
@@ -347,10 +377,10 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
 
     def _develop_context(
         self, selected: CreativeDirection, brief: CreativeBrief, anchor: list[str]
-    ) -> tuple[CreativeBrief, CreativeGenerationSpec, CreativeGenerationRequirements]:
+    ) -> tuple[CreativeBrief, CreativeGenerationSpec, CreativeGenerationRequirements, GenerationContract]:
         """A continuation keeps the intent of the direction it deepens
-        (purpose/brand mode/level recorded in its provenance), never
-        whatever the request-time default happens to be."""
+        (purpose/brand mode/level and visual intent recorded in its
+        provenance), never whatever the request-time default happens to be."""
         recorded = selected.generation_metadata.get("creative_spec")
         recorded = recorded if isinstance(recorded, dict) else {}
         updates: dict = {}
@@ -373,7 +403,21 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
                 "provider_reference_candidates": previous,
             }
         )
-        return effective_brief, spec, requirements_for(spec, strategy)
+        intent = self._recorded_intent(selected, plan.intent)
+        subject = select_visual_subject(intent=intent, context=plan.context)
+        scenes = plan_scenes(
+            purpose=spec.purpose,
+            intent=intent,
+            subject=subject,
+            profile=plan.profile,
+            brand_mode=spec.brand_mode,
+            creative_level=spec.creative_level,
+            aspect_ratio=spec.output.aspect_ratio,
+        )
+        contract = build_generation_contract(
+            spec=spec, intent=intent, subject=subject, scene=scenes[0], strategy=strategy
+        )
+        return effective_brief, spec, requirements_for(spec, strategy), contract
 
     @staticmethod
     def _recorded_intent(selected: CreativeDirection, fallback: VisualIntent) -> VisualIntent:
@@ -407,28 +451,22 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         if not anchor:
             developed.generation_metadata["develop_skipped_reason"] = "no_previous_result_to_continue_from"
             return developed
-        effective_brief, spec, requirements = self._develop_context(selected, brief, anchor)
+        _, spec, requirements, contract = self._develop_context(selected, brief, anchor)
         try:
+            assert_valid_generation_contract(contract)
             selection = self._route(requirements, preferred=str(selected.provider_metadata.get("job_type") or ""))
+        except InvalidGenerationContractError as exc:
+            developed.generation_metadata["develop_skipped_reason"] = exc.reason_code
+            return developed
         except HiggsfieldNoSuitableModelError as exc:
             developed.generation_metadata["develop_skipped_reason"] = exc.reason_code
             return developed
         model = selection.model_id
         aspect_ratio = self._supported_aspect_ratio(model, spec.output.aspect_ratio)
-        develop_plan = plan_generation(effective_brief, [])
-        intent = self._recorded_intent(selected, develop_plan.intent)
         continuation = selected.concept.rationale.rstrip(".")
 
         for iteration, angle in enumerate(DEVELOP_ANGLES, start=1):
-            composed = compose_prompt(
-                effective_brief,
-                spec,
-                angle=angle,
-                continuation_of=continuation,
-                profile=develop_plan.profile,
-                context=develop_plan.context,
-                intent=intent,
-            )
+            composed = compose_prompt(contract, variation=angle, continuation_of=continuation)
             prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
@@ -567,6 +605,9 @@ class HiggsfieldApiCreativeDirector(_HiggsfieldDirectorBase):
             return select_model(requirements, registered_models(), preferred_model_id=preferred or self._job_type)
         except NoSuitableModelError as exc:
             raise HiggsfieldNoSuitableModelError(str(exc), reason_code=exc.reason_code) from exc
+
+    def _candidate_aspect_ratios(self) -> list[frozenset[str] | None] | None:
+        return [candidate.capabilities.supported_aspect_ratios for candidate in registered_models()]
 
     def _reference_capacity(self, model: str) -> int:
         config = resolve_model_config(model)

@@ -1,20 +1,23 @@
-"""Experiment 3 regression (P2.4) — Cositas y Puntos, HERO + PRESERVE +
-PROFESSIONAL.
+"""Cositas y Puntos regression (P2.5) — HERO + PRESERVE + PROFESSIONAL,
+covering Experiments 3 and 4.
 
-P2.3 routed correctly (`soul/standard`, no reference, logo as brand source
-only) but the prompt still carried the business `description` — "no dispone
-de página web", "Instagram", "ecommerce", "catálogo … contacto" — plus an
-`ecommerce` industry label and a "website hero" placement. The text-to-image
-model drew a webpage mockup: navigation, buttons, headings, a product grid.
+Experiment 3 (P2.3): correct routing, but the raw business description
+reached the prompt and the model drew a webpage.
+Experiment 4 (P2.4): operational context was removed, yet the model still
+drew a page-like layout with pseudo-text — the prompt listed all four verified
+offerings (their labels even appeared as text in the image), explained our
+"website hero" placement and repeated long interface vocabularies. The image
+model still had to invent the subject, scene and layout.
 
-These tests pin the semantic fix, not exact prose: operational and digital
-context never reaches the image prompt, HERO is a placement for a
-standalone picture, and anti-interface rules reach the provider. No real
-Higgsfield call, no network: the real HiggsfieldApiClient runs over an
-httpx.MockTransport."""
+P2.5 fixes the gap between VisualIntent and the prompt: ONE narrow subject, a
+concrete deterministic scene plan, and a GenerationContract validated before
+any spend. These tests pin structured semantics first, then key properties of
+the provider prompt — never one exact prompt string. No real Higgsfield call,
+no network: the real HiggsfieldApiClient runs over an httpx.MockTransport."""
 
 import json
-from uuid import UUID
+import re
+from uuid import UUID, uuid4
 
 import httpx
 import pytest
@@ -31,10 +34,13 @@ from app.creative.higgsfield.api_client import (
 from app.creative.higgsfield.director import HiggsfieldApiCreativeDirector
 from app.creative.higgsfield.translation import to_higgsfield_prompt
 from app.domain.business_config import BusinessConfig, BusinessProfile, ServiceOffering
+from app.domain.creative import planning as planning_module
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
 from app.domain.creative.budget import CreativeBudget
+from app.domain.creative.generation_contract import validate_generation_contract
 from app.domain.creative.planning import plan_generation
 from app.domain.creative.prompt_composer import compose_prompt
+from app.domain.creative.scene_plan import SubjectSide
 from app.domain.enums import (
     AssetCategory,
     AssetKind,
@@ -51,7 +57,6 @@ SOUL_REFERENCE = "higgsfield-ai/soul/reference"
 SOUL_STANDARD = "higgsfield-ai/soul/standard"
 PRESIGNED = "https://acct.r2.cloudflarestorage.com/biz/x.png?X-Amz-Signature=SECRETSIG"
 
-# The operational/digital vocabulary that turned Experiment 3 into a mockup.
 OPERATIONAL_TERMS = (
     "instagram",
     "ecommerce",
@@ -77,6 +82,8 @@ TARGET = (
     "importante de los visitantes llegue desde Instagram y redes sociales (prioridad móvil)."
 )
 SERVICES = ("Amigurumis artesanales hechos a mano", "Llaveros de lana", "Tartas de pañales", "Cestas personalizadas")
+# Distinctive fragments of the four service labels — none may appear in the prompt.
+SERVICE_FRAGMENTS = ("amigurumis artesanales", "llaveros", "tartas de pa", "cestas personalizadas")
 
 
 def _cositas_config() -> BusinessConfig:
@@ -96,8 +103,6 @@ def _cositas_config() -> BusinessConfig:
 
 
 def _asset(kind, category, *, id=None, url="https://cdn.example.com/a.png", r2_key=None) -> CreativeBriefAsset:
-    from uuid import uuid4
-
     return CreativeBriefAsset(
         id=id or uuid4(),
         kind=kind,
@@ -129,6 +134,10 @@ def _hero_brief(**kwargs):
     )
 
 
+def _plan():
+    return plan_generation(_hero_brief(), _cositas_assets())
+
+
 class _FakeStorage:
     provider_name = "r2"
 
@@ -141,12 +150,15 @@ class _FakeStorage:
 
 
 class _Gateway:
-    def __init__(self, *, fail_with: tuple[int, str] | None = None) -> None:
+    def __init__(self, *, fail_with: tuple[int, str] | None = None, events: list[str] | None = None) -> None:
         self.posts: list[dict] = []
         self._fail_with = fail_with
+        self._events = events
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
+            if self._events is not None:
+                self._events.append("provider_post")
             self.posts.append({"path": request.url.path, "body": json.loads(request.content)})
             if self._fail_with:
                 status, detail = self._fail_with
@@ -177,203 +189,234 @@ def _run(director, *, hard_limit: float | None = 2.0, brief=None, assets=None):
     return brief, budget, candidates
 
 
-# --- CreativeContext and VisualIntent for the Cositas data ------------------------------
+def _positive(text: str) -> str:
+    """The provider prompt without its final prohibitions."""
+    return text.lower().split("\nno ")[0]
 
 
-def test_operational_and_digital_terms_never_enter_the_creative_context():
-    context = plan_generation(_hero_brief(), _cositas_assets()).context
-
-    dumped = context.model_dump_json().lower()
-
-    for term in OPERATIONAL_TERMS:
-        assert term not in dumped
-    assert context.business_category is None  # `ecommerce` names a business model, not a subject
-    assert context.subject_categories == list(SERVICES)  # the verified, structured offerings survive
-    assert {item.field for item in context.excluded} >= {"description", "target_customers", "industry"}
+# --- structured decisions ------------------------------------------------------------------------
 
 
-def test_cositas_hero_resolves_to_a_conceptual_editorial_intent_not_a_website():
-    plan = plan_generation(_hero_brief(), _cositas_assets())
+def test_purpose_intent_and_grounding_are_unchanged_from_p2_4():
+    plan = _plan()
 
-    assert plan.spec.purpose is AssetPurpose.HERO  # placement...
-    assert plan.intent.kind.value == "subject_editorial"  # ...separate from what is depicted
+    assert plan.spec.purpose is AssetPurpose.HERO
+    assert plan.intent.kind.value == "subject_editorial"
     assert plan.intent.grounding.value == "conceptual"  # never presented as real Cositas products
-    assert plan.spec.interface_policy.value == "no_interface_depiction"
     assert plan.spec.text_policy.value == "no_generated_text"
+    assert plan.spec.interface_policy.value == "no_interface_depiction"
 
 
-# --- the composed prompt ----------------------------------------------------------------------
+def test_a_single_narrow_subject_is_selected_from_the_verified_offerings():
+    plan = _plan()
+
+    assert plan.context.subject_categories == list(SERVICES)  # all four verified...
+    assert plan.subject.label == "crochet and yarn craft"  # ...one narrow visual subject chosen
+    assert plan.subject.source.value == "material_family_from_verified_labels"
+    assert plan.subject.grounding.value == "conceptual"
+    assert plan.subject.considered_categories == 4
 
 
-def _composed():
-    brief = _hero_brief()
-    plan = plan_generation(brief, _cositas_assets())
-    return compose_prompt(
-        brief, plan.spec, angle="an angle", profile=plan.profile, context=plan.context, intent=plan.intent
-    )
+def test_the_scene_plan_is_single_scene_with_a_clear_subject_negative_space_and_16_9():
+    scene = _plan().scenes[0]
+
+    assert scene.primary_subject == "crochet and yarn craft materials"
+    assert "single continuous scene" in scene.composition.lower() and "not a collage" in scene.composition.lower()
+    assert scene.subject_side is SubjectSide.RIGHT
+    assert "negative space" in scene.negative_space.lower() and "left" in scene.negative_space.lower()
+    assert scene.aspect_ratio == "16:9"
+    assert scene.grounding.value == "conceptual" and scene.requires_fidelity is False
+    for invite_ui_or_text in ("collage", "grid", "packaging", "shelves or storefront"):
+        assert invite_ui_or_text in scene.forbidden_elements
 
 
-def test_hero_asks_for_a_standalone_asset_placed_later_not_for_a_website():
-    composed = _composed()
-
-    assert "standalone visual asset" in " ".join(composed.output_contract).lower()
-    placement = " ".join(composed.placement).lower()
-    assert "will later be placed inside a website hero section" in placement
-    assert "it is not that page" in placement
-    interface = " ".join(composed.interface_policy).lower()
-    assert "must not depict or simulate a website" in interface and "user interface" in interface
-
-
-def test_no_generated_text_now_covers_pseudo_text_and_interface_labels_as_instruction_and_negative():
-    composed = _composed()
-    instructions = " ".join(composed.text_policy).lower()
-    negatives = " ".join(composed.negative_constraints).lower()
-
-    assert "pseudo-text" in instructions and "decorative lettering" in instructions  # positive, not only negative
-    for required in (
-        "no words, letters, numbers or typography",
-        "no pseudo-text, decorative lettering or text-like marks",
-        "no interface or navigation labels",
-        "no signs, labels or packaging containing text",
-        "no fake logos",
-    ):
-        assert required in negatives
-
-
-def test_the_anti_interface_rules_are_structural_and_cover_the_experiment_3_failures():
-    negatives = " ".join(_composed().negative_constraints).lower()
-
-    for required in (
-        "no website or webpage",
-        "no browser or browser chrome",
-        "no navigation bars or menus",
-        "no user interface or app interface",
-        "no buttons, cards or forms",
-        "no screens, dashboards or website mockups",
-        "no ecommerce interface or product grid layout",
-    ):
-        assert required in negatives
-
-
-def test_operational_words_are_not_visual_instructions_anywhere_in_the_prompt():
-    composed = _composed()
-    positive_sections = " ".join(
-        [
-            *composed.visual_intent,
-            *composed.creative_context,
-            *composed.brand_profile,
-            *composed.composition_instructions,
-            *composed.subject_truth,
-            *composed.text_policy,
-            *composed.reference_instructions,
-            *composed.output_instructions,
-            *composed.output_contract,
-        ]
+def test_the_scene_does_not_request_ui_text_a_website_a_catalog_or_real_inventory():
+    scene = _plan().scenes[0]
+    described = " ".join(
+        value
+        for value in scene.model_dump(mode="json", exclude={"forbidden_elements"}).values()
+        if isinstance(value, str)
     ).lower()
 
+    for term in ("website", "webpage", "browser", "screen", "interface", "navigation", "button", "menu", "ecommerce"):
+        assert term not in described
+    for term in ("text", "lettering", "caption", "heading", "typography", "logo", "label", "sign"):
+        assert not re.search(rf"\b{term}s?\b", described)  # whole words only: "textile" and "texture" are fine
+    for term in ("catalog", "catálogo", "shop", "store", "product grid"):
+        assert term not in described
+    assert "no identifiable finished products" in described  # never implies real Cositas inventory
+
+
+def test_the_contract_is_built_before_provider_execution_and_validates():
+    plan = _plan()
+
+    assert plan.contract.purpose is AssetPurpose.HERO
+    assert plan.contract.subject == plan.subject and plan.contract.scene == plan.scenes[0]
+    assert plan.contract.provider_references == () and plan.contract.requires_visual_reference is False
+    for variant in range(len(plan.scenes)):
+        assert validate_generation_contract(plan.contract_for(variant)) == []
+
+
+# --- the provider prompt ---------------------------------------------------------------------------
+
+
+def test_the_provider_prompt_is_concrete_visual_instructions_derived_from_the_scene_plan():
+    plan = _plan()
+    text = to_higgsfield_prompt(compose_prompt(plan.contract)).lower()
+
+    for concrete in (
+        plan.scenes[0].medium.lower(),
+        "crochet and yarn craft materials",
+        "single continuous scene",
+        "subject concentrated toward the right half",
+        "negative space on the left",
+        "wide 16:9",
+        "soft natural studio light",
+        "tactile textile detail",
+    ):
+        assert concrete in text
+
+
+def test_the_scene_does_not_ask_the_model_to_depict_all_four_offerings():
+    text = to_higgsfield_prompt(compose_prompt(_plan().contract)).lower()
+
+    for fragment in SERVICE_FRAGMENTS:
+        assert fragment not in text  # the labels never reach the prompt, so they cannot be rendered as text either
+
+
+def test_provider_prompt_has_no_positive_website_or_ecommerce_semantics():
+    positive = _positive(to_higgsfield_prompt(compose_prompt(_plan().contract)))
+
+    for term in ("website", "webpage", "web page", "browser", "ecommerce", "page layout", "hero", "user interface"):
+        assert term not in positive  # placement was translated into composition
+
+
+def test_provider_prompt_has_no_business_name_description_or_target_customer():
+    text = to_higgsfield_prompt(compose_prompt(_plan().contract)).lower()
+
+    assert "cositas" not in text and "puntos" not in text
     for term in OPERATIONAL_TERMS:
-        assert term not in positive_sections
-    for interface_word in ("navigation", "button", "browser", "menu", "heading", "call-to-action", "grid"):
-        assert interface_word not in positive_sections
-    whole = to_higgsfield_prompt(composed).lower()
-    for term in ("instagram", "carrito", "presencia digital", "catálogo", "portfolio"):
-        assert term not in whole  # not even in the negatives: they simply never enter
+        assert term not in text
+    for fragment in ("pequeña marca", "hechos a mano mediante", "regalos artesanales", "visitantes"):
+        assert fragment not in text
 
 
-def test_the_business_name_and_raw_description_are_not_in_the_prompt():
-    composed = _composed()
-    whole = to_higgsfield_prompt(composed).lower()
+def test_the_prompt_is_far_smaller_than_p2_4s_without_losing_the_key_constraints():
+    text = to_higgsfield_prompt(compose_prompt(_plan().contract))
 
-    assert "cositas" not in whole and "puntos" not in whole
-    assert "pequeña marca" not in whole and "hechos a mano mediante crochet" not in whole
-    assert composed.debug["business_name_in_prompt"] is False
-    assert composed.debug["raw_business_description_in_prompt"] is False
-
-
-def test_the_prompt_states_the_subject_is_conceptual_never_a_real_cositas_product():
-    truth = " ".join(_composed().subject_truth).lower()
-    assert "conceptual and representational" in truth
-    assert "must not be presented as, or imply, a real product" in truth
+    assert len(text) < 1200  # P2.4's prompt for the same request was ≈3,470 characters
+    lowered = text.lower()
+    for constraint in (
+        "no text, lettering, pseudo-text",
+        "no interface elements, browser, navigation",
+        "no collage, grid",
+    ):
+        assert constraint in lowered
 
 
-# --- the provider request -----------------------------------------------------------------------
+# --- the provider request --------------------------------------------------------------------------
 
 
-def test_cositas_hero_still_routes_to_soul_standard_and_sends_no_reference_or_logo():
+def test_the_logo_stays_a_brand_source_and_nothing_visual_reaches_the_provider():
     gateway, storage = _Gateway(), _FakeStorage()
 
     _, _, [candidate, *_] = _run(_director(gateway, storage))
 
     [post] = gateway.posts
     body = post["body"]
-    assert post["path"] == "/higgsfield-ai/soul/standard"
-    assert sorted(body) == ["aspect_ratio", "prompt"]
-    assert body["aspect_ratio"] == "16:9"
-    assert storage.keys == []  # no presigned URL was ever minted
+    assert post["path"] == "/higgsfield-ai/soul/standard"  # selected by capability, not by configuration
+    assert sorted(body) == ["aspect_ratio", "prompt"] and body["aspect_ratio"] == "16:9"
+    assert storage.keys == []  # no presigned URL was minted
     serialized = json.dumps(body)
     assert str(LOGO_ID) not in serialized and "SECRETSIG" not in serialized and "cloudflarestorage" not in serialized
     spec = candidate.generation_metadata["creative_spec"]
-    assert spec["brand_source_asset_ids"] == [str(LOGO_ID)]  # the logo is a brand source only
-    assert spec["provider_reference_asset_ids"] == []
+    assert spec["brand_source_asset_ids"] == [str(LOGO_ID)] and spec["provider_reference_asset_ids"] == []
     assert spec["model_selection"]["selected"] == SOUL_STANDARD
+    assert spec["model_selection"]["reason"].startswith("configured_model_unsuitable:requires_a_reference")
 
 
-def test_anti_interface_rules_and_the_standalone_contract_reach_the_provider_prompt():
+def test_the_contract_is_validated_before_the_first_provider_submission(monkeypatch):
+    events: list[str] = []
+    real = director_module.assert_valid_generation_contract
+
+    def spy(contract, **kwargs):
+        events.append("contract_validated")
+        return real(contract, **kwargs)
+
+    monkeypatch.setattr(director_module, "assert_valid_generation_contract", spy)
+
+    _run(_director(_Gateway(events=events)))
+
+    assert events[0] == "contract_validated"
+    assert events.index("contract_validated") < events.index("provider_post")
+
+
+def test_an_invalid_contract_fails_before_any_provider_call_or_spend(monkeypatch):
+    real_plan_scenes = planning_module.plan_scenes
+
+    def scenes_asking_for_a_webpage(**kwargs):
+        return tuple(
+            scene.model_copy(update={"primary_subject": "a website landing page"})
+            for scene in real_plan_scenes(**kwargs)
+        )
+
+    monkeypatch.setattr(planning_module, "plan_scenes", scenes_asking_for_a_webpage)
     gateway = _Gateway()
+    budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=2.0)
 
-    _run(_director(gateway))
+    with pytest.raises(HiggsfieldNoSuitableModelError) as excinfo:
+        _director(gateway).create_directions(_hero_brief(), _cositas_assets(), budget)
 
-    prompt = gateway.posts[0]["body"]["prompt"].lower()
-    assert "standalone visual asset" in prompt
-    assert "will later be placed inside a website hero section" in prompt
-    assert "no website or webpage" in prompt and "no browser or browser chrome" in prompt
-    assert "no pseudo-text" in prompt and "no ecommerce interface" in prompt
-    assert "cositas" not in prompt and "instagram" not in prompt
+    assert excinfo.value.reason_code == "scene_requests_interface"
+    assert gateway.posts == [] and budget.credits_used == 0.0
 
 
-def test_the_three_explorations_are_subject_variations_not_website_concepts():
+# --- provenance --------------------------------------------------------------------------------------
+
+
+def test_provenance_records_subject_scene_and_contract_without_secrets_or_raw_text():
+    _, _, [candidate, *_] = _run(_director(_Gateway()))
+
+    spec = candidate.generation_metadata["creative_spec"]
+    assert spec["purpose"] == "hero" and spec["visual_intent"] == "subject_editorial"
+    assert spec["subject_grounding"] == "conceptual"
+    assert spec["visual_subject"] == "crochet and yarn craft"
+    assert spec["visual_subject_source"] == "material_family_from_verified_labels"
+    assert spec["scene_plan_version"] == "p2.5-v1" and spec["generation_contract_version"] == "p2.5-v1"
+    assert spec["scene_plan"]["subject_side"] == "right" and spec["scene_plan"]["aspect_ratio"] == "16:9"
+    assert spec["scene_plan"]["primary_subject"] == "crochet and yarn craft materials"
+    assert spec["prompt_version"] == "p2.5-v1" and spec["prompt_fingerprint"]
+    serialized = json.dumps(candidate.generation_metadata) + json.dumps(candidate.provider_metadata)
+    for forbidden in (
+        "Instagram",
+        "página web",
+        "ecommerce",
+        "Llaveros",
+        "Tartas",
+        "SECRETSIG",
+        "X-Amz",
+        "ksecret",
+        "://",
+    ):
+        assert forbidden not in serialized
+
+
+def test_the_three_explorations_are_deterministic_scene_variants_of_one_subject():
     gateway = _Gateway()
 
     _, _, candidates = _run(_director(gateway), hard_limit=None)
 
-    prompts = [post["body"]["prompt"].lower() for post in gateway.posts]
+    prompts = [post["body"]["prompt"] for post in gateway.posts]
     assert len(prompts) == 3 and len(set(prompts)) == 3
-    assert len({c.provider_metadata["angle"] for c in candidates}) == 3
-    for prompt in prompts:
-        assert "represents these verified subject categories" in prompt
-        intent_section = prompt.split("visual intent:")[1].split("verified creative context:")[0]
-        for interface_word in ("navigation", "website", "webpage", "button", "menu", "browser"):
-            assert interface_word not in intent_section  # what to depict never mentions interfaces
+    assert len({c.generation_metadata["creative_spec"]["scene_plan"]["primary_subject"] for c in candidates}) == 1
+    assert [c.generation_metadata["creative_spec"]["scene_plan"]["subject_side"] for c in candidates] == [
+        "right",
+        "left",
+        "right",
+    ]
 
 
-# --- provenance ------------------------------------------------------------------------------------
-
-
-def test_provenance_explains_why_this_kind_of_visual_without_raw_business_text():
-    gateway = _Gateway()
-
-    _, _, [candidate, *_] = _run(_director(gateway))
-
-    spec = candidate.generation_metadata["creative_spec"]
-    assert spec["purpose"] == "hero"
-    assert spec["visual_intent"] == "subject_editorial"
-    assert spec["visual_intent_reason"] == "verified_subject_categories_available"
-    assert spec["subject_grounding"] == "conceptual"
-    assert spec["interface_policy"] == "no_interface_depiction"
-    context = spec["creative_context"]
-    assert context["version"] and context["included_fields"] == ["services"]
-    assert context["subject_category_count"] == 4
-    excluded = {(item["field"], item["reason"]) for item in context["excluded"]}
-    assert ("description", "free_text_may_carry_operational_or_digital_context") in excluded
-    assert ("target_customers", "free_text_may_carry_operational_or_digital_context") in excluded
-    assert ("industry", "not_a_visual_subject") in excluded
-    serialized = json.dumps(candidate.generation_metadata) + json.dumps(candidate.provider_metadata)
-    for forbidden in ("Instagram", "página web", "ecommerce", "Amigurumis", "SECRETSIG", "X-Amz", "ksecret", "://"):
-        assert forbidden not in serialized  # ids, field names and reason codes only
-    assert spec["prompt_version"] == "p2.4-v1" and spec["prompt_fingerprint"]
-
-
-# --- P2.3 behaviour that must not regress --------------------------------------------------------------
+# --- P2.3 / P2.4 behaviour that must not regress ------------------------------------------------------------
 
 
 def test_hard_limit_two_still_permits_exactly_one_submission_and_never_retries():
@@ -387,7 +430,7 @@ def test_hard_limit_two_still_permits_exactly_one_submission_and_never_retries()
     assert len(failing.posts) == 1
 
 
-def test_soul_reference_still_serves_a_legitimate_reference_conditioned_product_request():
+def test_soul_reference_still_serves_a_grounded_product_request_and_only_signs_the_product():
     gateway, storage = _Gateway(), _FakeStorage()
     product = _asset(AssetKind.IMAGE, AssetCategory.PRODUCT, url="https://pub.example/p.png", r2_key="biz/p.png")
     brief = build_creative_brief(business_config=_cositas_config(), purpose=AssetPurpose.PRODUCT)
@@ -395,11 +438,11 @@ def test_soul_reference_still_serves_a_legitimate_reference_conditioned_product_
     _, _, [candidate, *_] = _run(_director(gateway, storage), brief=brief, assets=[*_cositas_assets(), product])
 
     [post] = gateway.posts
-    assert post["path"] == "/higgsfield-ai/soul/reference"
-    assert post["body"]["image_reference_url"] == PRESIGNED
-    assert storage.keys == ["biz/p.png"]  # only the real product was signed, never the logo
+    assert post["path"] == "/higgsfield-ai/soul/reference" and post["body"]["image_reference_url"] == PRESIGNED
+    assert storage.keys == ["biz/p.png"]
     spec = candidate.generation_metadata["creative_spec"]
     assert spec["visual_intent"] == "product_grounded" and spec["subject_grounding"] == "grounded"
+    assert spec["visual_subject_source"] == "grounded_reference" and spec["scene_plan"]["requires_fidelity"] is True
     assert spec["provider_reference_asset_ids"] == [str(product.id)]
 
 
@@ -414,7 +457,7 @@ def test_product_still_requires_a_real_product_image_and_never_invents_one():
     assert gateway.posts == []
 
 
-def test_fallback_is_still_explicit_and_carries_the_same_intent_without_a_generated_image(monkeypatch):
+def test_fallback_is_still_explicit_and_the_internal_result_carries_the_same_subject_and_scene(monkeypatch):
     monkeypatch.setattr(
         director_module, "registered_models", lambda: [m for m in registered_models() if m.model_id == SOUL_REFERENCE]
     )
@@ -430,10 +473,10 @@ def test_fallback_is_still_explicit_and_carries_the_same_intent_without_a_genera
     assert direction.provider_metadata["fallback_reason"] == "higgsfield_no_suitable_model"
     spec = direction.generation_metadata["creative_spec"]
     assert spec["generated_image"] is False and spec["provider_reference_asset_ids"] == []
-    assert spec["visual_intent"] == "subject_editorial" and spec["subject_grounding"] == "conceptual"
+    assert spec["visual_subject"] == "crochet and yarn craft" and spec["scene_plan"]["subject_side"] == "right"
 
 
-def test_develop_keeps_the_recorded_visual_intent_of_the_direction_it_deepens():
+def test_develop_continues_the_same_subject_from_the_previous_image():
     gateway = _Gateway()
     director = _director(gateway)
     _, _, [selected, *_] = _run(director)
@@ -446,7 +489,9 @@ def test_develop_keeps_the_recorded_visual_intent_of_the_direction_it_deepens():
     )
 
     continuation = gateway.posts[-1]
-    assert continuation["path"] == "/higgsfield-ai/soul/reference"  # continues from the previous generated image
     prompt = continuation["body"]["prompt"].lower()
-    assert "represents these verified subject categories" in prompt and "continue the same world" in prompt
+    assert continuation["path"] == "/higgsfield-ai/soul/reference"
+    assert continuation["body"]["image_reference_url"] == "https://cdn.example.com/out.png"
+    assert prompt.startswith("continue the same visual world as the reference image")
+    assert "crochet and yarn craft materials" in prompt
     assert "cositas" not in prompt and "instagram" not in prompt

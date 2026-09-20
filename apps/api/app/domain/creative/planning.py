@@ -18,10 +18,13 @@ from pydantic import BaseModel, ConfigDict
 from app.domain.creative.brand_profile import BrandVisualProfile, build_brand_visual_profile
 from app.domain.creative.brief import CreativeBrief, CreativeBriefAsset
 from app.domain.creative.creative_context import CreativeContext, build_creative_context
+from app.domain.creative.generation_contract import GenerationContract, build_generation_contract
 from app.domain.creative.model_routing import CreativeGenerationRequirements
 from app.domain.creative.reference_strategy import ReferencePolicy, ReferenceStrategy, decide_reference_strategy
-from app.domain.creative.spec import CreativeGenerationSpec, build_generation_spec
+from app.domain.creative.scene_plan import VisualScenePlan, plan_scenes
+from app.domain.creative.spec import CreativeGenerationSpec, ReferenceSpec, build_generation_spec
 from app.domain.creative.visual_intent import VisualIntent, resolve_visual_intent
+from app.domain.creative.visual_subject import VisualSubject, select_visual_subject
 
 
 class GenerationPlan(BaseModel):
@@ -33,8 +36,20 @@ class GenerationPlan(BaseModel):
     # the image should depict (separate from where it will be used).
     context: CreativeContext
     intent: VisualIntent
+    # P2.5: the ONE narrow subject, the concrete scene variants that depict it,
+    # and the provider-independent contract validated before any spend.
+    subject: VisualSubject
+    scenes: tuple[VisualScenePlan, ...]
+    contract: GenerationContract
     strategy: ReferenceStrategy
     requirements: CreativeGenerationRequirements
+
+    def contract_for(self, variant: int, references: Sequence[ReferenceSpec] | None = None) -> GenerationContract:
+        """The contract for exploration `variant` (a different, deterministic
+        scene of the same subject), optionally with the references that were
+        actually selected for the provider."""
+        contract = self.contract.with_scene(self.scenes[variant % len(self.scenes)])
+        return contract if references is None else contract.with_provider_references(references)
 
 
 def requirements_for(spec: CreativeGenerationSpec, strategy: ReferenceStrategy) -> CreativeGenerationRequirements:
@@ -68,11 +83,25 @@ def plan_generation(
         profile=profile,
         assets=assets,
     )
+    subject = select_visual_subject(intent=intent, context=context)
+    scenes = plan_scenes(
+        purpose=spec.purpose,
+        intent=intent,
+        subject=subject,
+        profile=profile,
+        brand_mode=spec.brand_mode,
+        creative_level=spec.creative_level,
+        aspect_ratio=spec.output.aspect_ratio,
+    )
+    contract = build_generation_contract(spec=spec, intent=intent, subject=subject, scene=scenes[0], strategy=strategy)
     return GenerationPlan(
         spec=spec,
         profile=profile,
         context=context,
         intent=intent,
+        subject=subject,
+        scenes=scenes,
+        contract=contract,
         strategy=strategy,
         requirements=requirements_for(spec, strategy),
     )

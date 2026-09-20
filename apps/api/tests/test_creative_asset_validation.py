@@ -16,7 +16,7 @@ from app.domain.creative.asset_validation import (
 )
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
 from app.domain.creative.planning import plan_generation
-from app.domain.creative.prompt_composer import EXPLORATION_ANGLES, compose_prompt
+from app.domain.creative.prompt_composer import compose_prompt
 from app.domain.creative.provenance import COST_SEMANTICS, build_creative_provenance
 from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, BusinessVertical
 
@@ -138,7 +138,8 @@ def test_validation_never_claims_visual_qa_and_lists_what_it_cannot_detect():
 
 def test_provenance_records_asset_ids_and_semantics_but_no_urls_or_secrets():
     brief, spec, logo = _spec()
-    composed = compose_prompt(brief, spec, angle=EXPLORATION_ANGLES[0])
+    plan = plan_generation(brief, [logo])
+    composed = compose_prompt(plan.contract)
     validation = _VALIDATOR.validate(spec, _good())
 
     provenance = build_creative_provenance(
@@ -149,8 +150,9 @@ def test_provenance_records_asset_ids_and_semantics_but_no_urls_or_secrets():
         model="higgsfield-ai/soul/reference",
         job_id="job-1",
         estimated_generation_units=2.0,
-        angle=EXPLORATION_ANGLES[0],
-        plan=plan_generation(brief, [logo]),
+        angle="a deterministic scene variant",
+        plan=plan,
+        contract=plan.contract,
     )
     serialized = json.dumps(provenance)
 
@@ -173,4 +175,6 @@ def test_provenance_records_asset_ids_and_semantics_but_no_urls_or_secrets():
     assert provenance["estimated_generation_units"] == 2.0
     for forbidden in ("://", "X-Amz", "Signature", "presign", "Authorization", "secret", "api_key"):
         assert forbidden.lower() not in serialized.lower()
-    assert composed.positive_prompt not in serialized  # fingerprinted, never stored verbatim
+    assert " ".join(composed.scene) not in serialized  # fingerprinted, never stored verbatim
+    assert provenance["generation_contract_version"] and provenance["scene_plan_version"]
+    assert provenance["visual_subject_source"] and provenance["scene_plan"]["aspect_ratio"] == "16:9"
