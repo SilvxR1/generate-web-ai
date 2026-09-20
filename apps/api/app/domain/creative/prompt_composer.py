@@ -1,46 +1,65 @@
-"""CreativePromptComposer (P2.2) — turns a CreativeBrief plus a
-CreativeGenerationSpec into a structured, provider-independent
-ComposedCreativePrompt. Pure and deterministic: no network, R2, provider
-SDK or database, so it is unit-testable in isolation. Provider adapters
-(app.creative.higgsfield.translation) flatten this structure into their own
-payload; no creative strategy lives in an adapter.
+"""CreativePromptComposer (P2.2, restructured in P2.4) — turns a CreativeBrief,
+a CreativeGenerationSpec and the P2.4 CreativeContext / VisualIntent into a
+structured, provider-independent ComposedCreativePrompt. Pure and
+deterministic: no network, R2, provider SDK or database.
 
-Two rules shape every output:
+The prompt is built from ten explicit sections, so each concern is separate
+and testable:
 
-1. VERIFIED FACTS vs CREATIVE INTERPRETATION. The business-context section
-   only ever states facts present on the CreativeBrief. Absence of
-   information is stated as absence, never filled in. Visual metaphors and
-   mood are labelled as interpretation and may not become claims.
-2. THE REFERENCE IS NOT THE OUTPUT INTENT. Each supplied reference is
-   described by the role it plays (ReferenceUsage). A real logo is
-   authoritative brand identity: it guides palette/geometry/character and
-   is never recreated — the website overlays the real logo asset itself.
+  1. OUTPUT CONTRACT      what kind of asset this is (a standalone picture)
+  2. PLACEMENT            where it will LATER be used (not what it depicts)
+  3. VISUAL INTENT        what kind of image to create
+  4. VERIFIED CONTEXT     only relevant, verified, visually useful facts
+  5. BRAND VISUAL PROFILE only structured brand information that exists
+  6. COMPOSITION          placement-specific framing and crop rules
+  7. SUBJECT TRUTH        conceptual vs. grounded in a real subject
+  8. TEXT POLICY          no generated text of any kind
+  9. INTERFACE POLICY     never a website / browser / app / UI
+ 10. OUTPUT REQUIREMENTS  aspect ratio, resolution
+
+plus reference instructions and negative constraints. Raw business
+descriptions are never included: business knowledge arrives only through
+CreativeContext.
+
+HERO means "this picture will later sit inside a website hero" — it does NOT
+mean "generate a website hero section" (Experiment 3 drew a webpage mockup).
 """
-
-import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.creative.brand_profile import BrandVisualProfile, build_brand_visual_profile
 from app.domain.creative.brief import CreativeBrief
+from app.domain.creative.content_policy import interface_rules, text_rules
+from app.domain.creative.creative_context import CreativeContext, build_creative_context
 from app.domain.creative.spec import (
     PROMPT_VERSION,
     CreativeGenerationSpec,
     ReferenceSpec,
     ReferenceUsage,
-    TextPolicy,
+)
+from app.domain.creative.visual_intent import (
+    SubjectGrounding,
+    VisualIntent,
+    VisualIntentKind,
+    resolve_visual_intent,
 )
 from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel
 
-_MAX_DESCRIPTION_CHARS = 400
-_MAX_SERVICES = 6
-
+# Variations for abstract / atmospheric intents.
 EXPLORATION_ANGLES: tuple[str, ...] = (
     "a bespoke visual metaphor drawn from the craft or product itself, expressed through abstract shape, "
     "texture and light",
     "an atmospheric, immersive scene that evokes the feeling of the business's world without depicting any "
     "specific product, person or place",
-    "a calm, confident, trust-building composition with clear visual hierarchy and restrained detail",
+    "a calm, confident composition with clear visual hierarchy and restrained detail",
+)
+
+# Variations for a category-level subject depiction: each stays a still life
+# or lifestyle-style picture in a simple setting — never an invented venue.
+SUBJECT_ANGLES: tuple[str, ...] = (
+    "a close, tactile still life of the subject categories in soft natural light",
+    "a lifestyle-style arrangement of the subject categories in a simple, neutral setting",
+    "an overhead flat-lay arrangement of the subject categories with generous space around them",
 )
 
 DEVELOP_ANGLES: tuple[str, ...] = (
@@ -48,6 +67,11 @@ DEVELOP_ANGLES: tuple[str, ...] = (
     "the same world, as a close, tactile detail of its texture and material",
     "the same world, as a calmer, wider variant with even more open negative space",
 )
+
+
+def exploration_angles_for(intent: VisualIntent) -> tuple[str, ...]:
+    return SUBJECT_ANGLES if intent.kind is VisualIntentKind.SUBJECT_EDITORIAL else EXPLORATION_ANGLES
+
 
 _LEVEL_DIRECTION: dict[CreativeLevel, str] = {
     CreativeLevel.BASIC: "simple, clean and restrained",
@@ -71,32 +95,33 @@ _BRAND_MODE_DIRECTION: dict[BrandStrategy, str] = {
     ),
 }
 
-_PURPOSE_ROLE: dict[AssetPurpose, str] = {
-    AssetPurpose.HERO: "the large hero image at the top of the business's website",
-    AssetPurpose.SECTION: "a supporting image for one content section of the business's website",
+# WHERE the asset will later be used. Deliberately a placement, never a subject.
+_PLACEMENT: dict[AssetPurpose, str] = {
+    AssetPurpose.HERO: "a website hero section",
+    AssetPurpose.SECTION: "a content section of a website",
     AssetPurpose.BACKGROUND: "a full-width background behind website content",
-    AssetPurpose.PRODUCT: "a product image on the business's website",
-    AssetPurpose.EDITORIAL: "an editorial, story-telling image within the business's website",
-    AssetPurpose.TEXTURE: "a supporting texture or pattern surface for the business's website",
+    AssetPurpose.PRODUCT: "a product area of a website",
+    AssetPurpose.EDITORIAL: "an editorial section of a website",
+    AssetPurpose.TEXTURE: "a supporting texture surface within a website",
 }
 
 _PURPOSE_COMPOSITION: dict[AssetPurpose, tuple[str, ...]] = {
     AssetPurpose.HERO: (
-        "Landscape composition with one strong focal subject and a clear focal hierarchy.",
-        "Reserve generous, calm negative space (about a third of the frame, on one side) where the website "
-        "will overlay its own heading and call-to-action.",
+        "Landscape composition with one strong focal element and a clear focal hierarchy.",
+        "Reserve generous negative space (about a third of the frame, on one side): calm and free of detail, so the "
+        "picture can later sit beneath other page content.",
         "Keep important content away from the edges so the image survives responsive cropping.",
         "Visually distinctive, with cohesive lighting and moderate visual density.",
     ),
     AssetPurpose.BACKGROUND: (
         "Low visual density with soft gradations and a wide format.",
         "No central subject: keep the middle calm and place any interest toward the periphery.",
-        "Provide clearly lighter and darker zones with enough contrast for overlaid website text.",
+        "Provide clearly lighter and darker zones with enough contrast for content to sit on top later.",
         "Crop-friendly: nothing critical near the edges; it must tolerate being scaled and cropped.",
     ),
     AssetPurpose.SECTION: (
         "Supports a single content section and stays secondary in hierarchy to the hero: calmer and less dramatic.",
-        "A clear but modest focal element with balanced framing and margin for website content.",
+        "A clear but modest focal element with balanced framing and margin around it.",
     ),
     AssetPurpose.PRODUCT: (
         "The product is the primary subject, fully in view and unobstructed, on a strong thirds intersection "
@@ -107,21 +132,13 @@ _PURPOSE_COMPOSITION: dict[AssetPurpose, tuple[str, ...]] = {
     ),
     AssetPurpose.EDITORIAL: (
         "Editorial, photography-led composition with a considered focal path and clear hierarchy.",
-        "Natural depth and room to breathe; any text is added later by the website, never in the image.",
+        "Natural depth and room to breathe.",
     ),
     AssetPurpose.TEXTURE: (
         "A seamless, abstract, supporting surface: continuous or repeating pattern with no focal subject.",
         "Even density from edge to edge, with no recognisable objects, logos or marks.",
     ),
 }
-
-_NO_TEXT_NEGATIVES: tuple[str, ...] = (
-    "no words, letters, numbers or typography of any kind",
-    "no captions, slogans, watermarks or signatures",
-    "no fake logos or brand marks",
-    "do not write or reproduce the business name",
-    "no user-interface elements, buttons or browser chrome",
-)
 
 _GENERAL_NEGATIVES: tuple[str, ...] = (
     "no invented business claims, prices or offers",
@@ -131,6 +148,8 @@ _GENERAL_NEGATIVES: tuple[str, ...] = (
 
 _LOGO_NEGATIVE = "do not recreate, redraw or approximate the official logo"
 
+_NO_LITERAL_SUBJECT = "It has no literal subject: no products, people, places or objects."
+
 
 class ComposedCreativePrompt(BaseModel):
     """Structured output — every provider translates this; none reads the
@@ -139,47 +158,26 @@ class ComposedCreativePrompt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: str = PROMPT_VERSION
-    positive_prompt: str
-    negative_constraints: list[str] = Field(default_factory=list)
-    reference_instructions: list[str] = Field(default_factory=list)
+    output_contract: list[str] = Field(default_factory=list)
+    placement: list[str] = Field(default_factory=list)
+    visual_intent: list[str] = Field(default_factory=list)
+    creative_context: list[str] = Field(default_factory=list)
+    brand_profile: list[str] = Field(default_factory=list)
     composition_instructions: list[str] = Field(default_factory=list)
+    subject_truth: list[str] = Field(default_factory=list)
+    text_policy: list[str] = Field(default_factory=list)
+    interface_policy: list[str] = Field(default_factory=list)
+    reference_instructions: list[str] = Field(default_factory=list)
     output_instructions: list[str] = Field(default_factory=list)
+    negative_constraints: list[str] = Field(default_factory=list)
+    # The affirmative core (contract + placement + intent) as one block.
+    positive_prompt: str = ""
     # The verified facts the prompt actually states, and the interpretive
     # direction it adds — kept apart so provenance can show which is which.
     verified_facts: list[str] = Field(default_factory=list)
     creative_interpretation: list[str] = Field(default_factory=list)
     # Debug/provenance only: never URLs, credentials or full business text.
     debug: dict = Field(default_factory=dict)
-
-
-def _without_business_name(text: str, business_name: str) -> str:
-    if not business_name.strip():
-        return text
-    return re.sub(re.escape(business_name), "the business", text, flags=re.IGNORECASE)
-
-
-def _clip(text: str, limit: int) -> str:
-    text = " ".join(text.split())
-    if len(text) <= limit:
-        return text
-    return text[:limit].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
-
-
-def _verified_facts(brief: CreativeBrief) -> list[str]:
-    """Only what the CreativeBrief states. The business name is
-    deliberately left out (and scrubbed from free text): with generated
-    text forbidden, naming the business invites the model to render it."""
-    facts = [f"Industry: {brief.industry}."]
-    if brief.description:
-        description = _without_business_name(brief.description, brief.business_name)
-        facts.append(f"Description: {_clip(description, _MAX_DESCRIPTION_CHARS)}")
-    services = [_without_business_name(service.name, brief.business_name) for service in brief.services[:_MAX_SERVICES]]
-    if services:
-        facts.append("Offerings: " + "; ".join(services) + ".")
-    if brief.target_customer:
-        target = _without_business_name(brief.target_customer, brief.business_name)
-        facts.append(f"Target customer: {_clip(target, 200)}")
-    return facts
 
 
 def _reference_instruction(index: int, total: int, reference: ReferenceSpec) -> str:
@@ -228,19 +226,76 @@ def _brand_identity_lines(profile: BrandVisualProfile, spec: CreativeGenerationS
     logo image itself is never sent to the model (P2.3). Only what the
     profile reliably knows is stated; missing information is stated as
     missing, never assumed."""
+    lines = [_BRAND_MODE_DIRECTION[spec.brand_mode]]
     if spec.brand_mode is BrandStrategy.NEW_DIRECTION:
-        return []
-    lines: list[str] = []
+        return lines
+    found = False
     if profile.palette:
         stance = "Use" if spec.brand_mode is BrandStrategy.PRESERVE else "Start from"
         colors = ", ".join(f"{color.role} {color.value}" for color in profile.palette)
         lines.append(f"{stance} the brand palette: {colors}.")
+        found = True
     if profile.visual_style:
         lines.append(f"Brand visual style (from business settings): {profile.visual_style}.")
+        found = True
     if profile.geometry:
         lines.append("Brand geometric language: " + "; ".join(profile.geometry) + ".")
-    if not lines:
+        found = True
+    if not found:
         lines.append("No verified brand palette or visual style is available: do not assume one.")
+    return lines
+
+
+def _intent_lines(intent: VisualIntent) -> list[str]:
+    match intent.kind:
+        case VisualIntentKind.SUBJECT_EDITORIAL:
+            return [
+                "Create an editorial, still-life or lifestyle-style image that represents these verified subject "
+                "categories: " + "; ".join(intent.subject_categories) + ".",
+                "It is a conceptual, category-level depiction — not a documentary photograph of specific real "
+                "products.",
+            ]
+        case VisualIntentKind.ABSTRACT_BRAND:
+            return [
+                "Create an abstract image built from shape, texture and light that expresses the brand's colours "
+                "and style.",
+                _NO_LITERAL_SUBJECT,
+            ]
+        case VisualIntentKind.ATMOSPHERIC:
+            return [
+                "Create an atmospheric image that conveys mood through light, colour and space.",
+                _NO_LITERAL_SUBJECT,
+            ]
+        case VisualIntentKind.PRODUCT_GROUNDED:
+            if intent.grounding is SubjectGrounding.GROUNDED:
+                return ["Depict the real product shown in the supplied reference as the primary subject."]
+            return ["The product subject is unknown: do not invent one."]
+
+
+def _context_lines(context: CreativeContext) -> list[str]:
+    lines: list[str] = []
+    if context.business_category:
+        lines.append(f"Business type: {context.business_category}.")
+    if context.subject_categories:
+        lines.append("Verified subject categories: " + "; ".join(context.subject_categories) + ".")
+    else:
+        lines.append(
+            "No verified subject information is available: do not depict specific products, projects, people or "
+            "premises."
+        )
+    lines.append("Nothing else about the business is verified for imagery: do not invent details or claims.")
+    return lines
+
+
+def _subject_truth_lines(intent: VisualIntent) -> list[str]:
+    if intent.grounding is SubjectGrounding.GROUNDED:
+        return ["The subject is grounded in the supplied real reference: keep it faithful and add nothing invented."]
+    lines = [
+        "This image is conceptual and representational. It must not be presented as, or imply, a real product, "
+        "project, customer or premises of the business."
+    ]
+    if intent.grounding is SubjectGrounding.UNKNOWN:
+        lines.append("The required subject information is unknown: do not invent it.")
     return lines
 
 
@@ -251,37 +306,36 @@ def compose_prompt(
     angle: str,
     continuation_of: str | None = None,
     profile: BrandVisualProfile | None = None,
+    context: CreativeContext | None = None,
+    intent: VisualIntent | None = None,
 ) -> ComposedCreativePrompt:
     profile = profile or build_brand_visual_profile(brief, [])
-    facts = _verified_facts(brief)
-    role = _PURPOSE_ROLE[spec.purpose]
-    level = _LEVEL_DIRECTION[spec.creative_level]
+    context = context or build_creative_context(brief)
+    intent = intent or resolve_visual_intent(
+        purpose=spec.purpose, brand_mode=spec.brand_mode, context=context, profile=profile, assets=[]
+    )
+    text = text_rules(spec.text_policy)
+    interface = interface_rules(spec.interface_policy)
 
-    business_lines = [*facts]
-    if not brief.description and not brief.services:
-        business_lines.append(
-            "No further verified business details are available: rely on the industry only, "
-            "and do not invent products, projects or claims."
-        )
-
-    interpretation = [
-        f"Visual direction: {angle}.",
-        f"Overall feel: {level}.",
-        _BRAND_MODE_DIRECTION[spec.brand_mode],
+    output_contract = [
+        "Create one standalone visual asset: a single picture (photographic or illustrative). It is an image to be "
+        "used later — not a page, screen or interface design."
     ]
-    interpretation.extend(_brand_identity_lines(profile, spec))
+    placement = [
+        f"This asset will later be placed inside {_PLACEMENT[spec.purpose]} by the website builder.",
+        "The image is only the picture that will be placed there; it is not that page.",
+    ]
+    visual_intent = [
+        *_intent_lines(intent),
+        f"Variation: {angle}.",
+        f"Overall feel: {_LEVEL_DIRECTION[spec.creative_level]}.",
+    ]
     if continuation_of:
-        interpretation.insert(
+        visual_intent.insert(
             0, f"Continue the same world and visual language as the previous exploration ({continuation_of})."
         )
-
-    positive = (
-        f"Create an original image to be used as {role}.\n"
-        "BUSINESS CONTEXT (verified facts only):\n"
-        + "\n".join(business_lines)
-        + "\nVISUAL DIRECTION (creative interpretation, not business claims):\n"
-        + "\n".join(interpretation)
-    )
+    context_lines = _context_lines(context)
+    brand_lines = _brand_identity_lines(profile, spec)
 
     reference_lines = [
         _reference_instruction(index, len(spec.reference_assets), ref)
@@ -292,10 +346,7 @@ def compose_prompt(
             "No reference images are supplied: work only from the verified context and visual direction."
         ]
 
-    negatives: list[str] = []
-    if spec.text_policy is TextPolicy.NO_GENERATED_TEXT:
-        negatives.extend(_NO_TEXT_NEGATIVES)
-    negatives.extend(_GENERAL_NEGATIVES)
+    negatives: list[str] = [*text.negatives, *interface.negatives, *_GENERAL_NEGATIVES]
     if spec.purpose is not AssetPurpose.TEXTURE:
         negatives.append("no duplicated or repeated subjects")
     if brief.logo_url or profile.has_official_logo:
@@ -308,20 +359,33 @@ def compose_prompt(
     ]
 
     return ComposedCreativePrompt(
-        positive_prompt=positive,
-        negative_constraints=negatives,
-        reference_instructions=reference_lines,
+        output_contract=output_contract,
+        placement=placement,
+        visual_intent=visual_intent,
+        creative_context=context_lines,
+        brand_profile=brand_lines,
         composition_instructions=list(_PURPOSE_COMPOSITION[spec.purpose]),
+        subject_truth=_subject_truth_lines(intent),
+        text_policy=list(text.instructions),
+        interface_policy=list(interface.instructions),
+        reference_instructions=reference_lines,
         output_instructions=output_lines,
-        verified_facts=facts,
-        creative_interpretation=interpretation,
+        negative_constraints=negatives,
+        positive_prompt="\n".join([*output_contract, *placement, *visual_intent]),
+        verified_facts=[line for line in context_lines if line.startswith(("Business type", "Verified subject"))],
+        creative_interpretation=[*visual_intent, *brand_lines],
         debug={
             "purpose": spec.purpose.value,
             "brand_mode": spec.brand_mode.value,
             "creative_level": spec.creative_level.value,
             "text_policy": spec.text_policy.value,
+            "interface_policy": spec.interface_policy.value,
+            "visual_intent": intent.kind.value,
+            "subject_grounding": intent.grounding.value,
             "reference_usages": [ref.usage.value for ref in spec.reference_assets],
             "business_name_in_prompt": False,
+            "raw_business_description_in_prompt": False,
+            "creative_context_version": context.version,
             "brand_profile_version": profile.version,
             "brand_profile_sources": list(profile.sources),
             "angle": angle,

@@ -1,5 +1,9 @@
 # P2.3 — Brand intelligence, reference strategy and model routing
 
+> **Follow-up: P2.4.** Experiment 3 confirmed the routing here worked (no logo, no reference) but exposed that the
+> business description reaching the prompt made the model draw a webpage. See
+> [p2-4-creative-context-visual-intent.md](p2-4-creative-context-visual-intent.md).
+
 ## Why
 
 Two real production generations with `higgsfield-ai/soul/reference` and the official Cositas y Puntos logo as the

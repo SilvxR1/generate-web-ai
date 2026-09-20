@@ -27,9 +27,16 @@ COST_SEMANTICS = "internal_estimate_not_provider_credits_or_usd"
 def prompt_fingerprint(composed: ComposedCreativePrompt) -> str:
     material = "\n".join(
         [
-            composed.positive_prompt,
-            *composed.reference_instructions,
+            *composed.output_contract,
+            *composed.placement,
+            *composed.visual_intent,
+            *composed.creative_context,
+            *composed.brand_profile,
             *composed.composition_instructions,
+            *composed.subject_truth,
+            *composed.text_policy,
+            *composed.interface_policy,
+            *composed.reference_instructions,
             *composed.output_instructions,
             *composed.negative_constraints,
         ]
@@ -42,6 +49,24 @@ def plan_provenance(plan: GenerationPlan) -> dict:
     the brand profile, the reference strategy and why assets were withheld.
     Ids and reason codes only."""
     return {
+        # P2.4: why THIS kind of visual — the intent (what it depicts),
+        # how truthful its subject is, and which business knowledge was
+        # allowed through. Field names and reason codes only: no raw business
+        # text and no excluded values are stored.
+        "visual_intent": plan.intent.kind.value,
+        "visual_intent_reason": plan.intent.reason,
+        "subject_grounding": plan.intent.grounding.value,
+        "interface_policy": plan.spec.interface_policy.value,
+        "creative_context": {
+            "version": plan.context.version,
+            "included_fields": list(plan.context.included_fields),
+            "subject_category_count": len(plan.context.subject_categories),
+            "excluded": [
+                {"field": item.field, "reason": item.reason.value, "count": item.count}
+                for item in plan.context.excluded
+            ],
+            "unknown": list(plan.context.unknown),
+        },
         "brand_source_asset_ids": [str(asset_id) for asset_id in plan.profile.source_asset_ids],
         "brand_profile": {
             "version": plan.profile.version,

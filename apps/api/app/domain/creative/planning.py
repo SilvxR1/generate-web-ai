@@ -17,9 +17,11 @@ from pydantic import BaseModel, ConfigDict
 
 from app.domain.creative.brand_profile import BrandVisualProfile, build_brand_visual_profile
 from app.domain.creative.brief import CreativeBrief, CreativeBriefAsset
+from app.domain.creative.creative_context import CreativeContext, build_creative_context
 from app.domain.creative.model_routing import CreativeGenerationRequirements
 from app.domain.creative.reference_strategy import ReferencePolicy, ReferenceStrategy, decide_reference_strategy
 from app.domain.creative.spec import CreativeGenerationSpec, build_generation_spec
+from app.domain.creative.visual_intent import VisualIntent, resolve_visual_intent
 
 
 class GenerationPlan(BaseModel):
@@ -27,6 +29,10 @@ class GenerationPlan(BaseModel):
 
     spec: CreativeGenerationSpec
     profile: BrandVisualProfile
+    # P2.4: only the visually relevant, verified business knowledge, and what
+    # the image should depict (separate from where it will be used).
+    context: CreativeContext
+    intent: VisualIntent
     strategy: ReferenceStrategy
     requirements: CreativeGenerationRequirements
 
@@ -54,4 +60,19 @@ def plan_generation(
     profile = build_brand_visual_profile(brief, assets, asset_palettes=asset_palettes)
     strategy = decide_reference_strategy(brief, assets)
     spec = build_generation_spec(brief, strategy.provider_reference_candidates)
-    return GenerationPlan(spec=spec, profile=profile, strategy=strategy, requirements=requirements_for(spec, strategy))
+    context = build_creative_context(brief)
+    intent = resolve_visual_intent(
+        purpose=brief.asset_purpose,
+        brand_mode=brief.brand_strategy,
+        context=context,
+        profile=profile,
+        assets=assets,
+    )
+    return GenerationPlan(
+        spec=spec,
+        profile=profile,
+        context=context,
+        intent=intent,
+        strategy=strategy,
+        requirements=requirements_for(spec, strategy),
+    )

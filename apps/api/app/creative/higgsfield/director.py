@@ -73,7 +73,7 @@ from app.domain.creative.model_routing import (
     select_model,
 )
 from app.domain.creative.planning import GenerationPlan, plan_generation, requirements_for
-from app.domain.creative.prompt_composer import DEVELOP_ANGLES, EXPLORATION_ANGLES, compose_prompt
+from app.domain.creative.prompt_composer import DEVELOP_ANGLES, compose_prompt, exploration_angles_for
 from app.domain.creative.provenance import COST_SEMANTICS, build_creative_provenance
 from app.domain.creative.reference_strategy import ReferencePolicy, ReferenceStrategy
 from app.domain.creative.spec import (
@@ -82,6 +82,7 @@ from app.domain.creative.spec import (
     ReferenceUsage,
     build_generation_spec,
 )
+from app.domain.creative.visual_intent import SubjectGrounding, VisualIntent, VisualIntentKind
 from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel, CreativeProviderName
 from app.storage.provider import StorageProvider
 
@@ -234,8 +235,10 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         candidates: list[CreativeDirection] = []
         last_error: Exception | None = None
 
-        for iteration, angle in enumerate(EXPLORATION_ANGLES, start=1):
-            composed = compose_prompt(brief, spec, angle=angle, profile=plan.profile)
+        for iteration, angle in enumerate(exploration_angles_for(plan.intent), start=1):
+            composed = compose_prompt(
+                brief, spec, angle=angle, profile=plan.profile, context=plan.context, intent=plan.intent
+            )
             prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
@@ -372,6 +375,25 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
         )
         return effective_brief, spec, requirements_for(spec, strategy)
 
+    @staticmethod
+    def _recorded_intent(selected: CreativeDirection, fallback: VisualIntent) -> VisualIntent:
+        """A continuation keeps the visual intent of the direction it deepens
+        (recorded in its provenance) — re-resolving without the original
+        assets would otherwise change what it depicts."""
+        recorded = selected.generation_metadata.get("creative_spec")
+        recorded = recorded if isinstance(recorded, dict) else {}
+        try:
+            kind = VisualIntentKind(recorded["visual_intent"])
+            grounding = SubjectGrounding(recorded["subject_grounding"])
+        except (KeyError, ValueError):
+            return fallback
+        return VisualIntent(
+            kind=kind,
+            grounding=grounding,
+            reason="continuation_of_selected_direction",
+            subject_categories=list(fallback.subject_categories) if kind is VisualIntentKind.SUBJECT_EDITORIAL else [],
+        )
+
     def develop_direction(
         self,
         selected: CreativeDirection,
@@ -393,11 +415,20 @@ class _HiggsfieldDirectorBase(CreativeDirectorProvider, ABC):
             return developed
         model = selection.model_id
         aspect_ratio = self._supported_aspect_ratio(model, spec.output.aspect_ratio)
-        profile = plan_generation(effective_brief, []).profile
+        develop_plan = plan_generation(effective_brief, [])
+        intent = self._recorded_intent(selected, develop_plan.intent)
         continuation = selected.concept.rationale.rstrip(".")
 
         for iteration, angle in enumerate(DEVELOP_ANGLES, start=1):
-            composed = compose_prompt(effective_brief, spec, angle=angle, continuation_of=continuation, profile=profile)
+            composed = compose_prompt(
+                effective_brief,
+                spec,
+                angle=angle,
+                continuation_of=continuation,
+                profile=develop_plan.profile,
+                context=develop_plan.context,
+                intent=intent,
+            )
             prompt = to_higgsfield_prompt(composed)
             try:
                 job, credits, duration_ms = self._spend_and_create(
