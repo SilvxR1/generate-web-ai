@@ -16,9 +16,11 @@ a deliberate follow-up (docs/p2-2-creative-prompt-composition.md).
 import hashlib
 
 from app.domain.creative.asset_validation import AssetValidationResult
+from app.domain.creative.generation_contract import GenerationContract
 from app.domain.creative.model_routing import ModelSelection
 from app.domain.creative.planning import GenerationPlan
 from app.domain.creative.prompt_composer import ComposedCreativePrompt
+from app.domain.creative.scene_plan import VisualScenePlan
 from app.domain.creative.spec import CreativeGenerationSpec
 
 COST_SEMANTICS = "internal_estimate_not_provider_credits_or_usd"
@@ -27,28 +29,44 @@ COST_SEMANTICS = "internal_estimate_not_provider_credits_or_usd"
 def prompt_fingerprint(composed: ComposedCreativePrompt) -> str:
     material = "\n".join(
         [
-            *composed.output_contract,
-            *composed.placement,
-            *composed.visual_intent,
-            *composed.creative_context,
-            *composed.brand_profile,
-            *composed.composition_instructions,
-            *composed.subject_truth,
-            *composed.text_policy,
-            *composed.interface_policy,
+            *composed.scene,
             *composed.reference_instructions,
-            *composed.output_instructions,
+            *composed.constraints,
             *composed.negative_constraints,
         ]
     )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
-def plan_provenance(plan: GenerationPlan) -> dict:
+def scene_summary(scene: VisualScenePlan) -> dict:
+    """A bounded, structured summary of the scene — enough to explain how the
+    subject was depicted without duplicating the prompt."""
+    return {
+        "version": scene.version,
+        "medium": scene.medium,
+        "primary_subject": scene.primary_subject,
+        "subject_side": scene.subject_side.value,
+        "composition": scene.composition,
+        "framing": scene.framing,
+        "aspect_ratio": scene.aspect_ratio,
+        "requires_fidelity": scene.requires_fidelity,
+    }
+
+
+def plan_provenance(plan: GenerationPlan, contract: GenerationContract | None = None) -> dict:
     """The provider-independent part of provenance: which assets informed
     the brand profile, the reference strategy and why assets were withheld.
     Ids and reason codes only."""
+    contract = contract or plan.contract
     return {
+        # P2.5: the single visual subject, the scene that depicts it and the
+        # contract it was validated under.
+        "visual_subject": plan.subject.label,
+        "visual_subject_source": plan.subject.source.value,
+        "visual_subject_reason": plan.subject.reason,
+        "scene_plan_version": contract.scene.version,
+        "scene_plan": scene_summary(contract.scene),
+        "generation_contract_version": contract.version,
         # P2.4: why THIS kind of visual — the intent (what it depicts),
         # how truthful its subject is, and which business knowledge was
         # allowed through. Field names and reason codes only: no raw business
@@ -117,6 +135,7 @@ def build_creative_provenance(
     angle: str,
     plan: GenerationPlan | None = None,
     selection: ModelSelection | None = None,
+    contract: GenerationContract | None = None,
 ) -> dict:
     provenance: dict = {
         "purpose": spec.purpose.value,
@@ -149,7 +168,7 @@ def build_creative_provenance(
         "brand_source_asset_ids": [],
     }
     if plan is not None:
-        provenance.update(plan_provenance(plan))
+        provenance.update(plan_provenance(plan, contract))
     if selection is not None:
         provenance["model_selection"] = {
             "selected": selection.model_id,

@@ -263,7 +263,8 @@ def test_existing_business_config_is_reused_not_recreated(
     # operational prose made an image model draw a webpage, and naming the business invites it to
     # bake the name into the picture.
     assert all("cositas y puntos" not in call["prompt"].lower() for call in fake.calls)
-    assert all("standalone visual asset" in call["prompt"].lower() for call in fake.calls)
+    # A concrete visual scene, not business prose.
+    assert all("wide 16:9" in call["prompt"].lower() for call in fake.calls)
     excluded = response.json()[0]["generation_metadata"]["creative_spec"]["creative_context"]["excluded"]
     reason = "free_text_may_carry_operational_or_digital_context"
     assert {"field": "description", "reason": reason, "count": 1} in excluded

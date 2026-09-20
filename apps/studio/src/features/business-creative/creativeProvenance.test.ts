@@ -138,6 +138,53 @@ describe("provenanceRows", () => {
     expect(text).not.toContain("creative_context");
   });
 
+  it("shows the single visual subject and how the scene is composed, in plain language", () => {
+    const scene = direction({
+      generation_metadata: {
+        creative_spec: {
+          purpose: "hero",
+          visual_intent: "subject_editorial",
+          subject_grounding: "conceptual",
+          visual_subject: "crochet and yarn craft",
+          visual_subject_source: "material_family_from_verified_labels",
+          scene_plan: { subject_side: "right", aspect_ratio: "16:9", medium: "studio still-life photograph" },
+          references: [],
+        },
+      },
+    });
+
+    const text = asText(provenanceRows(scene));
+
+    expect(text).toContain("Visual subject: Crochet and yarn craft");
+    expect(text).toContain("Composition: Subject right · negative space left · 16:9");
+    expect(text).not.toContain("studio still-life"); // scene internals stay out of the UI
+    expect(text).not.toContain("material_family");
+  });
+
+  it("shows a grounded product subject and tolerates missing or unknown scene data", () => {
+    const grounded = direction({
+      generation_metadata: {
+        creative_spec: {
+          visual_intent: "product_grounded",
+          subject_grounding: "grounded",
+          visual_subject_source: "grounded_reference",
+          visual_subject: null,
+          scene_plan: { subject_side: "center", aspect_ratio: "1:1" },
+          references: [],
+        },
+      },
+    });
+    const text = asText(provenanceRows(grounded));
+    expect(text).toContain("Visual subject: Real product (from the reference)");
+    expect(text).toContain("Composition: Subject centred · 1:1");
+
+    const noScene = direction({
+      generation_metadata: { creative_spec: { scene_plan: { subject_side: "sideways" }, references: [] } },
+    });
+    expect(asText(provenanceRows(noScene))).not.toContain("Composition");
+    expect(() => provenanceRows(direction({ generation_metadata: { creative_spec: { scene_plan: 5 } } }))).not.toThrow();
+  });
+
   it("labels a grounded real-product image and ignores unknown intent codes", () => {
     const product = direction({
       generation_metadata: {

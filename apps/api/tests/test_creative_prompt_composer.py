@@ -1,31 +1,18 @@
-"""CreativePromptComposer (P2.2) — semantic tests, no network/R2/Higgsfield/DB.
+"""CreativePromptComposer (P2.5) — semantic tests over a GenerationContract.
+No network, R2, Higgsfield or database.
 
-Deliberately never asserts one exact prompt string: each test checks a
-semantic component (a rule the prompt must express) so wording can evolve
-without rewriting the suite.
-"""
+Never asserts one exact prompt string: each test checks a rule the rendered
+prompt must express, so wording can evolve without rewriting the suite."""
 
-import re
 from uuid import uuid4
 
 from app.creative.higgsfield.translation import to_higgsfield_prompt
-from app.domain.business_config import BrandColors, BusinessConfig, BusinessProfile, ServiceOffering
-from app.domain.business_config.examples import EXAMPLE_COSITAS_Y_PUNTOS_CONFIG
-from app.domain.creative.brief import CreativeBrief, CreativeBriefAsset, build_creative_brief
-from app.domain.creative.planning import plan_generation
-from app.domain.creative.prompt_composer import (
-    DEVELOP_ANGLES,
-    EXPLORATION_ANGLES,
-    ComposedCreativePrompt,
-    compose_prompt,
-)
-from app.domain.creative.spec import (
-    PROMPT_VERSION,
-    CreativeGenerationSpec,
-    ReferenceSpec,
-    ReferenceUsage,
-    build_generation_spec,
-)
+from app.domain.business_config import BusinessConfig, BusinessProfile, ServiceOffering
+from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
+from app.domain.creative.generation_contract import validate_generation_contract
+from app.domain.creative.planning import GenerationPlan, plan_generation
+from app.domain.creative.prompt_composer import DEVELOP_ANGLES, compose_prompt
+from app.domain.creative.spec import PROMPT_VERSION, ReferenceSpec, ReferenceUsage
 from app.domain.enums import (
     AssetCategory,
     AssetKind,
@@ -36,325 +23,198 @@ from app.domain.enums import (
     CreativeLevel,
 )
 
-ANGLE = EXPLORATION_ANGLES[0]
+SERVICES = ("Amigurumis artesanales hechos a mano", "Llaveros de lana", "Tartas de pañales", "Cestas personalizadas")
+WEB_WORDS = ("website", "webpage", "web page", "browser", "ecommerce", "page layout", "user interface")
 
 
-def _logo() -> CreativeBriefAsset:
-    return CreativeBriefAsset(
-        id=uuid4(),
-        kind=AssetKind.LOGO,
-        category=AssetCategory.LOGO,
-        origin=AssetOrigin.UPLOADED,
-        url="https://cdn.example.com/logo.png",
-    )
-
-
-def _image(category: AssetCategory) -> CreativeBriefAsset:
-    return CreativeBriefAsset(
-        id=uuid4(),
-        kind=AssetKind.IMAGE,
-        category=category,
-        origin=AssetOrigin.UPLOADED,
-        url="https://cdn.example.com/photo.png",
-    )
-
-
-def _cositas_brief(**overrides) -> CreativeBrief:
-    return build_creative_brief(business_config=EXAMPLE_COSITAS_Y_PUNTOS_CONFIG, **overrides)
-
-
-def _spec(brief: CreativeBrief, assets, *, single_reference: bool = True) -> CreativeGenerationSpec:
-    spec = plan_generation(brief, list(assets)).spec
-    return spec.with_used_references(spec.reference_assets[:1] if single_reference else spec.reference_assets)
-
-
-def _compose(brief: CreativeBrief, assets=(), **kwargs) -> tuple[ComposedCreativePrompt, str]:
-    plan = plan_generation(brief, list(assets))
-    composed = compose_prompt(brief, plan.spec, angle=ANGLE, profile=plan.profile, **kwargs)
-    return composed, to_higgsfield_prompt(composed).lower()
-
-
-def _blob(lines: list[str]) -> str:
-    return " ".join(lines).lower()
-
-
-def test_cositas_hero_never_shows_the_model_the_logo_and_forbids_recreating_it():
-    """Regression scenario from two real production generations: the logo
-    (three overlapping circles plus the business name) was recreated and
-    text was hallucinated even when the prompt marked it as identity
-    guidance. P2.3: the logo is not sent at all, so the prompt describes no
-    logo reference and only forbids drawing one."""
-    brief = _cositas_brief()
-    composed, text = _compose(brief, [_logo()])
-
-    assert "no reference images are supplied" in _blob(composed.reference_instructions)
-    assert "official brand logo" not in _blob(composed.reference_instructions)
-    assert "recreate this logo" not in text and "reproduce this logo" not in text
-    assert "standalone visual asset" in text  # a NEW picture, not a re-rendering of a reference
-    assert "do not recreate, redraw or approximate the official logo" in _blob(composed.negative_constraints)
-
-
-def test_the_business_name_is_never_in_the_prompt_sent_to_the_provider():
-    brief = _cositas_brief()
-    composed, text = _compose(brief, [_logo()])
-
-    assert brief.business_name.lower() not in text
-    assert "cositas" not in text
-    assert "do not write or reproduce the business name" in _blob(composed.negative_constraints)
-    assert composed.debug["business_name_in_prompt"] is False
-
-
-def _services_config(*names: str) -> BusinessConfig:
-    return BusinessConfig(
+def _plan(
+    *,
+    purpose: AssetPurpose = AssetPurpose.HERO,
+    services: tuple[str, ...] = SERVICES,
+    mode: BrandStrategy = BrandStrategy.PRESERVE,
+    level: CreativeLevel = CreativeLevel.PROFESSIONAL,
+    assets=(),
+) -> GenerationPlan:
+    config = BusinessConfig(
         business_profile=BusinessProfile(
             name="Cositas y Puntos",
             slug="cositas-y-puntos",
-            industry=BusinessVertical.OTHER,
-            description="Cositas y Puntos hace amigurumis. Visita COSITAS Y PUNTOS en Instagram.",
+            industry=BusinessVertical.ECOMMERCE,
+            description="Marca artesanal con presencia en Instagram y sin página web.",
+            target_customers="Visitantes que llegan desde Instagram.",
             services=[
-                ServiceOffering(id=f"svc-{index}", name=name, description="Descripcion.")
-                for index, name in enumerate(names, start=1)
+                ServiceOffering(id=f"s-{i}", name=name, description="Descripcion.")
+                for i, name in enumerate(services, start=1)
             ],
         )
     )
+    brief = build_creative_brief(business_config=config, purpose=purpose, brand_strategy=mode, creative_level=level)
+    return plan_generation(brief, list(assets))
 
 
-def test_the_business_name_and_free_text_never_reach_the_prompt_only_clean_service_labels_do():
-    config = _services_config("Llaveros de Cositas y Puntos", "Amigurumis artesanales")
-
-    composed, text = _compose(build_creative_brief(business_config=config))
-
-    assert "cositas" not in text  # neither the free-text description nor a service label carrying the name
-    assert "instagram" not in text
-    assert "amigurumis artesanales" in text  # the clean, structured service label survives
-    assert composed.debug["raw_business_description_in_prompt"] is False
+def _asset(kind: AssetKind, category: AssetCategory) -> CreativeBriefAsset:
+    return CreativeBriefAsset(
+        id=uuid4(), kind=kind, category=category, origin=AssetOrigin.UPLOADED, url="https://cdn.example.com/a.png"
+    )
 
 
-def test_no_generated_text_adds_explicit_anti_text_constraints():
-    composed, _ = _compose(_cositas_brief(), [_logo()])
-    negatives = _blob(composed.negative_constraints)
+def _text(plan: GenerationPlan, variant: int = 0, **kwargs) -> str:
+    return to_higgsfield_prompt(compose_prompt(plan.contract_for(variant), **kwargs)).lower()
 
-    for required in (
-        "no words, letters, numbers or typography",
-        "no captions, slogans, watermarks or signatures",
-        "no fake logos",
-        "no pseudo-text, decorative lettering or text-like marks",
-        "no interface or navigation labels",
-        "no signs, labels or packaging containing text",
+
+def _positive(plan: GenerationPlan, variant: int = 0) -> str:
+    """The provider prompt without its final prohibitions."""
+    composed = compose_prompt(plan.contract_for(variant))
+    return " ".join([*composed.scene, *composed.reference_instructions]).lower()
+
+
+def test_the_prompt_is_rendered_from_the_scene_plan_with_concrete_visual_instructions():
+    plan = _plan()
+    text = _text(plan)
+    scene = plan.scenes[0]
+
+    assert scene.medium.lower() in text
+    assert scene.primary_subject and scene.primary_subject.lower() in text
+    for concrete in (
+        "single continuous scene",
+        "wide 16:9",
+        "negative space",
+        "medium close-up",
+        "soft natural studio light",
     ):
-        assert required in negatives
+        assert concrete in text
 
 
-def test_hero_expresses_hero_specific_composition_requirements():
-    composed, _ = _compose(_cositas_brief(), [_logo()])
-    composition = _blob(composed.composition_instructions)
+def test_hero_becomes_composition_and_the_provider_is_never_told_about_a_website():
+    plan = _plan()
+    positive = _positive(plan)
 
-    assert "focal" in composition
-    assert "negative space" in composition
-    assert "cropping" in composition  # responsive crop tolerance
-    for interface_word in ("heading", "call-to-action", "cta", "navigation", "button", "website"):
-        assert interface_word not in composition  # placement rules never prime interface imagery
-    assert "16:9" in _blob(composed.output_instructions)
-
-
-def test_background_differs_materially_from_hero():
-    hero, _ = _compose(_cositas_brief(purpose=AssetPurpose.HERO), [_logo()])
-    background, _ = _compose(_cositas_brief(purpose=AssetPurpose.BACKGROUND), [_logo()])
-
-    assert hero.composition_instructions != background.composition_instructions
-    background_composition = _blob(background.composition_instructions)
-    assert "no central subject" in background_composition
-    assert "low visual density" in background_composition
-    assert "contrast" in background_composition
-    assert "no central subject" not in _blob(hero.composition_instructions)
-    assert "focal subject" not in background_composition
-    assert hero.positive_prompt != background.positive_prompt  # the stated role differs too
+    assert plan.spec.purpose is AssetPurpose.HERO  # kept internally...
+    for word in WEB_WORDS + ("hero", "website builder", "page"):
+        assert word not in positive  # ...never explained to the provider
+    assert "subject concentrated toward the right half" in positive
+    assert "uncluttered negative space on the left" in positive
+    assert "away from the frame edges" in positive  # crop safety, purely visual
 
 
-def test_every_purpose_produces_its_own_composition_rules():
+def test_hero_keeps_one_scene_and_forbids_grids_and_collages_in_the_scene_itself():
+    plan = _plan()
+    text = _text(plan)
+
+    assert "not a collage" in text
+    for forbidden in ("collage", "grid", "multi-panel layout", "packaging", "shelves or storefront"):
+        assert forbidden in plan.scenes[0].forbidden_elements
+    assert "no collage, grid, multi-panel layout" in text
+
+
+def test_text_and_interface_constraints_are_short_final_sentences_rendered_once():
+    composed = compose_prompt(_plan().contract)
+    constraints = " ".join(composed.constraints).lower()
+
+    for item in ("text", "lettering", "pseudo-text", "signs", "labels", "logos", "watermarks", "signatures"):
+        assert item in constraints
+    for item in ("interface elements", "browser", "navigation", "buttons", "cards", "screens", "webpage", "mockup"):
+        assert item in constraints
+    assert len(composed.constraints) == 3  # text, interface, scene — no duplicated instruction blocks
+    assert "no text" in " ".join(composed.negative_constraints).lower()  # same rules for negative-prompt providers
+
+
+def test_the_constraints_come_after_the_scene_and_stay_out_of_the_visual_description():
+    plan = _plan()
+    text = _text(plan)
+    scene_part, _, constraints_part = text.rpartition("\nno ")
+
+    assert "lettering" not in scene_part and "webpage" not in scene_part
+    assert "no text" in ("no " + constraints_part)[:20] or "text" in constraints_part
+
+
+def test_background_and_hero_are_composed_differently():
+    hero, background = _plan(), _plan(purpose=AssetPurpose.BACKGROUND)
+
+    assert _positive(hero) != _positive(background)
+    assert "no dominant subject" in _positive(background)
+    assert "subject concentrated" in _positive(hero) and "subject concentrated" not in _positive(background)
+
+
+def test_every_purpose_renders_a_distinct_valid_scene_with_its_own_aspect_ratio():
     seen = set()
     for purpose in AssetPurpose:
-        composed, _ = _compose(_cositas_brief(purpose=purpose), [_logo()])
-        assert composed.composition_instructions
-        seen.add(tuple(composed.composition_instructions))
+        assets = [_asset(AssetKind.IMAGE, AssetCategory.PRODUCT)] if purpose is AssetPurpose.PRODUCT else []
+        plan = _plan(purpose=purpose, assets=assets)
+        composed = compose_prompt(plan.contract)
+        assert composed.scene and not validate_generation_contract(plan.contract)
+        seen.add((tuple(composed.scene), plan.spec.output.aspect_ratio))
     assert len(seen) == len(AssetPurpose)
 
 
-def test_texture_forbids_logos_and_focal_subjects():
-    composed, _ = _compose(_cositas_brief(purpose=AssetPurpose.TEXTURE), [_logo()])
-    composition = _blob(composed.composition_instructions)
-
-    assert "no focal subject" in composition
-    assert "no recognisable objects, logos or marks" in composition
-    assert "no duplicated or repeated subjects" not in _blob(composed.negative_constraints)  # patterns repeat
+def test_no_references_are_described_when_none_are_sent():
+    text = _text(_plan())
+    assert "reference image" not in text
 
 
-def test_product_purpose_keeps_the_product_the_primary_subject_and_faithful():
-    product = _image(AssetCategory.PRODUCT)
-    brief = _cositas_brief(purpose=AssetPurpose.PRODUCT)
-    composed, _ = _compose(brief, [_logo(), product])
+def test_a_real_product_reference_is_described_as_the_faithful_subject():
+    product = _asset(AssetKind.IMAGE, AssetCategory.PRODUCT)
+    plan = _plan(purpose=AssetPurpose.PRODUCT, assets=[product])
+    contract = plan.contract_for(0, plan.spec.reference_assets)
 
-    assert _spec(brief, [_logo(), product]).reference_assets[0].usage is ReferenceUsage.PRODUCT
-    assert "primary subject" in _blob(composed.composition_instructions)
-    assert "real product" in _blob(composed.reference_instructions)
-    assert "do not invent additional products" in _blob(composed.reference_instructions)
+    composed = compose_prompt(contract)
 
-
-def test_brand_modes_materially_change_the_composed_direction():
-    directions = {
-        mode: _blob(_compose(_cositas_brief(brand_strategy=mode), [_logo()])[0].creative_interpretation)
-        for mode in BrandStrategy
-    }
-
-    assert len(set(directions.values())) == 3
-    assert "faithful" in directions[BrandStrategy.PRESERVE]
-    assert "evolve" in directions[BrandStrategy.EVOLVE]
-    assert "substantially new" in directions[BrandStrategy.NEW_DIRECTION]
-    assert "do not redesign" in directions[BrandStrategy.PRESERVE]
-    assert "constrain" in directions[BrandStrategy.NEW_DIRECTION]
+    reference = " ".join(composed.reference_instructions).lower()
+    assert "real product" in reference and "faithful" in reference and "add nothing invented" in reference
+    assert "clean product photograph" in " ".join(composed.scene).lower()
 
 
-def test_if_a_caller_ever_supplies_a_logo_reference_the_composer_still_forbids_reproducing_it():
-    """A safety net only: the reference strategy never sends a logo, but the
-    composer must not become unsafe if a future caller does."""
-    brief = _cositas_brief()
-    base = plan_generation(brief, []).spec
+def test_a_brand_mark_reference_is_rendered_defensively_and_rejected_by_the_contract():
+    plan = _plan()
+    contract = plan.contract.with_provider_references([ReferenceSpec(asset_id=uuid4(), usage=ReferenceUsage.IDENTITY)])
 
-    for usage, needle in (
-        (ReferenceUsage.IDENTITY, "understand palette, geometric language"),
-        (ReferenceUsage.PALETTE, "only to take its colour palette"),
-    ):
-        spec = base.with_used_references([ReferenceSpec(asset_id=uuid4(), usage=usage)])
-        text = _blob(compose_prompt(brief, spec, angle=ANGLE).reference_instructions)
-        assert needle in text and "do not reproduce" in text and "place the logo" in text
+    composed = compose_prompt(contract)
+
+    assert "do not reproduce it" in " ".join(composed.reference_instructions).lower()
+    assert "brand_mark_as_provider_reference" in {issue.code for issue in validate_generation_contract(contract)}
 
 
-def test_brand_palette_is_used_strictly_when_preserving_and_only_as_a_start_when_evolving():
-    colors = BrandColors(primary="#E8735A", secondary="#C9A24A", accent="#7A1F3D", background="#FFF", foreground="#000")
+def test_business_name_and_raw_business_text_never_reach_the_prompt():
+    text = _text(_plan())
 
-    def interpretation(mode):
-        brief = _cositas_brief(brand_strategy=mode).model_copy(update={"brand_colors": colors})
-        return _blob(_compose(brief, [_logo()])[0].creative_interpretation)
-
-    assert "use the brand palette: primary #e8735a" in interpretation(BrandStrategy.PRESERVE)
-    assert "start from the brand palette" in interpretation(BrandStrategy.EVOLVE)
-    assert "#e8735a" not in interpretation(BrandStrategy.NEW_DIRECTION)
+    for leaked in ("cositas", "puntos", "instagram", "página web", "presencia", "visitantes", "marca artesanal"):
+        assert leaked not in text
 
 
-def test_creative_level_changes_the_stated_feel():
-    feels = {
-        level: _blob(_compose(_cositas_brief(creative_level=level), [_logo()])[0].creative_interpretation)
-        for level in CreativeLevel
-    }
-    assert len(set(feels.values())) == len(CreativeLevel)
+def test_a_continuation_keeps_the_same_world_and_a_variation_is_appended():
+    plan = _plan()
 
+    composed = compose_prompt(plan.contract, variation=DEVELOP_ANGLES[1], continuation_of="the first exploration")
+    text = " ".join(composed.scene).lower()
 
-def test_missing_business_information_never_becomes_invented_claims():
-    config = BusinessConfig(business_profile=BusinessProfile(name="Acme", slug="acme", industry=BusinessVertical.OTHER))
-    brief = build_creative_brief(business_config=config)
-    composed, _ = _compose(brief)
-
-    assert composed.verified_facts == []  # nothing verified, so nothing stated as fact
-    context = _blob(composed.creative_context)
-    assert "no verified subject information is available" in context
-    assert "do not depict specific products, projects, people or premises" in context
-    assert "do not invent" in context
-    everything = _blob(composed.creative_context) + composed.positive_prompt.lower()
-    for invented in ("handmade", "bestselling", "award", "years of experience", "ceramic", "collection", "%"):
-        assert invented not in everything
-    assert "no invented products, projects, people or testimonials" in _blob(composed.negative_constraints)
-
-
-def test_verified_facts_and_creative_interpretation_are_kept_apart():
-    brief = build_creative_brief(business_config=_services_config("Amigurumis artesanales"))
-    composed, _ = _compose(brief, [_logo()])
-
-    assert any("amigurumis artesanales" in fact.lower() for fact in composed.verified_facts)
-    assert not any(ANGLE in fact for fact in composed.verified_facts)
-    assert any(ANGLE in line for line in composed.creative_interpretation)
-    assert not any("amigurumis" in line.lower() for line in composed.brand_profile)  # brand section: brand info only
-
-
-def test_no_references_states_that_none_are_supplied_instead_of_describing_phantom_ones():
-    composed, _ = _compose(_cositas_brief(), [])
-
-    assert "no reference images are supplied" in _blob(composed.reference_instructions)
-    assert "logo" not in _blob(composed.reference_instructions)
-
-
-def test_only_references_actually_used_are_described():
-    brief = _cositas_brief(purpose=AssetPurpose.SECTION)
-    spec = plan_generation(brief, [_image(AssetCategory.HERO_CANDIDATE), _image(AssetCategory.GALLERY)]).spec
-    assert len(spec.reference_assets) == 2
-
-    one = compose_prompt(brief, spec.with_used_references(spec.reference_assets[:1]), angle=ANGLE)
-    two = compose_prompt(brief, spec, angle=ANGLE)
-
-    assert len(one.reference_instructions) == 1
-    assert len(two.reference_instructions) == 2
-    assert "reference 2" in _blob(two.reference_instructions)
-
-
-def test_real_photography_reference_is_style_not_subject():
-    brief = _cositas_brief(purpose=AssetPurpose.EDITORIAL)
-    spec = plan_generation(brief, [_image(AssetCategory.GALLERY)]).spec
-    composed = compose_prompt(brief, spec, angle=ANGLE)
-
-    assert "only its mood, lighting and material feel" in _blob(composed.reference_instructions)
-    assert "do not copy its subject" in _blob(composed.reference_instructions)
-
-
-def test_continuation_keeps_the_same_world_and_describes_the_previous_image():
-    brief = _cositas_brief()
-    spec = build_generation_spec(
-        brief, [ReferenceSpec(asset_id=None, usage=ReferenceUsage.STYLE, source="previous_generation")]
-    )
-
-    composed = compose_prompt(brief, spec, angle=DEVELOP_ANGLES[0], continuation_of="Explored via a metaphor")
-
-    assert "continue the same world" in composed.positive_prompt.lower()
-    assert "previously generated image" in _blob(composed.reference_instructions)
+    assert text.startswith("continue the same visual world as the reference image")
+    assert "close, tactile detail" in text
     assert composed.debug["is_continuation"] is True
-    assert brief.business_name.lower() not in to_higgsfield_prompt(composed).lower()
 
 
-def test_no_develop_or_exploration_angle_asks_for_ui_or_text():
-    for angle in (*EXPLORATION_ANGLES, *DEVELOP_ANGLES):
-        for forbidden in ("navigation", "call-to-action", "cta", "contact", "menu", "button", "text"):
-            assert not re.search(rf"\b{re.escape(forbidden)}\b", angle.lower())
+def test_the_three_exploration_variants_are_distinct_deterministic_scenes_of_one_subject():
+    plan = _plan()
+
+    prompts = [_text(plan, variant) for variant in range(3)]
+
+    assert len(set(prompts)) == 3
+    assert len({scene.primary_subject for scene in plan.scenes}) == 1  # same subject, different composition
+    assert [scene.subject_side.value for scene in plan.scenes] == ["right", "left", "right"]
+    assert prompts == [_text(plan, variant) for variant in range(3)]  # deterministic
 
 
-def test_composition_is_deterministic_and_versioned():
-    brief = _cositas_brief()
-    assets = [_logo()]
-    first, _ = _compose(brief, assets)
-    second, _ = _compose(brief, assets)
+def test_the_composed_prompt_is_versioned_and_records_no_business_text_in_debug():
+    composed = compose_prompt(_plan().contract)
 
-    assert first.model_dump() == second.model_dump()
-    assert first.version == PROMPT_VERSION
-
-
-def test_translation_flattens_every_section_including_an_explicit_avoid_clause():
-    composed, text = _compose(_cositas_brief(), [_logo()])
-
-    for header in (
-        "output contract:",
-        "placement:",
-        "visual intent:",
-        "verified creative context:",
-        "brand visual profile:",
-        "composition:",
-        "subject truth:",
-        "text policy:",
-        "interface policy:",
-        "references:",
-        "output:",
-        "avoid:",
-    ):
-        assert header in text
-    assert composed.negative_constraints[0].lower() in text
+    assert composed.version == PROMPT_VERSION == "p2.5-v1"
+    assert composed.debug["business_name_in_prompt"] is False
+    assert composed.debug["raw_business_description_in_prompt"] is False
+    assert composed.debug["visual_intent"] == "subject_editorial"
 
 
-def test_a_typical_prompt_stays_compact():
-    _, text = _compose(_cositas_brief(), [_logo()])
-    assert len(text) < 3800  # bounded: policies appear once as instructions and once as negatives, not endlessly
+def test_the_provider_prompt_is_flat_visual_text_without_internal_section_headers_and_is_compact():
+    text = to_higgsfield_prompt(compose_prompt(_plan().contract))
+
+    for header in ("OUTPUT CONTRACT", "PLACEMENT", "VISUAL INTENT", "SUBJECT TRUTH", "INTERFACE POLICY", "AVOID:"):
+        assert header not in text
+    assert len(text) < 1800  # P2.4's equivalent prompt was ≈3,470 characters

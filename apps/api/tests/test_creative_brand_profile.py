@@ -19,7 +19,7 @@ from app.domain.creative.brand_profile import (
 )
 from app.domain.creative.brief import CreativeBriefAsset, build_creative_brief
 from app.domain.creative.planning import plan_generation
-from app.domain.creative.prompt_composer import EXPLORATION_ANGLES, compose_prompt
+from app.domain.creative.prompt_composer import compose_prompt
 from app.domain.enums import (
     AssetCategory,
     AssetKind,
@@ -146,9 +146,7 @@ def test_the_profile_carries_no_urls_or_business_name():
 def _prompt(brand: BrandConfig | None, mode: BrandStrategy) -> str:
     brief = build_creative_brief(business_config=_config(brand), purpose=AssetPurpose.HERO, brand_strategy=mode)
     plan = plan_generation(brief, [_logo()])
-    return to_higgsfield_prompt(
-        compose_prompt(brief, plan.spec, angle=EXPLORATION_ANGLES[0], profile=plan.profile)
-    ).lower()
+    return to_higgsfield_prompt(compose_prompt(plan.contract)).lower()
 
 
 def test_the_prompt_conveys_brand_identity_as_text_without_the_logo_or_the_name():
@@ -156,24 +154,23 @@ def test_the_prompt_conveys_brand_identity_as_text_without_the_logo_or_the_name(
 
     text = _prompt(brand, BrandStrategy.PRESERVE)
 
-    assert "use the brand palette: primary #e8735a, secondary #c9a24a, accent #7a1f3d" in text
-    assert "brand visual style (from business settings): handmade warmth" in text
+    assert "use exactly this colour palette: primary #e8735a, secondary #c9a24a, accent #7a1f3d" in text
+    assert "use exactly this visual style: handmade warmth" in text
     assert "cositas" not in text  # the name is never injected to communicate identity
-    assert "the supplied reference" not in text  # no logo is sent, so none is described
-    assert "no reference images are supplied" in text
+    assert "the reference image" not in text  # no logo is sent, so none is described
 
 
 def test_brand_mode_controls_how_much_the_profile_constrains_the_prompt():
     brand = _brand(visual_style="handmade warmth")
 
-    assert "use the brand palette" in _prompt(brand, BrandStrategy.PRESERVE)
-    assert "start from the brand palette" in _prompt(brand, BrandStrategy.EVOLVE)
+    assert "use exactly this colour palette" in _prompt(brand, BrandStrategy.PRESERVE)
+    assert "start from this colour palette" in _prompt(brand, BrandStrategy.EVOLVE)
     new_direction = _prompt(brand, BrandStrategy.NEW_DIRECTION)
     assert "#e8735a" not in new_direction and "handmade warmth" not in new_direction
 
 
-def test_missing_brand_information_is_stated_as_missing_never_assumed():
+def test_missing_brand_information_adds_no_brand_direction_and_nothing_is_assumed():
     text = _prompt(None, BrandStrategy.PRESERVE)
 
-    assert "no verified brand palette or visual style is available: do not assume one" in text
-    assert "derive the colour palette" not in text  # there is no reference to derive it from
+    assert "brand direction" not in text  # nothing configured, so nothing is stated (the rationale is provenance)
+    assert "palette" not in text  # no colour is invented and none is derived from a logo

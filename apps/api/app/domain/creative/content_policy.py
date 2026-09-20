@@ -1,18 +1,20 @@
-"""Content policies for generated website imagery (P2.4): what an image must
-never contain, expressed once as structured rules that the prompt composer
-renders BOTH as positive instructions and as negative constraints.
+"""Content policies for generated website imagery, as concise, structured
+constraints the prompt composer renders once, visually.
 
-Both forms matter: not every provider supports a negative prompt (Higgsfield's
-REST models take a single `prompt`), and image models respond to positive
-instructions at least as reliably as to a trailing "avoid" list. The rules
-live here — provider-independent — never inside a provider adapter.
+P2.4 rendered each policy twice (a long instruction plus a long negative
+list). Long lists of interface words also PRIME an image model toward the
+very things they forbid, and real experiments showed a page-like image
+anyway. P2.5 fixes the cause in the scene itself (a plan whose subject and
+composition do not invite text or interfaces — see scene_plan) and keeps
+these as a short, final constraint set:
 
-- TextPolicy.NO_GENERATED_TEXT: no readable text, no pseudo-text, no
-  decorative lettering, no labels, no fake logos. Business names, headings,
-  captions and prices are rendered by the website.
-- InterfacePolicy.NO_INTERFACE_DEPICTION: the output is a standalone
-  picture. It is never a website, webpage, browser, app or any interface —
-  even when it will later be placed inside one.
+- TextPolicy.NO_GENERATED_TEXT: no text of any kind, pseudo-text, signs,
+  labels, logos, watermarks or signatures. Words are added later, outside the
+  image.
+- InterfacePolicy.NO_INTERFACE_DEPICTION: never an interface, browser,
+  navigation, buttons, cards, screens, webpage or mockup.
+
+The rules live here — provider-independent — never in a provider adapter.
 """
 
 from dataclasses import dataclass
@@ -22,42 +24,27 @@ from app.domain.creative.spec import InterfacePolicy, TextPolicy
 
 @dataclass(frozen=True)
 class PolicyRules:
-    instructions: tuple[str, ...]
-    negatives: tuple[str, ...]
+    # Nouns the image must not contain. Rendered as "No a, b or c."
+    forbidden: tuple[str, ...]
+
+    def sentence(self) -> str:
+        return render_prohibition(self.forbidden)
+
+
+def render_prohibition(items: tuple[str, ...]) -> str:
+    if not items:
+        return ""
+    if len(items) == 1:
+        return f"No {items[0]}."
+    return f"No {', '.join(items[:-1])} or {items[-1]}."
 
 
 _NO_GENERATED_TEXT = PolicyRules(
-    instructions=(
-        "Do not render any text in the image: no readable words, no pseudo-text, no decorative lettering and no "
-        "illegible text-like marks, including on signs, labels and packaging.",
-        "Any words the finished design needs are added later, outside the image.",
-    ),
-    negatives=(
-        "no words, letters, numbers or typography of any kind",
-        "no pseudo-text, decorative lettering or text-like marks",
-        "no captions, slogans, watermarks or signatures",
-        "no interface or navigation labels",
-        "no signs, labels or packaging containing text",
-        "no fake logos or brand marks",
-        "do not write or reproduce the business name",
-    ),
+    forbidden=("text", "lettering", "pseudo-text", "signs", "labels", "logos", "watermarks", "signatures")
 )
 
 _NO_INTERFACE_DEPICTION = PolicyRules(
-    instructions=(
-        "The output itself must NOT depict or simulate a website, webpage, browser, application, screen, dashboard "
-        "or user interface of any kind, nor an ecommerce interface.",
-        "It is a standalone picture: no navigation, no menus, no buttons, no cards, no forms, no page layout.",
-    ),
-    negatives=(
-        "no website or webpage",
-        "no browser or browser chrome",
-        "no navigation bars or menus",
-        "no user interface or app interface",
-        "no buttons, cards or forms",
-        "no screens, dashboards or website mockups",
-        "no ecommerce interface or product grid layout",
-    ),
+    forbidden=("interface elements", "browser", "navigation", "buttons", "cards", "screens", "webpage", "mockup")
 )
 
 

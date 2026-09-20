@@ -1,5 +1,9 @@
 # P2.4 — Creative context and visual intent
 
+> **Follow-up: P2.5.** Experiment 4 (this PR's real test) still produced a page-like layout: `VisualIntent` is not a
+> concrete scene. See [p2-5-visual-scene-planning.md](p2-5-visual-scene-planning.md). The prompt sections described
+> below were replaced by scene sentences plus a short constraints block.
+
 ## Why
 
 P2.3 fixed reference handling and routing: Experiment 3 sent no logo and no reference to `soul/standard`. The result was

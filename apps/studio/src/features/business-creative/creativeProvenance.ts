@@ -56,6 +56,19 @@ const SUBJECT_GROUNDING_LABELS: Record<string, string> = {
   unknown: "Unknown",
 };
 
+// P2.5: how the scene is composed, in plain language (from the bounded
+// `scene_plan` provenance summary — never prompt text).
+const SUBJECT_SIDE_LABELS: Record<string, string> = {
+  right: "Subject right · negative space left",
+  left: "Subject left · negative space right",
+  center: "Subject centred",
+  none: "No dominant subject",
+};
+
+function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export interface ProvenanceRow {
   label: string;
   value: string;
@@ -104,8 +117,20 @@ export function provenanceRows(direction: CreativeDirection): ProvenanceRow[] {
   if (level) rows.push({ label: "Creative level", value: level });
   const intent = typeof spec.visual_intent === "string" ? VISUAL_INTENT_LABELS[spec.visual_intent] : undefined;
   if (intent) rows.push({ label: "Visual intent", value: intent });
+  const subject =
+    spec.visual_subject_source === "grounded_reference"
+      ? "Real product (from the reference)"
+      : typeof spec.visual_subject === "string" && spec.visual_subject
+        ? capitalize(spec.visual_subject)
+        : undefined;
+  if (subject) rows.push({ label: "Visual subject", value: subject });
   const grounding = typeof spec.subject_grounding === "string" ? SUBJECT_GROUNDING_LABELS[spec.subject_grounding] : undefined;
   if (grounding) rows.push({ label: "Subject grounding", value: grounding });
+  const scene = asRecord(spec.scene_plan);
+  if (scene && typeof scene.subject_side === "string" && SUBJECT_SIDE_LABELS[scene.subject_side]) {
+    const ratio = typeof scene.aspect_ratio === "string" ? ` · ${scene.aspect_ratio}` : "";
+    rows.push({ label: "Composition", value: `${SUBJECT_SIDE_LABELS[scene.subject_side]}${ratio}` });
+  }
 
   // P2.3: what informed the brand profile is shown separately from what was
   // actually sent to the image model — an official logo is a brand source

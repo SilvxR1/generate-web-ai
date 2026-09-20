@@ -191,11 +191,9 @@ def test_the_prompt_conveys_no_logo_no_name_and_forbids_text():
 
     prompt = gateway.posts[0]["body"]["prompt"].lower()
     assert "cositas" not in prompt  # the name is never reintroduced
-    assert "no reference images are supplied" in prompt
-    assert "the supplied reference" not in prompt
-    assert "no words, letters, numbers or typography" in prompt
-    assert "do not recreate, redraw or approximate the official logo" in prompt
-    assert "negative space" in prompt
+    assert "reference image" not in prompt  # nothing visual is sent, so none is described
+    assert "no text, lettering, pseudo-text, signs, labels, logos" in prompt
+    assert "negative space" in prompt and "wide 16:9" in prompt
 
 
 # --- product references and the legitimate soul/reference path --------------------
@@ -448,7 +446,7 @@ def test_develop_continues_from_the_previous_result_on_a_reference_capable_model
     assert continuation["path"] == "/higgsfield-ai/soul/reference"  # a text-only model can't continue from an image
     assert continuation["body"]["image_reference_url"] == RESULT_URL  # the previous GENERATED image, not the logo
     prompt = continuation["body"]["prompt"].lower()
-    assert "full-width background" in prompt and "continue the same world" in prompt and "cositas" not in prompt
+    assert "no dominant subject" in prompt and "continue the same visual world" in prompt and "cositas" not in prompt
     assert developed.generation_metadata["stage"] == "developed"
     assert developed.generation_metadata["creative_spec"]["purpose"] == "background"
 
