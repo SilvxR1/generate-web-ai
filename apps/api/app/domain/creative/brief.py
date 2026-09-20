@@ -24,6 +24,7 @@ from app.domain.enums import (
     AssetCategory,
     AssetKind,
     AssetOrigin,
+    AssetPurpose,
     BrandStrategy,
     CreativeLevel,
     LeadSource,
@@ -212,6 +213,12 @@ class CreativeBrief(BaseModel):
     # themselves, and never fabricated when there are none yet.
     customer_insights: list[str] = Field(default_factory=list)
 
+    # Which website role a generated visual is for (P2.2). Alongside
+    # brand_strategy/creative_level above it is per-request intent, not a
+    # business fact; HERO matches what a creative-direction exploration
+    # has always produced (one 16:9 hero-style reference image).
+    asset_purpose: AssetPurpose = AssetPurpose.HERO
+
     # Generation shape
     required_pages: list[str] = Field(default_factory=lambda: ["/"])
     required_sections: list[str] = Field(default_factory=list)
@@ -225,6 +232,9 @@ def build_creative_brief(
     business_config: BusinessConfig,
     assets: Sequence[AssetInput] = (),
     reviews: Sequence[ReviewInput] = (),
+    purpose: AssetPurpose | None = None,
+    brand_strategy: BrandStrategy | None = None,
+    creative_level: CreativeLevel | None = None,
 ) -> CreativeBrief:
     """The one place a CreativeBrief is assembled — deterministic, no AI
     call (mirrors packages/website-generator's generateSiteConfig: a fixed
@@ -237,6 +247,10 @@ def build_creative_brief(
     profile = business_config.business_profile
     brand = business_config.brand
     creative = business_config.creative
+    # Per-request overrides never mutate or persist BusinessConfig; absent,
+    # the business's own configured strategy/level apply exactly as before.
+    effective_strategy = brand_strategy or creative.strategy
+    effective_level = creative_level or creative.level
 
     brief_assets = [
         CreativeBriefAsset(
@@ -266,7 +280,7 @@ def build_creative_brief(
     ]
     has_hero_candidate = any(asset.category == AssetCategory.HERO_CANDIDATE for asset in brief_assets)
     media_requirements: list[str] = []
-    if creative.level is not CreativeLevel.BASIC and not has_hero_candidate:
+    if effective_level is not CreativeLevel.BASIC and not has_hero_candidate:
         media_requirements.append("hero_image")
 
     return CreativeBrief(
@@ -278,8 +292,9 @@ def build_creative_brief(
         target_customer=profile.target_customers,
         conversion_objective=_conversion_objective(business_config),
         services=profile.services,
-        brand_strategy=creative.strategy,
-        creative_level=creative.level,
+        brand_strategy=effective_strategy,
+        creative_level=effective_level,
+        asset_purpose=purpose or AssetPurpose.HERO,
         brand_colors=brand.colors if brand else None,
         typography=brand.typography if brand else None,
         visual_style=brand.visual_style if brand else None,
@@ -287,6 +302,6 @@ def build_creative_brief(
         available_assets=brief_assets,
         customer_insights=extract_customer_insights(reviews),
         required_sections=_recommended_sections(business_config, has_reviews=bool(reviews), assets=brief_assets),
-        animation_level=_ANIMATION_LEVEL_BY_CREATIVE_LEVEL[creative.level],
+        animation_level=_ANIMATION_LEVEL_BY_CREATIVE_LEVEL[effective_level],
         media_requirements=media_requirements,
     )

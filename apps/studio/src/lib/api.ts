@@ -1152,11 +1152,30 @@ export interface CreativeDirection {
   // to show "Creative Director: Higgsfield" vs "Internal fallback" — see
   // GenerativeWorkflowPanel.
   provider_metadata: Record<string, unknown>;
+  // Generic generation record: `estimated_generation_units` (internal
+  // budgeting estimate — NOT Higgsfield credits or USD) and, for a
+  // generated asset, `creative_spec` provenance (purpose, brand mode,
+  // reference asset ids + roles, prompt version, validation state — never
+  // a URL or credential). Optional so pre-P2.2 rows still type-check.
+  generation_metadata?: Record<string, unknown>;
   is_recommended: boolean;
   selection_rationale: string | null;
   credits_used: number | null;
   developed_at: string | null;
   created_at: string;
+}
+
+export type AssetPurpose = "hero" | "section" | "background" | "product" | "editorial" | "texture";
+export type BrandMode = "preserve" | "evolve" | "new_direction";
+export type CreativeGenerationLevel = "basic" | "professional" | "premium" | "cinematic";
+
+export interface CreateDirectionsOptions {
+  hardLimit?: number;
+  purpose?: AssetPurpose;
+  /** Omitted = the business's own configured brand strategy. */
+  brandMode?: BrandMode;
+  /** Omitted = the business's own configured creative level. */
+  creativeLevel?: CreativeGenerationLevel;
 }
 
 /** POST .../creative-directions — the Higgsfield Creative Director
@@ -1166,11 +1185,16 @@ export interface CreativeDirection {
 export function createCreativeDirections(
   businessId: string,
   tenantId: string,
-  hardLimit?: number,
+  options: CreateDirectionsOptions = {},
 ): Promise<CreativeDirection[]> {
+  const body: Record<string, unknown> = {};
+  if (options.hardLimit != null) body.hard_limit = options.hardLimit;
+  if (options.purpose) body.purpose = options.purpose;
+  if (options.brandMode) body.brand_mode = options.brandMode;
+  if (options.creativeLevel) body.creative_level = options.creativeLevel;
   return requestJson<CreativeDirection[]>(
     `/businesses/${businessId}/creative-directions`,
-    { method: "POST", body: JSON.stringify(hardLimit != null ? { hard_limit: hardLimit } : {}) },
+    { method: "POST", body: JSON.stringify(body) },
     tenantId,
   );
 }

@@ -1156,7 +1156,14 @@ def create_creative_directions_route(
 
     assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
     reviews = BusinessReviewRepository(session).list_for_business(tenant_id, business_id)
-    brief = build_creative_brief(business_config=config, assets=assets, reviews=reviews)
+    brief = build_creative_brief(
+        business_config=config,
+        assets=assets,
+        reviews=reviews,
+        purpose=payload.purpose,
+        brand_strategy=payload.brand_mode,
+        creative_level=payload.creative_level,
+    )
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=payload.hard_limit)
 
     try:

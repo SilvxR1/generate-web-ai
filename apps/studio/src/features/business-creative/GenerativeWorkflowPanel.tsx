@@ -2,7 +2,18 @@ import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import { directorLabel } from "./directorLabel";
 import {
+  BRAND_MODE_OPTIONS,
+  DEFAULT_PURPOSE,
+  LEVEL_OPTIONS,
+  PURPOSE_OPTIONS,
+  costLabel,
+  provenanceRows,
+} from "./creativeProvenance";
+import {
   createCreativeDirections,
+  type AssetPurpose,
+  type BrandMode,
+  type CreativeGenerationLevel,
   createGenerativeWebsiteDraft,
   getFrontendEngineerAvailability,
   getGenerativeArtifact,
@@ -137,6 +148,11 @@ export function GenerativeWorkflowPanel({
   const [selectedDirectionId, setSelectedDirectionId] = useState<string | null>(null);
   const [isGeneratingDirections, setIsGeneratingDirections] = useState(false);
   const [directionsError, setDirectionsError] = useState<string | null>(null);
+  // P2.2: safe defaults — a hero image, and the business's own configured
+  // brand mode / creative level. Generated text is never enabled from here.
+  const [purpose, setPurpose] = useState<AssetPurpose>(DEFAULT_PURPOSE);
+  const [brandMode, setBrandMode] = useState<BrandMode | "">("");
+  const [creativeLevel, setCreativeLevel] = useState<CreativeGenerationLevel | "">("");
 
   const [isGeneratingWebsite, setIsGeneratingWebsite] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
@@ -187,7 +203,11 @@ export function GenerativeWorkflowPanel({
     setIsGeneratingDirections(true);
     setDirectionsError(null);
     try {
-      const created = await createCreativeDirections(businessId, tenantId);
+      const created = await createCreativeDirections(businessId, tenantId, {
+        purpose,
+        brandMode: brandMode || undefined,
+        creativeLevel: creativeLevel || undefined,
+      });
       setDirections(created);
       setDirectionsLoaded(true);
       const recommended = created.find((direction) => direction.is_recommended);
@@ -265,6 +285,45 @@ export function GenerativeWorkflowPanel({
       )}
 
       <div className="generative-workflow-panel__directions">
+        <div className="generative-workflow-panel__intent">
+          <label>
+            What is this image for?{" "}
+            <select value={purpose} onChange={(event) => setPurpose(event.target.value as AssetPurpose)}>
+              {PURPOSE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Brand mode{" "}
+            <select value={brandMode} onChange={(event) => setBrandMode(event.target.value as BrandMode | "")}>
+              {BRAND_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Creative level{" "}
+            <select
+              value={creativeLevel}
+              onChange={(event) => setCreativeLevel(event.target.value as CreativeGenerationLevel | "")}
+            >
+              {LEVEL_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="field-hint">
+            Generated images never contain text — headings, names and buttons come from your real website — and your
+            real logo is never redrawn by the image model.
+          </p>
+        </div>
         <button
           type="button"
           onClick={handleGenerateDirections}
@@ -295,9 +354,14 @@ export function GenerativeWorkflowPanel({
                   <p className="field-hint">{directorLabel(direction)}</p>
                   <p className="field-hint">{direction.concept.rationale}</p>
                   {direction.selection_rationale && <p className="field-hint">Why: {direction.selection_rationale}</p>}
-                  {direction.credits_used != null && (
-                    <p className="field-hint">{direction.credits_used} Higgsfield credits used</p>
-                  )}
+                  <ul className="generative-workflow-panel__provenance">
+                    {provenanceRows(direction).map((row) => (
+                      <li key={row.label} className="field-hint">
+                        {row.label}: {row.value}
+                      </li>
+                    ))}
+                  </ul>
+                  {costLabel(direction) && <p className="field-hint">{costLabel(direction)}</p>}
                   <button type="button" onClick={() => setSelectedDirectionId(direction.id)} disabled={isSelected}>
                     {isSelected ? "Selected" : direction.is_recommended ? "Use recommended" : "Choose this direction"}
                   </button>
