@@ -206,7 +206,7 @@ def test_the_three_exploration_variants_are_distinct_deterministic_scenes_of_one
 def test_the_composed_prompt_is_versioned_and_records_no_business_text_in_debug():
     composed = compose_prompt(_plan().contract)
 
-    assert composed.version == PROMPT_VERSION == "p2.5-v1"
+    assert composed.version == PROMPT_VERSION == "p2.6-v1"
     assert composed.debug["business_name_in_prompt"] is False
     assert composed.debug["raw_business_description_in_prompt"] is False
     assert composed.debug["visual_intent"] == "subject_editorial"

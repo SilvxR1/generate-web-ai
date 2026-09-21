@@ -6,10 +6,14 @@ HiggsfieldApiClient over httpx.MockTransport (no network, no real
 Higgsfield call, no spend anywhere in this module)."""
 
 import json
+import re
+from io import BytesIO
+from pathlib import Path
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image, ImageDraw
 from sqlalchemy.orm import Session
 
 from app.creative.director_fallback import FallbackCreativeDirector
@@ -19,11 +23,13 @@ from app.creative.higgsfield.director import HiggsfieldApiCreativeDirector
 from app.db.models.business import Business
 from app.db.models.business_asset import BusinessAsset
 from app.db.models.tenant import Tenant
-from app.dependencies import get_creative_director, get_rate_limiter, get_session
+from app.dependencies import get_creative_director, get_rate_limiter, get_session, get_storage_provider
+from app.domain.business_config.brand import BrandColors, BrandConfig, BrandTypography
 from app.domain.business_config.examples import EXAMPLE_COSITAS_Y_PUNTOS_CONFIG
 from app.domain.enums import AssetCategory, AssetKind, AssetOrigin, BusinessStatus, BusinessVertical
 from app.main import app
 from app.security.rate_limit import InMemoryRateLimiter
+from app.storage.local import LocalStorageProvider
 
 _ORIGIN = "http://localhost:5173"
 SOUL_REFERENCE = "higgsfield-ai/soul/reference"
@@ -334,3 +340,159 @@ def test_insufficient_credits_is_still_a_structured_503_with_a_single_submission
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "higgsfield_insufficient_credits"
     assert len(gateway.posts) == 1
+
+
+# --- P2.6: Brand Intelligence through the real route --------------------------------------------------
+
+
+class _SpyLocalStorage(LocalStorageProvider):
+    """The real local provider presenting as the production provider name;
+    records loads and refuses to mint a presigned URL."""
+
+    provider_name = "r2"
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root_dir=root)
+        self.loads: list[str] = []
+
+    def load(self, storage_key: str) -> bytes:
+        self.loads.append(storage_key)
+        return super().load(storage_key)
+
+    def presigned_url(self, storage_key: str, *, expires_in_seconds: int) -> str | None:
+        raise AssertionError("Brand Intelligence must never request a presigned URL")
+
+
+def _logo_bytes() -> bytes:
+    image = Image.new("RGB", (640, 360), "white")
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((100, 80, 260, 240), fill=(240, 133, 122))
+    draw.ellipse((220, 80, 380, 240), fill=(201, 138, 78))
+    draw.ellipse((340, 80, 500, 240), fill=(120, 58, 90))
+    buffer = BytesIO()
+    image.save(buffer, "JPEG", quality=85)
+    return buffer.getvalue()
+
+
+def _unbranded(session: Session, business: Business) -> None:
+    """Cositas in production has `brand: null` — nothing configured to outrank the logo."""
+    business.config = {**business.config, "brand": None}
+    session.flush()
+
+
+def _stored_logo(session: Session, business: Business, storage: _SpyLocalStorage, *, key_owner=None) -> BusinessAsset:
+    key = f"{key_owner or business.id}/logo.jpg"
+    storage.save(storage_key=key, content=_logo_bytes())
+    asset = BusinessAsset(
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        kind=AssetKind.LOGO,
+        category=AssetCategory.LOGO,
+        origin=AssetOrigin.UPLOADED,
+        storage_url=f"https://pub.example/{key}",
+        storage_provider="r2",
+        storage_key=key,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
+@pytest.fixture()
+def spy_storage(tmp_path: Path):
+    storage = _SpyLocalStorage(tmp_path)
+    app.dependency_overrides[get_storage_provider] = lambda: storage
+    try:
+        yield storage
+    finally:
+        app.dependency_overrides.pop(get_storage_provider, None)
+
+
+def test_the_route_measures_the_official_logo_and_styles_the_scene_without_sending_it(
+    client: TestClient, session: Session, tenant: Tenant, cositas: Business, spy_storage: _SpyLocalStorage
+):
+    _unbranded(session, cositas)
+    logo = _stored_logo(session, cositas, spy_storage)
+    gateway = _Gateway()
+    app.dependency_overrides[get_creative_director] = lambda: _director(gateway)
+
+    response = _post(client, cositas, tenant, {"hard_limit": 2.0})
+
+    assert response.status_code == 201
+    spec = response.json()[0]["generation_metadata"]["creative_spec"]
+    profile = spec["brand_profile"]
+    assert profile["palette_status"] == "measured" and len(profile["palette"]) == 3
+    prompt = gateway.posts[0]["body"]["prompt"]
+    assert all(color in prompt for color in profile["palette"])  # the measured colors reached the provider prompt
+    assert set(gateway.posts[0]["body"]) == {"prompt", "aspect_ratio"} and "http" not in prompt
+    assert spec["provider_reference_asset_ids"] == [] and spec["brand_source_asset_ids"] == [str(logo.id)]
+    assert spy_storage.loads == [logo.storage_key]  # read once, through the storage abstraction
+    assert len(gateway.posts) == 1
+    assert "logo.jpg" not in response.text and str(cositas.id) not in json.dumps(profile)  # keys never exposed
+    assert re.search(r"X-Amz|presign", response.text, re.IGNORECASE) is None
+
+
+def test_a_logo_object_owned_by_another_business_is_never_read_and_generation_proceeds(
+    client: TestClient, session: Session, tenant: Tenant, cositas: Business, spy_storage: _SpyLocalStorage
+):
+    _unbranded(session, cositas)
+    foreign_business = _business(session, tenant, "other-business")
+    _stored_logo(session, cositas, spy_storage, key_owner=foreign_business.id)  # row points at a foreign object
+    gateway = _Gateway()
+    app.dependency_overrides[get_creative_director] = lambda: _director(gateway)
+
+    response = _post(client, cositas, tenant, {"hard_limit": 2.0})
+
+    assert response.status_code == 201 and len(gateway.posts) == 1
+    profile = response.json()[0]["generation_metadata"]["creative_spec"]["brand_profile"]
+    assert profile["palette_status"] == "failed" and profile["analysis_failure"] == "asset_unreadable"
+    assert spy_storage.loads == []  # the foreign object was refused before any read
+    assert "palette" not in gateway.posts[0]["body"]["prompt"].lower()
+
+
+def test_configured_brand_colors_outrank_the_logo_and_no_bytes_are_read(
+    client: TestClient, session: Session, tenant: Tenant, cositas: Business, spy_storage: _SpyLocalStorage
+):
+    brand = BrandConfig(
+        colors=BrandColors(
+            primary="#E8735A", secondary="#C9A24A", accent="#7A1F3D", background="#FFFFFF", foreground="#111111"
+        ),
+        typography=BrandTypography(sans="Inter"),
+    )
+    cositas.config = {**cositas.config, "brand": brand.model_dump(mode="json")}  # explicit, configured brand colors
+    session.flush()
+    _stored_logo(session, cositas, spy_storage)
+    gateway = _Gateway()
+    app.dependency_overrides[get_creative_director] = lambda: _director(gateway)
+
+    response = _post(client, cositas, tenant, {"hard_limit": 2.0})
+
+    assert response.status_code == 201
+    profile = response.json()[0]["generation_metadata"]["creative_spec"]["brand_profile"]
+    assert profile["palette_status"] == "configured" and profile["palette_source"] == "brand_config"
+    assert profile["measured_palette"] == [] and spy_storage.loads == []
+
+
+@pytest.mark.parametrize("requested", ["professional", "cinematic", "basic", None])
+def test_the_generation_row_records_the_level_that_was_actually_requested(
+    client: TestClient, session: Session, tenant: Tenant, cositas: Business, requested: str | None
+):
+    """Regression (found in Experiment 5): the CreativeGeneration audit row hardcoded
+    creative_level=PREMIUM whatever the request said, contradicting the provenance."""
+    _logo(session, cositas)
+    app.dependency_overrides[get_creative_director] = lambda: _director(_Gateway())
+    body: dict = {"hard_limit": 2.0}
+    if requested:
+        body["creative_level"] = requested
+
+    response = _post(client, cositas, tenant, body)
+
+    assert response.status_code == 201
+    spec_level = response.json()[0]["generation_metadata"]["creative_spec"]["creative_level"]
+    history = client.get(
+        f"/businesses/{cositas.id}/creative-generations", headers={"X-Tenant-Id": str(tenant.id), "Origin": _ORIGIN}
+    ).json()
+    row_level = history[0]["creative_level"]
+    assert row_level == spec_level  # audit row and provenance now agree
+    if requested:
+        assert row_level == requested

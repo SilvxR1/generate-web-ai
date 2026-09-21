@@ -31,7 +31,7 @@ from app.domain.enums import AssetCategory, AssetKind, AssetPurpose, BrandStrate
 # Bump whenever composed-prompt wording/structure changes materially, so a
 # persisted asset can always be traced to the composition rules that
 # produced it.
-PROMPT_VERSION = "p2.5-v1"
+PROMPT_VERSION = "p2.6-v1"
 
 
 class ReferenceUsage(StrEnum):

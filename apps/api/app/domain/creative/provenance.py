@@ -16,6 +16,7 @@ a deliberate follow-up (docs/p2-2-creative-prompt-composition.md).
 import hashlib
 
 from app.domain.creative.asset_validation import AssetValidationResult
+from app.domain.creative.brand_profile import BrandVisualProfile, PaletteSource
 from app.domain.creative.generation_contract import GenerationContract
 from app.domain.creative.model_routing import ModelSelection
 from app.domain.creative.planning import GenerationPlan
@@ -50,6 +51,47 @@ def scene_summary(scene: VisualScenePlan) -> dict:
         "framing": scene.framing,
         "aspect_ratio": scene.aspect_ratio,
         "requires_fidelity": scene.requires_fidelity,
+        # P2.6: which brand colors reached the scene as styling (values only;
+        # the guidance sentence itself lives in the prompt, not provenance).
+        "brand_palette": list(scene.brand_palette),
+    }
+
+
+def brand_profile_provenance(profile: BrandVisualProfile) -> dict:
+    """What Brand Intelligence knew and how it knew it (P2.6): was a palette
+    configured / measured / unavailable / not performed / failed, which
+    assets it came from, the method and the measured properties. Hex values,
+    ids and codes only — never image bytes, URLs or pixel data."""
+    palette_sources = {color.source.value for color in profile.palette}
+    return {
+        "version": profile.version,
+        "sources": list(profile.sources),
+        "palette": [color.value for color in profile.palette],
+        "palette_status": profile.palette_status.value,
+        "palette_source": palette_sources.pop() if len(palette_sources) == 1 else None,
+        "palette_method": profile.palette_method,
+        "analysis_version": profile.analysis_version,
+        "analysis_failure": profile.analysis_failure,
+        "measured_asset_ids": [str(asset_id) for asset_id in profile.measured_asset_ids],
+        "measured_palette": [
+            {
+                "hex": color.value,
+                "role": color.role,
+                "foreground_share": color.foreground_share,
+                "luminance": color.luminance,
+                "tone": color.tone,
+                "saturation_band": color.saturation_band,
+            }
+            for color in profile.palette
+            if color.source is PaletteSource.ASSET_EXTRACTION
+        ],
+        "excluded_colors": [item.model_dump(mode="json") for item in profile.excluded_colors],
+        # Configured (never inferred) values, so "not configured" is explicit.
+        "typography": "configured" if profile.typography_hints else "not_configured",
+        "typography_hints": list(profile.typography_hints),
+        "visual_style": profile.visual_style,
+        "has_official_logo": profile.has_official_logo,
+        "semantic_analysis": profile.semantic_analysis,
     }
 
 
@@ -86,13 +128,7 @@ def plan_provenance(plan: GenerationPlan, contract: GenerationContract | None = 
             "unknown": list(plan.context.unknown),
         },
         "brand_source_asset_ids": [str(asset_id) for asset_id in plan.profile.source_asset_ids],
-        "brand_profile": {
-            "version": plan.profile.version,
-            "sources": list(plan.profile.sources),
-            "palette": [color.value for color in plan.profile.palette],
-            "has_official_logo": plan.profile.has_official_logo,
-            "semantic_analysis": plan.profile.semantic_analysis,
-        },
+        "brand_profile": brand_profile_provenance(plan.profile),
         "reference_strategy": {
             "policy": plan.strategy.policy.value,
             "requires_visual_reference": plan.strategy.requires_visual_reference,

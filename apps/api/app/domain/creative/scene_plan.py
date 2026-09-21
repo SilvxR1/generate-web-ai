@@ -28,12 +28,12 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
-from app.domain.creative.brand_profile import BrandVisualProfile
+from app.domain.creative.brand_profile import BrandVisualProfile, PaletteSource
 from app.domain.creative.visual_intent import SubjectGrounding, VisualIntent, VisualIntentKind
 from app.domain.creative.visual_subject import VisualSubject, material_family
 from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel
 
-SCENE_PLAN_VERSION = "p2.5-v1"
+SCENE_PLAN_VERSION = "p2.6-v1"
 SCENE_VARIANTS = 3
 
 
@@ -61,6 +61,9 @@ class VisualScenePlan(BaseModel):
     depth: str
     material_emphasis: str | None
     brand_guidance: str | None
+    # P2.6: the colors (hex or configured notation) that reached the scene as
+    # brand styling. Empty when the brand supplies none. Never affects subject.
+    brand_palette: tuple[str, ...] = ()
     aspect_ratio: str
     safe_area: str
     grounding: SubjectGrounding
@@ -152,21 +155,41 @@ def _depth(kind: VisualIntentKind) -> str:
     }[kind]
 
 
-def _brand_guidance(profile: BrandVisualProfile, brand_mode: BrandStrategy) -> str | None:
-    """Only what the brand profile reliably holds; a NEW_DIRECTION is not
-    constrained by it. Nothing is inferred (no logo analysis)."""
+# Concise on purpose: a few measured colors, not a palette report.
+_MAX_MEASURED_COLORS_IN_SCENE = 4
+
+
+def _brand_guidance(profile: BrandVisualProfile, brand_mode: BrandStrategy) -> tuple[str | None, tuple[str, ...]]:
+    """(guidance sentence, palette values). Only what the brand profile
+    reliably holds; a NEW_DIRECTION is not constrained by it. Nothing is
+    inferred (no logo analysis). Brand styling only — the subject is chosen
+    elsewhere and is never affected."""
     if brand_mode is BrandStrategy.NEW_DIRECTION:
-        return None
+        return None, ()
     # PRESERVE stays faithful to the configured identity; EVOLVE only starts
     # from it. Nothing is stated when the profile holds nothing.
     stance = "use exactly" if brand_mode is BrandStrategy.PRESERVE else "start from"
     parts: list[str] = []
-    if profile.palette:
-        colors = ", ".join(f"{color.role} {color.value}" for color in profile.palette)
+    palette_values: tuple[str, ...] = ()
+    configured = [color for color in profile.palette if color.source is PaletteSource.BRAND_CONFIG]
+    measured = [color for color in profile.palette if color.source is PaletteSource.ASSET_EXTRACTION]
+    if configured:
+        colors = ", ".join(f"{color.role} {color.value}" for color in configured)
         parts.append(f"{stance} this colour palette: {colors}")
+        palette_values = tuple(color.value for color in configured)
+    elif measured:
+        # Measured (not configured) colors are guidance for harmony, so they
+        # are phrased as a restrained palette rather than "use exactly".
+        palette_values = tuple(color.value for color in measured[:_MAX_MEASURED_COLORS_IN_SCENE])
+        lead = (
+            "restrained palette derived from the brand colours"
+            if brand_mode is BrandStrategy.PRESERVE
+            else "palette that starts from the brand colours"
+        )
+        parts.append(f"{lead}: {', '.join(palette_values)}")
     if profile.visual_style:
         parts.append(f"{stance} this visual style: {profile.visual_style}")
-    return "; ".join(parts) if parts else None
+    return ("; ".join(parts) if parts else None), palette_values
 
 
 def _depiction(intent: VisualIntent, subject: VisualSubject) -> tuple[str, str | None, str, str, str | None, bool]:
@@ -243,6 +266,8 @@ def plan_scene(
     else:
         framing_key = "subject"
 
+    brand_guidance, brand_palette = _brand_guidance(profile, brand_mode)
+
     return VisualScenePlan(
         medium=medium,
         primary_subject=primary,
@@ -256,7 +281,8 @@ def plan_scene(
         lighting=_lighting(intent.kind, creative_level),
         depth=_depth(intent.kind),
         material_emphasis=emphasis,
-        brand_guidance=_brand_guidance(profile, brand_mode),
+        brand_guidance=brand_guidance,
+        brand_palette=brand_palette,
         aspect_ratio=aspect_ratio,
         safe_area=_SAFE_AREA[purpose],
         grounding=intent.grounding,

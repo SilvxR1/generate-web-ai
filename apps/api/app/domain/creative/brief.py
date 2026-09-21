@@ -20,6 +20,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.business_config import BrandColors, BrandTypography, BusinessConfig, Location, ServiceOffering
+from app.domain.creative.brand_intelligence import BrandAssetMeasurement
 from app.domain.enums import (
     AssetCategory,
     AssetKind,
@@ -212,6 +213,12 @@ class CreativeBrief(BaseModel):
     # Real customer perceptions only (Section 4) — never the reviews
     # themselves, and never fabricated when there are none yet.
     customer_insights: list[str] = Field(default_factory=list)
+
+    # P2.6: colors MEASURED from the official logo (app.services.
+    # brand_measurement), one entry per authoritative asset that was
+    # attempted. Empty means "no measurement was performed" — never "the
+    # brand has no colors". Measurements carry no image bytes and no URLs.
+    brand_measurements: list[BrandAssetMeasurement] = Field(default_factory=list)
 
     # Which website role a generated visual is for (P2.2). Alongside
     # brand_strategy/creative_level above it is per-request intent, not a

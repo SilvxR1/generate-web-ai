@@ -41,6 +41,27 @@ const BRAND_SOURCE_LABELS: Record<string, string> = {
   brand_config_typography: "Brand typography",
 };
 
+// P2.6: why the brand palette is what it is. Plain language; the backend only
+// ever records measured or configured facts, never an interpretation.
+const PALETTE_STATUS_LABELS: Record<string, string> = {
+  configured: "Configured brand colors",
+  measured: "Measured from authoritative asset",
+  unavailable: "No brand color signal available",
+  not_performed: "Not performed",
+  failed: "Could not be measured — generated without brand colors",
+};
+
+const PALETTE_SOURCE_LABELS: Record<string, string> = {
+  asset_extraction: "Official logo",
+  brand_config: "Brand configuration",
+};
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
 // P2.4: what the image depicts (separate from where it is used) and how
 // truthful its subject is. Plain-language labels only — never prompt text.
 const VISUAL_INTENT_LABELS: Record<string, string> = {
@@ -72,6 +93,8 @@ function capitalize(text: string): string {
 export interface ProvenanceRow {
   label: string;
   value: string;
+  /** Validated #RRGGBB colors to draw next to the value (never arbitrary CSS). */
+  swatches?: string[];
 }
 
 function labelFor<T extends string>(options: { value: T | ""; label: string }[], value: unknown): string | null {
@@ -141,6 +164,28 @@ export function provenanceRows(direction: CreativeDirection): ProvenanceRow[] {
       ? brandProfile.sources.map((source) => BRAND_SOURCE_LABELS[String(source)]).filter((label) => label)
       : [];
     rows.push({ label: "Brand sources", value: sources.length > 0 ? sources.join(", ") : "None recorded" });
+
+    // P2.6: read-only Brand Intelligence result. Rows appear only for directions
+    // that recorded a palette status (older directions simply omit them).
+    const status = typeof brandProfile.palette_status === "string" ? brandProfile.palette_status : null;
+    if (status && PALETTE_STATUS_LABELS[status]) {
+      const palette = strings(brandProfile.palette);
+      rows.push({
+        label: "Brand palette",
+        value: palette.length > 0 ? palette.join(", ") : "None",
+        swatches: palette.filter((color) => HEX_COLOR.test(color)),
+      });
+      const paletteSource = PALETTE_SOURCE_LABELS[String(brandProfile.palette_source)];
+      if (paletteSource && palette.length > 0) rows.push({ label: "Palette source", value: paletteSource });
+      rows.push({ label: "Analysis", value: PALETTE_STATUS_LABELS[status] });
+      const typography = strings(brandProfile.typography_hints);
+      rows.push({
+        label: "Typography",
+        value: brandProfile.typography === "configured" && typography.length > 0 ? typography.join(", ") : "Not configured",
+      });
+      const style = typeof brandProfile.visual_style === "string" && brandProfile.visual_style ? brandProfile.visual_style : null;
+      rows.push({ label: "Visual style", value: style ?? "Not configured" });
+    }
   }
 
   const references = Array.isArray(spec.references) ? spec.references.map(asRecord).filter((ref) => ref !== null) : [];

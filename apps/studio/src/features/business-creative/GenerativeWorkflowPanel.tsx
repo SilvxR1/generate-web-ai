@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import { directorLabel } from "./directorLabel";
+import { ProvenanceList } from "./ProvenanceList";
 import {
   BRAND_MODE_OPTIONS,
   DEFAULT_PURPOSE,
@@ -354,13 +355,7 @@ export function GenerativeWorkflowPanel({
                   <p className="field-hint">{directorLabel(direction)}</p>
                   <p className="field-hint">{direction.concept.rationale}</p>
                   {direction.selection_rationale && <p className="field-hint">Why: {direction.selection_rationale}</p>}
-                  <ul className="generative-workflow-panel__provenance">
-                    {provenanceRows(direction).map((row) => (
-                      <li key={row.label} className="field-hint">
-                        {row.label}: {row.value}
-                      </li>
-                    ))}
-                  </ul>
+                  <ProvenanceList rows={provenanceRows(direction)} />
                   {costLabel(direction) && <p className="field-hint">{costLabel(direction)}</p>}
                   <button type="button" onClick={() => setSelectedDirectionId(direction.id)} disabled={isSelected}>
                     {isSelected ? "Selected" : direction.is_recommended ? "Use recommended" : "Choose this direction"}
