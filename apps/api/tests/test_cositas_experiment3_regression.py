@@ -382,10 +382,10 @@ def test_provenance_records_subject_scene_and_contract_without_secrets_or_raw_te
     assert spec["subject_grounding"] == "conceptual"
     assert spec["visual_subject"] == "crochet and yarn craft"
     assert spec["visual_subject_source"] == "material_family_from_verified_labels"
-    assert spec["scene_plan_version"] == "p2.5-v1" and spec["generation_contract_version"] == "p2.5-v1"
+    assert spec["scene_plan_version"] == "p2.6-v1" and spec["generation_contract_version"] == "p2.6-v1"
     assert spec["scene_plan"]["subject_side"] == "right" and spec["scene_plan"]["aspect_ratio"] == "16:9"
     assert spec["scene_plan"]["primary_subject"] == "crochet and yarn craft materials"
-    assert spec["prompt_version"] == "p2.5-v1" and spec["prompt_fingerprint"]
+    assert spec["prompt_version"] == "p2.6-v1" and spec["prompt_fingerprint"]
     serialized = json.dumps(candidate.generation_metadata) + json.dumps(candidate.provider_metadata)
     for forbidden in (
         "Instagram",

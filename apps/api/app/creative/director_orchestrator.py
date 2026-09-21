@@ -30,7 +30,7 @@ from app.domain.creative.direction import (
     ExperienceDirection,
     VisualLanguage,
 )
-from app.domain.enums import CreativeGenerationStatus, CreativeGenerationType, CreativeLevel
+from app.domain.enums import CreativeGenerationStatus, CreativeGenerationType
 from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.creative_generation import CreativeGenerationRepository
 
@@ -91,7 +91,9 @@ def orchestrate_create_directions(
         business_id=business_id,
         provider=director.name,
         generation_type=CreativeGenerationType.CREATIVE_DIRECTION,
-        creative_level=CreativeLevel.PREMIUM,
+        # The level this generation was actually requested at (the request's
+        # override, else the business's own setting) — never a constant.
+        creative_level=brief.creative_level,
         status=CreativeGenerationStatus.RUNNING,
         started_at=datetime.now(UTC),
     )

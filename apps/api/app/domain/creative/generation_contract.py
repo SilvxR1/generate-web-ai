@@ -37,7 +37,11 @@ from app.domain.creative.visual_intent import SubjectGrounding, VisualIntent, Vi
 from app.domain.creative.visual_subject import VisualSubject
 from app.domain.enums import AssetPurpose, BrandStrategy, CreativeLevel
 
-GENERATION_CONTRACT_VERSION = "p2.5-v1"
+GENERATION_CONTRACT_VERSION = "p2.6-v1"
+
+# Brand palette entries reach the scene sentence, so only plain color notations
+# (hex, named, rgb()/hsl()/oklch()) are acceptable — never free text.
+_SAFE_PALETTE_VALUE = re.compile(r"^[#A-Za-z0-9 (),.%/-]{1,40}$")
 
 # Words that would make a scene description itself ask for an interface / text.
 _INTERFACE_WORDS = re.compile(
@@ -171,6 +175,17 @@ def validate_generation_contract(
     if contract.text_policy is TextPolicy.NO_GENERATED_TEXT and _TEXT_WORDS.search(scene_text):
         issues.append(
             ContractIssue(code="scene_requests_text", detail="The scene description asks for text, signs or logos.")
+        )
+
+    # P2.6: brand styling must be a plain color list backed by its guidance
+    # sentence. It never needs (or creates) a provider reference.
+    palette = contract.scene.brand_palette
+    if palette and (not contract.scene.brand_guidance or not all(_SAFE_PALETTE_VALUE.match(v) for v in palette)):
+        issues.append(
+            ContractIssue(
+                code="brand_palette_invalid",
+                detail="The scene's brand palette is not a plain color list or has no guidance sentence.",
+            )
         )
 
     if contract.reference_policy is ReferencePolicy.NO_VISUAL_REFERENCE and contract.provider_references:

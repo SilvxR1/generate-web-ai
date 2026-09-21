@@ -99,6 +99,7 @@ from app.schemas.creative import (
 )
 from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
 from app.services.asset_health import check_business_asset_availability
+from app.services.brand_measurement import with_brand_measurements
 from app.services.business_service import BusinessNotFoundError, BusinessService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
@@ -1149,6 +1150,7 @@ def create_creative_directions_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     director: CreativeDirectorProvider = Depends(get_creative_director),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> list[object]:
     """P2.3 STEP A+B+C: explores candidate creative directions (~3 via
     Higgsfield when configured, 1 honest fallback via
@@ -1170,6 +1172,9 @@ def create_creative_directions_route(
         brand_strategy=payload.brand_mode,
         creative_level=payload.creative_level,
     )
+    # P2.6: colors measured from the official logo (read via the storage
+    # abstraction; never blocks generation, never a provider reference).
+    brief = with_brand_measurements(brief, storage=storage, business_id=business_id)
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=payload.hard_limit)
 
     try:
@@ -1206,6 +1211,7 @@ def develop_creative_direction_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     director: CreativeDirectorProvider = Depends(get_creative_director),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> object:
     """P2.3 STEP D: deepen one already-selected direction — never starts
     a new concept."""
@@ -1216,6 +1222,7 @@ def develop_creative_direction_route(
     assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
     reviews = BusinessReviewRepository(session).list_for_business(tenant_id, business_id)
     brief = build_creative_brief(business_config=config, assets=assets, reviews=reviews)
+    brief = with_brand_measurements(brief, storage=storage, business_id=business_id)
     budget = CreativeBudget.for_tier(CreativeBudgetTier.STANDARD, hard_limit=payload.hard_limit)
 
     try:

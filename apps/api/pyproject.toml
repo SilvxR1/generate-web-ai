@@ -37,6 +37,12 @@ dependencies = [
   # Railway crashed on `from playwright.sync_api import sync_playwright`
   # at import time in app.creative.frontend_engine.browser_qa.
   "playwright>=1.62.0",
+  # Brand Intelligence (P2.6, app.domain.creative.brand_intelligence):
+  # decoding an official logo (JPEG/PNG/WebP) to MEASURE its colors is a
+  # production request-path feature, so it is a runtime dependency. Pillow
+  # is the smallest mature decoder for those formats; no numpy/OpenCV is
+  # needed because the analysis runs on a <=256px thumbnail in pure Python.
+  "pillow>=11.0",
 ]
 
 [dependency-groups]

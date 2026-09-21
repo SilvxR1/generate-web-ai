@@ -10,8 +10,7 @@ provider's registered models and happens in the adapter via
 app.domain.creative.model_routing.
 """
 
-from collections.abc import Mapping, Sequence
-from uuid import UUID
+from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict
 
@@ -63,16 +62,13 @@ def requirements_for(spec: CreativeGenerationSpec, strategy: ReferenceStrategy) 
     )
 
 
-def plan_generation(
-    brief: CreativeBrief,
-    assets: Sequence[CreativeBriefAsset],
-    *,
-    asset_palettes: Mapping[UUID, Sequence[str]] | None = None,
-) -> GenerationPlan:
+def plan_generation(brief: CreativeBrief, assets: Sequence[CreativeBriefAsset]) -> GenerationPlan:
     """`assets` must already be tenant/business-scoped and
     availability-filtered (build_creative_brief's `available_assets`); the
-    plan never widens that set."""
-    profile = build_brand_visual_profile(brief, assets, asset_palettes=asset_palettes)
+    plan never widens that set. Colors measured from the official logo (P2.6)
+    arrive on `brief.brand_measurements`; brand facts inform the scene's
+    styling only — they never choose the subject."""
+    profile = build_brand_visual_profile(brief, assets)
     strategy = decide_reference_strategy(brief, assets)
     spec = build_generation_spec(brief, strategy.provider_reference_candidates)
     context = build_creative_context(brief)
