@@ -1,6 +1,9 @@
 import smtplib
+from typing import Annotated
+from uuid import UUID
 
 import pytest
+from fastapi import Depends, Header
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -10,7 +13,13 @@ from app.db import models  # noqa: F401 — registers every model on Base.metada
 from app.db.base import Base
 from app.db.models.business import Business
 from app.db.models.tenant import Tenant
-from app.dependencies import get_generated_artifact_fetcher, get_optional_notification_sender
+from app.dependencies import (
+    _tenant_id_from_header_unauthenticated,
+    get_current_tenant_id,
+    get_generated_artifact_fetcher,
+    get_optional_notification_sender,
+    get_session,
+)
 from app.domain.enums import BusinessStatus, BusinessVertical
 from app.main import app
 
@@ -102,6 +111,43 @@ def _no_real_notification_sender_by_default():
     app.dependency_overrides[get_optional_notification_sender] = lambda: None
     yield
     app.dependency_overrides.pop(get_optional_notification_sender, None)
+
+
+@pytest.fixture(autouse=True)
+def _bypass_real_authentication_by_default():
+    """A2: every one of this suite's pre-existing tenant-scoped route
+    tests calls its route with an `X-Tenant-Id` header and no session
+    cookie at all — they're testing repository/service-layer tenant
+    isolation (does business B ever leak across tenant A/tenant B?), not
+    authentication itself, which the dedicated app/tests/test_auth*.py
+    suite covers. Without this override every one of those calls would
+    now 401 (get_current_tenant_id's real behavior — see its own
+    docstring — for a request with no cookie and
+    legacy_tenant_header_auth_enabled left at its default False).
+
+    This restores exactly the pre-A2 behavior — trust X-Tenant-Id,
+    require only that the tenant row exists — by overriding
+    get_current_tenant_id with _tenant_id_from_header_unauthenticated
+    (app.dependencies), the same function the real, temporary
+    LEGACY_TENANT_HEADER_AUTH_ENABLED compatibility path uses; its own
+    docstring names this exact test-suite use as one of its two intended
+    callers. `session` is threaded through get_session so this composes
+    correctly with each test file's own local `client` fixture, which
+    overrides get_session to the test's in-memory `session` fixture.
+
+    A test that wants the REAL authentication/authorization boundary
+    (session cookie required, TenantAccess grant enforced) pops this
+    override in its own fixture and supplies get_current_session/
+    get_current_tenant_id's real dependency chain instead — same
+    precedence rule as _no_real_notification_sender_by_default above.
+    """
+
+    def _override(x_tenant_id: Annotated[str, Header()], session: Session = Depends(get_session)) -> UUID:
+        return _tenant_id_from_header_unauthenticated(x_tenant_id, session)
+
+    app.dependency_overrides[get_current_tenant_id] = _override
+    yield
+    app.dependency_overrides.pop(get_current_tenant_id, None)
 
 
 @pytest.fixture()

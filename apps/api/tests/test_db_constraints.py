@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db.models.business import Business
 from app.db.models.execution import Execution
 from app.db.models.tenant import Tenant
+from app.db.models.tenant_access import TenantAccess
 from app.db.models.user import User
 from app.db.models.website import Website
 from app.db.models.workflow import Workflow
@@ -41,18 +42,43 @@ def test_website_business_id_is_unique(session, tenant: Tenant, business: Busine
     session.rollback()
 
 
-def test_user_email_unique_per_tenant_but_not_globally(session, tenant: Tenant, other_tenant: Tenant):
-    session.add(User(tenant_id=tenant.id, email="team@acme.studio", role=UserRole.OPERATOR))
+def test_user_email_unique_globally(session, tenant: Tenant, other_tenant: Tenant):
+    """A2: User is no longer tenant-scoped (the architectural correction
+    that replaced "User -> exactly one Tenant" with an explicit
+    TenantAccess join table — see test_tenant_access_unique_per_user_and_tenant
+    below), so email uniqueness is now global (uq_users_email), not
+    per-tenant. A second User row can never reuse an email regardless of
+    which tenant(s) either one has access to."""
+    session.add(User(email="team@acme.studio"))
     session.flush()
 
-    # Same email, same tenant -> rejected.
-    session.add(User(tenant_id=tenant.id, email="team@acme.studio", role=UserRole.OPERATOR))
+    session.add(User(email="team@acme.studio"))
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
 
-    # Same email, different tenant -> allowed.
-    session.add(User(tenant_id=other_tenant.id, email="team@acme.studio", role=UserRole.OPERATOR))
+
+def test_tenant_access_unique_per_user_and_tenant(session, tenant: Tenant, other_tenant: Tenant):
+    """The same User row may hold a TenantAccess grant for more than one
+    Tenant (that's the entire point of the join table), but never two
+    grants for the *same* tenant (uq_tenant_access_user_tenant) — and
+    merely knowing a tenant's id grants nothing without a row here (see
+    app.dependencies.get_current_tenant_id)."""
+    user = User(email="team@acme.studio")
+    session.add(user)
+    session.flush()
+
+    session.add(TenantAccess(user_id=user.id, tenant_id=tenant.id, role=UserRole.OPERATOR))
+    session.flush()
+
+    # Same user, same tenant again -> rejected.
+    session.add(TenantAccess(user_id=user.id, tenant_id=tenant.id, role=UserRole.OPERATOR))
+    with pytest.raises(IntegrityError):
+        session.flush()
+    session.rollback()
+
+    # Same user, a different tenant -> allowed.
+    session.add(TenantAccess(user_id=user.id, tenant_id=other_tenant.id, role=UserRole.OPERATOR))
     session.flush()
 
 
