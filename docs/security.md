@@ -207,6 +207,87 @@ scoped by both `tenant_id` and `business_id`. Cross-tenant access returns
 (P0's one deliberately-public endpoint) derives `tenant_id` from the
 `Business` row itself server-side — a caller can never submit one.
 
+## A2: Authentication & Authorization
+
+Full design writeup: `docs/a2-authentication-authorization.md`. This
+section is the security review performed before opening the PR.
+
+**Session fixation.** A session token is generated fresh on every
+successful login (`app.auth.service._create_session`) — there is no path
+that reuses or "upgrades" a pre-login token into an authenticated one, so
+an attacker cannot plant a token before a victim logs in and inherit their
+session afterward.
+
+**Token entropy/storage.** Session tokens are `secrets.token_urlsafe(32)`
+— 256 bits from the OS CSPRNG. Only a SHA-256 digest (`token_hash`) is
+persisted; the raw token exists only in the HttpOnly cookie and is never
+written to the database, a log line, or an exception message. CSRF tokens
+use the same generator and entropy.
+
+**Password hashing.** Argon2id via `argon2-cffi`'s `PasswordHasher`
+defaults (time_cost=3, memory_cost=64 MiB, parallelism=4 as of
+argon2-cffi's current release) — chosen over bcrypt specifically to avoid
+bcrypt's silent 72-byte password truncation. Never a hand-rolled scheme.
+
+**Cookie flags.** `HttpOnly` always (session token never reaches JS).
+`Secure`/`SameSite` are environment-computed (`app.auth.cookies`) based on
+a real topology investigation, not a default left unexamined — see that
+module's own docstring and `docs/a2-authentication-authorization.md`'s
+Cookie flags section.
+
+**CSRF.** A per-session token, returned only in the JSON response body
+(never the cookie), required as `X-CSRF-Token` on every non-safe-method
+authenticated request, compared with `hmac.compare_digest`. Deliberately
+not "we use SameSite" — production's cross-site topology requires
+`SameSite=None`, which forfeits that protection on its own (see
+`app.dependencies._check_csrf` and the CSRF section of the design doc).
+
+**CORS interaction.** `CORSMiddleware` already restricts `allow_origins`
+to a specific allowlist (never `*`) with `allow_credentials=True` — a
+prerequisite for cookies to work cross-origin at all, and also what makes
+the CSRF token's "an attacker's page can trigger a request but can't read
+the response body" property hold: `allow_credentials=True` with a
+wildcard origin is rejected by browsers outright, so this configuration
+was already forced into the safe shape before A2 existed.
+
+**Brute-force protection.** `POST /auth/login` is rate-limited
+(`auth_login_rate_limit_per_minute`, default 5/min per IP, the same
+`InMemoryRateLimiter` mechanism as the pre-existing lead/asset-upload
+limits and sharing its known per-process limitation — see Rate limiting
+above).
+
+**Error enumeration.** Unknown email, wrong password, and a password-less
+account all return the identical `401 invalid_credentials` response, and
+a real Argon2 verify always runs (against a fixed decoy hash for an
+unknown email) so response timing can't distinguish them either — see
+`login_with_password`'s own docstring.
+
+**Tenant enumeration.** `unknown_tenant` (404) is the same error for "no
+such Tenant row" and "a real Tenant this authenticated user has no
+`TenantAccess` grant for" — an authenticated caller can never learn which
+tenant UUIDs are real ones they simply lack access to.
+
+**Logging/redaction.** No route or service logs a password, session
+token, cookie value, or password hash — verified by inspection of every
+`app.auth.*`/`app.routers.auth`/`app.dependencies` code path (none of them
+call any logger with those values) and by `test_password_and_hash_never_
+appear_in_login_response` (response body, not logs, but the same
+discipline: nothing sensitive is ever serialized outward).
+
+**Cross-tenant access.** Full User A/User B/Tenant A/Tenant B matrix in
+`tests/test_a2_tenant_authorization_matrix.py`, covering business, assets,
+leads, reviews, analytics, creative directions, website drafts, domains,
+website versions/rollback, and business deletion — every category denies
+with `unknown_tenant` and never reaches tenant-scoped data.
+
+**Destructive/public/internal endpoints.** Business deletion requires the
+same session+TenantAccess+CSRF boundary as every other mutating route (no
+separate, weaker path). `/public/businesses/{id}/leads`,
+`.../events`, and `/health` remain unauthenticated and untouched
+(`tests/test_a2_public_internal_regression.py`). `/internal/*` remains
+gated solely by `X-Internal-Automation-Token`, with no session concept
+introduced — same file, explicit regression tests.
+
 ## Manual GitHub configuration still required
 
 These are GitHub repository settings this environment cannot verify or
