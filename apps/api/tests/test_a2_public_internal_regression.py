@@ -79,7 +79,17 @@ def test_public_lead_capture_ignores_a_session_cookie_if_present(client: TestCli
     assert response.status_code == 201
 
 
-def test_internal_route_rejects_missing_token(client: TestClient):
+def test_internal_route_rejects_missing_token(client: TestClient, monkeypatch):
+    # A real token must be configured server-side for "missing header" to
+    # mean "invalid_internal_automation_token" specifically — with none
+    # configured at all, verify_internal_automation_token (app.dependencies)
+    # reports the honest, distinct internal_automation_not_configured (503)
+    # instead (see test_internal_route_rejects_when_not_configured below),
+    # never silently 401ing as if a real token had simply been rejected.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "internal_automation_token", "test-internal-token")
+
     response = client.post(
         "/internal/leads",
         json={
@@ -90,6 +100,24 @@ def test_internal_route_rejects_missing_token(client: TestClient):
     )
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "invalid_internal_automation_token"
+
+
+def test_internal_route_rejects_when_not_configured(client: TestClient, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "internal_automation_token", None)
+
+    response = client.post(
+        "/internal/leads",
+        json={
+            "tenant_id": "00000000-0000-0000-0000-000000000000",
+            "business_id": "00000000-0000-0000-0000-000000000000",
+            "source": "website_form",
+        },
+        headers={"X-Internal-Automation-Token": "anything"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "internal_automation_not_configured"
 
 
 def test_internal_route_accepts_token_alone_no_session_needed(client: TestClient, tenant, business, monkeypatch):
