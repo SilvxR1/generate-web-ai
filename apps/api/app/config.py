@@ -228,6 +228,42 @@ class Settings(BaseSettings):
     # higher budget since a single real page view fires several distinct
     # events (page_view, several *_click events) in quick succession.
     public_analytics_rate_limit_per_minute: int = 60
+    # POST /auth/login (A2) — an anonymous, credential-guessing-sensitive
+    # endpoint, same shape as the two public rate limits above but tighter:
+    # a real operator logs in rarely, so a low budget costs nothing real
+    # while meaningfully slowing brute-force/credential-stuffing attempts.
+    auth_login_rate_limit_per_minute: int = 5
+
+    # UserSession (A2, app.db.models.user_session) lifetime. A session row
+    # is looked up by the SHA-256 digest of its own opaque token on every
+    # authenticated request — this is how long a browser stays logged in
+    # without a fresh POST /auth/login. Deliberately generous (an internal
+    # operator tool, not a bank): short enough to bound a stolen-cookie
+    # window, long enough not to force daily re-logins.
+    session_ttl_seconds: int = 60 * 60 * 24 * 7  # 7 days
+    # The cookie name for the opaque session token (see app.auth.cookies).
+    # Namespaced rather than a bare "session" so it can never collide with
+    # another cookie on the same host if this API is ever served alongside
+    # something else.
+    session_cookie_name: str = "gwa_session"
+
+    # TEMPORARY A2 MIGRATION COMPATIBILITY — see app.dependencies.
+    # get_current_tenant_id's own docstring for the full explanation.
+    # False (the default, and the only value this repo ever sets) means
+    # every tenant-scoped route requires a real authenticated session with
+    # an explicit TenantAccess grant — a bare X-Tenant-Id header alone
+    # authenticates NO ONE. Setting this True re-enables the pre-A2
+    # behavior (X-Tenant-Id trusted outright, no session required) ONLY
+    # for a request that carries no session cookie at all — any request
+    # that DOES present a session is always subject to the new
+    # session+TenantAccess check regardless of this flag. This exists
+    # solely so an already-deployed, not-yet-logged-in Studio can keep
+    # working for the short window between deploying this code and
+    # completing the A2 production cutover (creating the real operator
+    # User/TenantAccess rows and switching Studio to log in) — it must be
+    # turned back to False, and this whole flag deleted, as the last step
+    # of that cutover (see docs/a2-authentication-authorization.md).
+    legacy_tenant_header_auth_enabled: bool = False
 
 
 settings = Settings()

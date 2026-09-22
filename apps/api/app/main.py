@@ -8,6 +8,7 @@ from app.config import settings
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.routers.analytics import router as analytics_router
+from app.routers.auth import router as auth_router
 from app.routers.businesses import business_summaries_router
 from app.routers.businesses import router as businesses_router
 from app.routers.creative import router as creative_router
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(analytics_router)
     app.include_router(businesses_router)
     app.include_router(business_summaries_router)
