@@ -30,6 +30,7 @@ from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
 from app.domain.creative import CreativeBriefAsset
+from app.domain.creative.image_qa import direction_is_approval_eligible
 from app.domain.enums import GenerationEngine, WebsiteDraftStatus
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
@@ -244,6 +245,17 @@ def create_generative_website_draft(
     if direction_row is None:
         raise GenerativeDraftError(
             "Creative direction not found.", code="creative_direction_not_found", status_code=404
+        )
+    # P2.7: a candidate whose generated image failed a BLOCKING Visual QA check
+    # cannot be turned into a website. Only a RECORDED blocking failure refuses:
+    # older directions and internal-fallback directions (no QA record), and
+    # candidates whose QA merely could not run, are unaffected.
+    if not direction_is_approval_eligible(direction_row.generation_metadata):
+        raise GenerativeDraftError(
+            "This creative direction's generated image failed a blocking Visual QA check, "
+            "so it cannot be used to build a website. Generate new directions instead.",
+            code="visual_qa_blocked",
+            status_code=409,
         )
     creative_direction = domain_from_row(direction_row)
 

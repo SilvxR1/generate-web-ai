@@ -175,6 +175,14 @@ class Settings(BaseSettings):
     # quota.
     max_upload_size_bytes: int = 10 * 1024 * 1024
 
+    # Generated-image QA (P2.7, app.services.generated_image_qa). On by default:
+    # it is bounded (P2.6 image limits), never blocks generation, and reports
+    # every unperformed check as NOT_PERFORMED. VISUAL_QA_ENABLED=false is the
+    # kill switch — directions then simply carry no `visual_qa` record.
+    visual_qa_enabled: bool = True
+    # How long the QA step may wait for the provider's result URL.
+    visual_qa_fetch_timeout_seconds: float = 15.0
+
     # CloudflareR2StorageProvider (app.storage.r2, P2.1) — production
     # persistent storage: Railway's own local filesystem is ephemeral, so a
     # redeploy would silently destroy GenerativeWebsiteArtifact source

@@ -13,6 +13,7 @@ from app.analysis.claude.engine import business_analyzer_from_settings
 from app.analytics_events.provider import AnalyticsProvider, InternalAnalyticsProvider
 from app.automation.n8n import N8nClient
 from app.config import settings
+from app.creative.artifact_fetcher import ArtifactFetcher, HttpsArtifactFetcher
 from app.creative.director import CreativeDirectorProvider
 from app.creative.director_fallback import FallbackCreativeDirector
 from app.creative.director_internal import InternalCreativeDirector
@@ -38,6 +39,7 @@ from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
+from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import CloudflareR2StorageProvider, LocalStorageProvider, StorageProvider
 
 # Module-level: one engine/pool for the process lifetime, per SQLAlchemy's
@@ -254,6 +256,21 @@ def get_google_review_provider() -> GoogleReviewProvider:
     when used" moment to guard; the provider's own is_available()/
     unavailable_reason() are what GET .../review-providers reads."""
     return GoogleReviewProvider(api_key=settings.google_reviews_api_key, place_id=settings.google_reviews_place_id)
+
+
+def get_generated_artifact_fetcher() -> ArtifactFetcher:
+    """How Image QA obtains a generated image's bytes (P2.7): a bounded https
+    fetch of the provider's result URL. A dependency of its own so tests can
+    substitute it — no test may reach the real network."""
+    return HttpsArtifactFetcher(timeout_seconds=settings.visual_qa_fetch_timeout_seconds)
+
+
+def get_generated_image_qa(
+    fetcher: ArtifactFetcher = Depends(get_generated_artifact_fetcher),
+) -> GeneratedImageQAService | None:
+    """None when VISUAL_QA_ENABLED=false (the kill switch): generation is then
+    exactly as before P2.7 and directions carry no `visual_qa` record."""
+    return GeneratedImageQAService(fetcher) if settings.visual_qa_enabled else None
 
 
 def get_storage_provider() -> StorageProvider:

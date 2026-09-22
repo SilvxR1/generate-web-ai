@@ -33,6 +33,7 @@ from app.domain.creative.direction import (
 from app.domain.enums import CreativeGenerationStatus, CreativeGenerationType
 from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.creative_generation import CreativeGenerationRepository
+from app.services.generated_image_qa import GeneratedImageQAService, attach_image_qa
 
 
 class CreativeDirectionNotFoundError(ValueError):
@@ -80,6 +81,7 @@ def orchestrate_create_directions(
     assets: Sequence[CreativeBriefAsset],
     director: CreativeDirectorProvider,
     budget: CreativeBudget,
+    image_qa: GeneratedImageQAService | None = None,
 ) -> list[CreativeDirectionRow]:
     """STEP A+B+C of P2.3: explore candidates, run the critic, persist
     every candidate (recommended and not) as its own row — mirrors
@@ -109,6 +111,15 @@ def orchestrate_create_directions(
             generation.completed_at = datetime.now(UTC)
             generation.credits_used = budget.credits_used
             raise
+
+    # P2.7: the provider has completed; inspect the generated image BEFORE the
+    # critic recommends anything, so a candidate with a blocking Visual QA
+    # failure can never be the recommended one. Never raises, and never changes
+    # the generation status: a technically successful provider job stays
+    # `completed` even when its image is rejected.
+    if image_qa is not None:
+        for candidate in candidates:
+            attach_image_qa(candidate, image_qa)
 
     select_direction(candidates, brief)  # mutates is_recommended/selection_rationale in place
 

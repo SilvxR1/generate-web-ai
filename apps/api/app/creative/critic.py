@@ -19,6 +19,7 @@ implementation feasibility, factual safety.
 
 from app.domain.creative import CreativeBrief
 from app.domain.creative.direction import CreativeDirection
+from app.domain.creative.image_qa import direction_is_approval_eligible
 
 
 class NoCandidateDirectionsError(ValueError):
@@ -142,8 +143,9 @@ def score_direction(
 
 def select_direction(
     candidates: list[CreativeDirection], brief: CreativeBrief
-) -> tuple[CreativeDirection, list[CreativeDirection]]:
+) -> tuple[CreativeDirection | None, list[CreativeDirection]]:
     """Scores every candidate, marks exactly one `is_recommended=True`
+    (none only if every candidate is blocked by Visual QA — P2.7)
     with a `selection_rationale` explaining why, and returns
     `(recommended, all_candidates)` — mutates and returns the same
     CreativeDirection instances (every candidate gets a rationale, not
@@ -155,16 +157,28 @@ def select_direction(
         raise NoCandidateDirectionsError("select_direction requires at least one candidate.")
 
     scored = [(candidate, score_direction(candidate, brief, candidates)) for candidate in candidates]
-    winner, winner_score = max(scored, key=lambda pair: pair[1])
+    # P2.7: a candidate whose generated image has a BLOCKING Visual QA failure is
+    # never recommended, whatever its score. (Absence of a QA record never blocks.)
+    eligible = [pair for pair in scored if direction_is_approval_eligible(pair[0].generation_metadata)]
+    winner: CreativeDirection | None = None
+    winner_score = 0.0
+    if eligible:
+        winner, winner_score = max(eligible, key=lambda pair: pair[1])
 
     for candidate, score in scored:
         candidate.is_recommended = candidate is winner
-        if candidate is winner:
+        if not direction_is_approval_eligible(candidate.generation_metadata):
+            candidate.selection_rationale = (
+                f"Not recommended: its generated image failed a blocking Visual QA check "
+                f"(score {score:.2f}/1.00 before QA). It cannot be turned into a website draft."
+            )
+        elif candidate is winner:
             candidate.selection_rationale = (
                 f"Recommended (score {score:.2f}/1.00): strongest combination of brand fit, feasibility, "
                 "conversion alignment, and factual safety among the candidates explored."
             )
         else:
+            assert winner is not None  # an eligible candidate exists, so a winner was chosen
             candidate.selection_rationale = (
                 f"Not recommended (score {score:.2f}/1.00 vs. {winner_score:.2f}/1.00 for "
                 f"{winner.concept.name!r}) — still available to select manually in Studio."

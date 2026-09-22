@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import { directorLabel } from "./directorLabel";
 import { ProvenanceList } from "./ProvenanceList";
+import { VisualQAPanel } from "./VisualQAPanel";
+import { isBlockedByVisualQa } from "./visualQa";
 import {
   BRAND_MODE_OPTIONS,
   DEFAULT_PURPOSE,
@@ -356,9 +358,21 @@ export function GenerativeWorkflowPanel({
                   <p className="field-hint">{direction.concept.rationale}</p>
                   {direction.selection_rationale && <p className="field-hint">Why: {direction.selection_rationale}</p>}
                   <ProvenanceList rows={provenanceRows(direction)} />
+                  <VisualQAPanel direction={direction} />
                   {costLabel(direction) && <p className="field-hint">{costLabel(direction)}</p>}
-                  <button type="button" onClick={() => setSelectedDirectionId(direction.id)} disabled={isSelected}>
-                    {isSelected ? "Selected" : direction.is_recommended ? "Use recommended" : "Choose this direction"}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDirectionId(direction.id)}
+                    disabled={isSelected || isBlockedByVisualQa(direction)}
+                    title={isBlockedByVisualQa(direction) ? "Blocked by a Visual QA failure" : undefined}
+                  >
+                    {isSelected
+                      ? "Selected"
+                      : isBlockedByVisualQa(direction)
+                        ? "Blocked by Visual QA"
+                        : direction.is_recommended
+                          ? "Use recommended"
+                          : "Choose this direction"}
                   </button>
                 </li>
               );
