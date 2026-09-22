@@ -38,21 +38,62 @@ interface ErrorBody {
   error?: { code?: string; message?: string; details?: unknown };
 }
 
+// A2: the CSRF token a successful /auth/login or /auth/me hands back in
+// its JSON body (never in the cookie) — see src/lib/auth.ts's own
+// docstring for why this exists at all (the real production Studio/API
+// topology is cross-site, so SameSite alone can't be relied on). Held
+// here, not in auth.ts, so sendRequest can read it without a circular
+// import between the two modules; auth.ts calls setCsrfToken after every
+// successful login/me/logout instead.
+let csrfToken: string | null = null;
+
+export function setCsrfToken(token: string | null): void {
+  csrfToken = token;
+}
+
+const _SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** The three multipart upload endpoints below (upload/upload-batch/
+ * replace) bypass sendRequest entirely — the browser must set
+ * Content-Type itself for multipart/form-data (boundary included), which
+ * sendRequest's fixed "Content-Type: application/json" would break — so
+ * they need this same credentials/X-Tenant-Id/X-CSRF-Token shape built by
+ * hand instead of getting it from sendRequest for free. */
+function multipartHeaders(tenantId: string): Record<string, string> {
+  const headers: Record<string, string> = { "X-Tenant-Id": tenantId };
+  if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  return headers;
+}
+
 /** Shared fetch + error handling for every request below — resolves to
  * the raw, successful Response so callers can decide how (or whether)
  * to parse a body: requestJson parses one, requestVoid doesn't (for
  * endpoints like DELETE that return 204 No Content, where calling
- * response.json() would throw on the empty body). */
+ * response.json() would throw on the empty body).
+ *
+ * `credentials: "include"` is what makes the browser send the HttpOnly
+ * session cookie at all (A2) — without it every request would look
+ * logged-out regardless of a real, valid session. `X-Tenant-Id` is now
+ * only a SELECTION HINT (which of the caller's own authorized tenants
+ * this request acts as), never authorization on its own — the backend's
+ * get_current_tenant_id (apps/api's app.dependencies) is what actually
+ * enforces that this session has a TenantAccess grant for it. */
 async function sendRequest(path: string, init: RequestInit, tenantId: string): Promise<Response> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Tenant-Id": tenantId,
+  };
+  if (!_SAFE_METHODS.has(method) && csrfToken) {
+    headers["X-CSRF-Token"] = csrfToken;
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Tenant-Id": tenantId,
-        ...init.headers,
-      },
+      credentials: "include",
+      headers: { ...headers, ...init.headers },
     });
   } catch (cause) {
     throw new NetworkError(cause);
@@ -834,7 +875,8 @@ export function uploadBusinessAsset(
 
   return fetch(`${API_URL}/businesses/${businessId}/assets/upload`, {
     method: "POST",
-    headers: { "X-Tenant-Id": tenantId },
+    credentials: "include",
+    headers: multipartHeaders(tenantId),
     body: form,
   })
     .catch((cause: unknown) => {
@@ -884,7 +926,8 @@ export function uploadBusinessAssetsBatch(
 
   return fetch(`${API_URL}/businesses/${businessId}/assets/upload-batch`, {
     method: "POST",
-    headers: { "X-Tenant-Id": tenantId },
+    credentials: "include",
+    headers: multipartHeaders(tenantId),
     body: form,
   })
     .catch((cause: unknown) => {
@@ -920,7 +963,8 @@ export function replaceBusinessAsset(businessId: string, assetId: string, file: 
 
   return fetch(`${API_URL}/businesses/${businessId}/assets/${assetId}/replace`, {
     method: "POST",
-    headers: { "X-Tenant-Id": tenantId },
+    credentials: "include",
+    headers: multipartHeaders(tenantId),
     body: form,
   })
     .catch((cause: unknown) => {

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.analysis.analyzer import BusinessAnalyzer
 from app.analysis.claude.engine import business_analyzer_from_settings
 from app.analytics_events.provider import AnalyticsProvider, InternalAnalyticsProvider
+from app.auth.service import AuthenticatedSession, resolve_session
 from app.automation.n8n import N8nClient
 from app.config import settings
 from app.creative.artifact_fetcher import ArtifactFetcher, HttpsArtifactFetcher
@@ -28,6 +29,7 @@ from app.creative.higgsfield import (
 )
 from app.creative.internal import InternalCreativeProvider
 from app.creative.provider import CreativeProvider
+from app.db.models.user import User
 from app.db.session import make_engine, make_session_factory
 from app.errors import AppError
 from app.notifications.resend import ResendNotificationSender
@@ -37,6 +39,7 @@ from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesDoma
 from app.publishing.domain_provider import DomainProvider
 from app.publishing.publisher import WebsitePublisher
 from app.repositories.tenant import TenantRepository
+from app.repositories.tenant_access import TenantAccessRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.services.generated_image_qa import GeneratedImageQAService
@@ -73,23 +76,115 @@ def get_session() -> Iterator[Session]:
         session.close()
 
 
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def _not_authenticated() -> AppError:
+    return AppError("Not authenticated.", code="not_authenticated", status_code=401)
+
+
+def _unknown_tenant() -> AppError:
+    # The SAME error, for BOTH "no Tenant row has this id" and "a real
+    # Tenant, but this user has no TenantAccess grant for it" — telling
+    # those apart would let an authenticated caller enumerate which
+    # tenant UUIDs are real, exactly the tenant-UUID-enumeration risk A2's
+    # own threat model calls out.
+    return AppError("Unknown tenant.", code="unknown_tenant", status_code=404)
+
+
+def _check_csrf(request: Request, expected_csrf_token: str) -> None:
+    """Required on every mutating (non-safe-method) authenticated request
+    — see app.auth.cookies' own docstring for why SameSite alone cannot be
+    relied on here (production's cross-site Studio/API topology needs
+    SameSite=None, which forfeits SameSite's own CSRF protection). The
+    token is a value only ever handed to the legitimate caller in a
+    /auth/login or /auth/me JSON response body — a cross-site attacker's
+    page can trigger a request but can never read that response body
+    (blocked by CORS/same-origin policy) or therefore learn the value to
+    put in the header."""
+    if request.method in _SAFE_METHODS:
+        return
+    provided = request.headers.get("x-csrf-token")
+    if not provided or not hmac.compare_digest(provided, expected_csrf_token):
+        raise AppError("Missing or invalid CSRF token.", code="invalid_csrf_token", status_code=403)
+
+
+def get_current_session(request: Request, session: Session = Depends(get_session)) -> AuthenticatedSession:
+    """The real authentication boundary (A2): resolves the opaque session
+    cookie to a live, non-expired, non-revoked UserSession, and enforces
+    CSRF on every mutating request (see _check_csrf). Raises 401 for no
+    cookie / an invalid, expired or revoked one — this function makes no
+    "which tenant" decision at all, see get_current_tenant_id for that."""
+    raw_token = request.cookies.get(settings.session_cookie_name)
+    if not raw_token:
+        raise _not_authenticated()
+    resolved = resolve_session(session, raw_token=raw_token)
+    if resolved is None:
+        raise _not_authenticated()
+    _check_csrf(request, resolved.csrf_token)
+    return resolved
+
+
+def get_current_user(current: AuthenticatedSession = Depends(get_current_session)) -> User:
+    return current.user
+
+
+def _tenant_id_from_header_unauthenticated(x_tenant_id: str, session: Session) -> UUID:
+    """The ORIGINAL (pre-A2) behavior, preserved under this explicit name
+    for exactly two callers: (1) the temporary
+    LEGACY_TENANT_HEADER_AUTH_ENABLED compatibility path below, used only
+    for a caller presenting NO session cookie at all during the A2
+    deploy-to-cutover window (see app.config.Settings.
+    legacy_tenant_header_auth_enabled's own docstring); (2) existing tests
+    that exercise tenant-scoped business logic and intentionally bypass
+    authentication itself via `app.dependency_overrides[get_current_tenant_id]`,
+    the same idiom this codebase already uses for get_session/
+    get_rate_limiter — those tests are about repository/service behavior,
+    not about auth, which the dedicated app.auth test suite covers."""
+    try:
+        tenant_uuid = UUID(x_tenant_id)
+    except ValueError as exc:
+        raise AppError(
+            "X-Tenant-Id header must be a valid UUID.", code="invalid_tenant_header", status_code=400
+        ) from exc
+    if TenantRepository(session).get(tenant_uuid) is None:
+        raise _unknown_tenant()
+    return tenant_uuid
+
+
 def get_current_tenant_id(
+    request: Request,
     x_tenant_id: Annotated[str, Header()],
     session: Session = Depends(get_session),
 ) -> UUID:
-    """**NOT AUTHENTICATION.** No login, session, or token verification
-    exists anywhere in this codebase yet — this reads a caller-supplied
-    `X-Tenant-Id` header and confirms it names a real Tenant, nothing
-    more. Any caller can put any tenant's id in this header and be
-    treated as that tenant; there is no check that they're actually a
-    member of it. Every tenant-scoped route depends on this function
-    rather than reading the header directly, so that wiring real
-    authentication later (extracting tenant_id from a verified
-    session/JWT instead) means changing only this function's body — no
-    route or service code needs to change. Until that happens, do not
-    expose any route that depends on this to an untrusted caller; treat
-    it as an internal-only API boundary.
+    """The tenant-authorization boundary (A2). `X-Tenant-Id` is now only a
+    SELECTION HINT — which of the caller's own authorized tenants this
+    request acts as — never authorization on its own:
+
+        requested_tenant = X-Tenant-Id
+        authenticated_user = session.user          (see get_current_session)
+        if not TenantAccess.exists(user, requested_tenant): DENY (404)
+
+    A request with NO session cookie at all is authenticated exactly
+    nowhere and gets 401 — UNLESS settings.legacy_tenant_header_auth_enabled
+    is True, a temporary, explicit, off-by-default migration-compatibility
+    switch (see that setting's own docstring); a request that DOES present
+    a session is always subject to the real check above regardless of that
+    flag. Every downstream service/repository call continues to receive a
+    plain, trusted `tenant_id` exactly as before — this function is the
+    only thing that changed.
     """
+    raw_token = request.cookies.get(settings.session_cookie_name)
+    if raw_token is None:
+        if settings.legacy_tenant_header_auth_enabled:
+            return _tenant_id_from_header_unauthenticated(x_tenant_id, session)
+        raise _not_authenticated()
+
+    resolved = resolve_session(session, raw_token=raw_token)
+    if resolved is None:
+        raise _not_authenticated()
+    _check_csrf(request, resolved.csrf_token)
+
     try:
         tenant_uuid = UUID(x_tenant_id)
     except ValueError as exc:
@@ -97,8 +192,8 @@ def get_current_tenant_id(
             "X-Tenant-Id header must be a valid UUID.", code="invalid_tenant_header", status_code=400
         ) from exc
 
-    if TenantRepository(session).get(tenant_uuid) is None:
-        raise AppError("Unknown tenant.", code="unknown_tenant", status_code=404)
+    if not TenantAccessRepository(session).exists(user_id=resolved.user.id, tenant_id=tenant_uuid):
+        raise _unknown_tenant()
 
     return tenant_uuid
 

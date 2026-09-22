@@ -22,7 +22,9 @@ from app.db.models.lead import Lead
 from app.db.models.lead_note import LeadNote
 from app.db.models.template import Template
 from app.db.models.tenant import Tenant
+from app.db.models.tenant_access import TenantAccess
 from app.db.models.user import User
+from app.db.models.user_session import UserSession
 from app.db.models.website import Website
 from app.db.models.website_draft import WebsiteDraft
 from app.db.models.website_health import WebsiteHealthCheck
@@ -47,7 +49,9 @@ __all__ = [
     "LeadNote",
     "Template",
     "Tenant",
+    "TenantAccess",
     "User",
+    "UserSession",
     "Website",
     "WebsiteDraft",
     "WebsiteHealthCheck",

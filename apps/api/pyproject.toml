@@ -43,6 +43,12 @@ dependencies = [
   # is the smallest mature decoder for those formats; no numpy/OpenCV is
   # needed because the analysis runs on a <=256px thumbnail in pure Python.
   "pillow>=11.0",
+  # A2 (app.security.passwords): OWASP's current #1 recommendation for
+  # password hashing (Argon2id) — chosen over bcrypt specifically to avoid
+  # bcrypt's 72-byte silent-truncation footgun; salt generation, hashing
+  # parameters and constant-time verification are all handled by this
+  # library's own PasswordHasher, never hand-rolled here.
+  "argon2-cffi>=25.1.0",
 ]
 
 [dependency-groups]
