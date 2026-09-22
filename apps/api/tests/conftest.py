@@ -5,11 +5,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.creative.artifact_fetcher import DisabledArtifactFetcher
 from app.db import models  # noqa: F401 — registers every model on Base.metadata
 from app.db.base import Base
 from app.db.models.business import Business
 from app.db.models.tenant import Tenant
-from app.dependencies import get_optional_notification_sender
+from app.dependencies import get_generated_artifact_fetcher, get_optional_notification_sender
 from app.domain.enums import BusinessStatus, BusinessVertical
 from app.main import app
 
@@ -59,6 +60,19 @@ def _block_real_smtp_connections_for_the_whole_suite():
     guard.setattr(smtplib, "SMTP", _blocked_smtp)
     yield
     guard.undo()
+
+
+@pytest.fixture(autouse=True)
+def _no_real_artifact_fetching_by_default():
+    """P2.7: Image QA fetches a generated image's bytes from the provider's
+    result URL. No test may reach the real network, so every test gets a fetcher
+    that fetches nothing (QA then reports NOT_PERFORMED). A test that wants real
+    QA overrides get_generated_artifact_fetcher itself with an in-memory fake."""
+    app.dependency_overrides[get_generated_artifact_fetcher] = lambda: DisabledArtifactFetcher()
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(get_generated_artifact_fetcher, None)
 
 
 @pytest.fixture(autouse=True)

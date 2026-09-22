@@ -36,6 +36,7 @@ from app.dependencies import (
     get_creative_director,
     get_current_tenant_id,
     get_frontend_engineer,
+    get_generated_image_qa,
     get_google_review_provider,
     get_internal_creative_provider,
     get_manual_review_provider,
@@ -101,6 +102,7 @@ from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRea
 from app.services.asset_health import check_business_asset_availability
 from app.services.brand_measurement import with_brand_measurements
 from app.services.business_service import BusinessNotFoundError, BusinessService
+from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
 
@@ -1151,6 +1153,7 @@ def create_creative_directions_route(
     session: Session = Depends(get_session),
     director: CreativeDirectorProvider = Depends(get_creative_director),
     storage: StorageProvider = Depends(get_storage_provider),
+    image_qa: GeneratedImageQAService | None = Depends(get_generated_image_qa),
 ) -> list[object]:
     """P2.3 STEP A+B+C: explores candidate creative directions (~3 via
     Higgsfield when configured, 1 honest fallback via
@@ -1187,6 +1190,7 @@ def create_creative_directions_route(
                 assets=brief.available_assets,
                 director=director,
                 budget=budget,
+                image_qa=image_qa,
             )
         )
     except (CreativeProviderError, BudgetExceededError) as exc:
