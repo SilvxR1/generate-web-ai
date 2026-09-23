@@ -42,6 +42,7 @@ import { CreativeSection } from "../business-creative/CreativeSection";
 import { CustomDomainPanel } from "./CustomDomainPanel";
 import { LeadsList } from "./LeadsList";
 import { ProductionReadinessPanel } from "./ProductionReadinessPanel";
+import { RedesignFlow } from "../business-redesign/RedesignFlow";
 import { SiteConfigPreview } from "./SiteConfigPreview";
 import { WebsiteHealthPanel } from "./WebsiteHealthPanel";
 import { WebsitePublish } from "./WebsitePublish";
@@ -51,6 +52,10 @@ import { WorkflowPreview } from "./WorkflowPreview";
 interface PreviewStepProps {
   business: CreatedBusiness;
   tenantId: string;
+  /** True only immediately after this business was just created — see
+   * NewBusiness's own Step type. An existing, reopened business must
+   * never show creation-success messaging (A8.1). */
+  justCreated: boolean;
   onEdit: () => void;
   onCreateAnother: () => void;
 }
@@ -107,7 +112,8 @@ interface BusinessAssetsFetch {
   isLoading: boolean;
 }
 
-export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: PreviewStepProps) {
+export function PreviewStep({ business, tenantId, justCreated, onEdit, onCreateAnother }: PreviewStepProps) {
+  const [showRedesign, setShowRedesign] = useState(false);
   const [workflowState, setWorkflowState] = useState<WorkflowPreviewState>({
     workflow: null,
     isLoading: true,
@@ -281,36 +287,75 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
     [business.config, businessAssets.assets],
   );
 
+  const isLive = website.state?.status === "live";
+  const liveUrl = website.state?.live_url ?? null;
+
   return (
     <div className="preview-step">
-      <div className="banner banner--ok">
-        <p>
-          Business "{business.name}" created (slug: {business.slug}, status: {business.status}).
+      {justCreated && (
+        <div className="banner banner--ok">
+          <p>
+            Business "{business.name}" created (slug: {business.slug}, status: {business.status}).
+          </p>
+        </div>
+      )}
+
+      <div className="preview-step__header">
+        <p className="preview-step__business-name">{business.name}</p>
+        <p className="field-hint">
+          {website.isLoading ? "Checking website status…" : isLive ? "Website live" : "Website not published yet"}
         </p>
+        <div className="preview-step__header-actions">
+          {liveUrl && (
+            <a href={liveUrl} target="_blank" rel="noreferrer">
+              View website
+            </a>
+          )}
+          <button type="button" onClick={() => setShowRedesign(true)}>
+            Redesign website
+          </button>
+        </div>
       </div>
 
-      <h2>Production readiness</h2>
-      <ProductionReadinessPanel report={readiness.report} isLoading={readiness.isLoading} />
+      {showRedesign && (
+        <RedesignFlow
+          business={business}
+          tenantId={tenantId}
+          assets={businessAssets.assets ?? []}
+          onPublished={(state) => {
+            setWebsite({ state, isLoading: false });
+            setShowRedesign(false);
+            setReloadToken((n) => n + 1);
+          }}
+          onClose={() => setShowRedesign(false)}
+        />
+      )}
 
-      <h2>Website health</h2>
-      <WebsiteHealthPanel
-        health={health.health}
-        isLoading={health.isLoading}
-        onCheckNow={() =>
-          checkWebsiteHealthNow(business.id, tenantId).then((fetched) => {
-            setHealth({ health: fetched, isLoading: false });
-            return fetched;
-          })
-        }
-      />
+      <details>
+        <summary>Technical details</summary>
+        <h2>Production readiness</h2>
+        <ProductionReadinessPanel report={readiness.report} isLoading={readiness.isLoading} />
 
-      <h2>Business metrics</h2>
-      <BusinessMetricsPanel
-        metrics={metrics.metrics}
-        isLoading={metrics.isLoading}
-        window={metricsWindow}
-        onWindowChange={setMetricsWindow}
-      />
+        <h2>Website health</h2>
+        <WebsiteHealthPanel
+          health={health.health}
+          isLoading={health.isLoading}
+          onCheckNow={() =>
+            checkWebsiteHealthNow(business.id, tenantId).then((fetched) => {
+              setHealth({ health: fetched, isLoading: false });
+              return fetched;
+            })
+          }
+        />
+
+        <h2>Business metrics</h2>
+        <BusinessMetricsPanel
+          metrics={metrics.metrics}
+          isLoading={metrics.isLoading}
+          window={metricsWindow}
+          onWindowChange={setMetricsWindow}
+        />
+      </details>
 
       <h2>Website preview</h2>
       {siteConfig ? (
@@ -390,12 +435,12 @@ export function PreviewStep({ business, tenantId, onEdit, onCreateAnother }: Pre
         }
       />
 
-      <h2>Creative</h2>
+      <h2>Advanced</h2>
       {showCreative ? (
         <CreativeSection business={business} tenantId={tenantId} reloadToken={reloadToken} />
       ) : (
         <button type="button" onClick={() => setShowCreative(true)}>
-          Show brand, content & generation tools
+          Brand & assets, AI visuals, and advanced generation tools
         </button>
       )}
 
