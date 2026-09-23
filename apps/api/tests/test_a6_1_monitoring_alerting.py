@@ -140,6 +140,7 @@ def test_configured_webhook_sends_a_sanitized_text_payload(monkeypatch: pytest.M
     from app.config import settings
 
     monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/secret-path")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "slack")
     captured: dict = {}
 
     def _fake_post(url, *, json, timeout):
@@ -178,6 +179,7 @@ def test_webhook_failure_is_logged_and_never_raises(monkeypatch: pytest.MonkeyPa
     from app.config import settings
 
     monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/some-secret-token")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "slack")
 
     def _fake_post(url, *, json, timeout):
         return httpx.Response(500, request=httpx.Request("POST", url))
@@ -196,6 +198,7 @@ def test_webhook_timeout_is_logged_and_never_raises(monkeypatch: pytest.MonkeyPa
     from app.config import settings
 
     monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "slack")
 
     def _fake_post(url, *, json, timeout):
         raise httpx.TimeoutException("timed out")
@@ -206,6 +209,153 @@ def test_webhook_timeout_is_logged_and_never_raises(monkeypatch: pytest.MonkeyPa
         send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="original failure")  # must not raise
 
     assert any("delivery failed" in record.message for record in caplog.records)
+
+
+# --- A6.3: Discord provider support ------------------------------------------
+
+
+def test_discord_provider_sends_a_content_payload(monkeypatch: pytest.MonkeyPatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://discord.com/api/webhooks/secret/token")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "discord")
+    captured: dict = {}
+
+    def _fake_post(url, *, json, timeout):
+        captured["json"] = json
+        return httpx.Response(204, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", _fake_post)
+
+    send_operator_alert(AlertSeverity.CRITICAL, operation="website_publish", summary="provider rejected the deploy")
+
+    assert set(captured["json"].keys()) == {"content"}
+    assert "website_publish" in captured["json"]["content"]
+
+
+def test_slack_provider_sends_a_text_payload(monkeypatch: pytest.MonkeyPatch):
+    """Explicit provider=slack counterpart to the Discord test above —
+    see also test_configured_webhook_sends_a_sanitized_text_payload,
+    which already covers the full field-by-field content of the {"text": ...}
+    shape; this one focuses purely on the provider-selection branch."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.slack.com/services/x")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "slack")
+    captured: dict = {}
+
+    def _fake_post(url, *, json, timeout):
+        captured["json"] = json
+        return httpx.Response(200, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", _fake_post)
+
+    send_operator_alert(AlertSeverity.WARNING, operation="lead_acknowledgement_email", summary="failed")
+
+    assert set(captured["json"].keys()) == {"text"}
+
+
+def test_url_present_but_provider_missing_is_a_no_op(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(settings, "alert_webhook_provider", None)
+    calls: list = []
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", lambda *a, **k: calls.append((a, k)))
+
+    with caplog.at_level(logging.WARNING, logger="app.monitoring.alerts"):
+        send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="should not send")
+
+    assert calls == []
+    assert any("ALERT_WEBHOOK_PROVIDER" in record.message for record in caplog.records)
+    assert "hooks.example.com" not in caplog.text
+
+
+def test_url_present_but_provider_unsupported_is_a_no_op(monkeypatch: pytest.MonkeyPatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.com/x")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "pagerduty")
+    calls: list = []
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", lambda *a, **k: calls.append((a, k)))
+
+    send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="should not send")
+
+    assert calls == []
+
+
+def test_provider_value_is_never_guessed_from_the_url(monkeypatch: pytest.MonkeyPatch):
+    """A discord.com URL with no ALERT_WEBHOOK_PROVIDER set must NOT be
+    silently treated as provider=discord — the provider is always an
+    explicit setting."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://discord.com/api/webhooks/secret/token")
+    monkeypatch.setattr(settings, "alert_webhook_provider", None)
+    calls: list = []
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", lambda *a, **k: calls.append((a, k)))
+
+    send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="should not send")
+
+    assert calls == []
+
+
+def test_discord_transport_failure_never_raises_and_redacts_the_url(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://discord.com/api/webhooks/12345/super-secret-token")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "discord")
+
+    def _fake_post(url, *, json, timeout):
+        return httpx.Response(404, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", _fake_post)
+
+    with caplog.at_level(logging.ERROR, logger="app.monitoring.alerts"):
+        send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="original failure")  # must not raise
+
+    assert any("delivery failed" in record.message for record in caplog.records)
+    assert "discord.com" not in caplog.text
+    assert "super-secret-token" not in caplog.text
+
+
+def test_discord_timeout_never_raises(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://discord.com/api/webhooks/x/y")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "discord")
+
+    def _fake_post(url, *, json, timeout):
+        raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", _fake_post)
+
+    with caplog.at_level(logging.ERROR, logger="app.monitoring.alerts"):
+        send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="original failure")  # must not raise
+
+    assert any("delivery failed" in record.message for record in caplog.records)
+
+
+def test_message_is_safely_truncated_within_discords_content_limit(monkeypatch: pytest.MonkeyPatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "alert_webhook_url", "https://discord.com/api/webhooks/x/y")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "discord")
+    captured: dict = {}
+
+    def _fake_post(url, *, json, timeout):
+        captured["json"] = json
+        return httpx.Response(204, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr("app.monitoring.alerts.httpx.post", _fake_post)
+
+    send_operator_alert(AlertSeverity.CRITICAL, operation="test_op", summary="x" * 5000)
+
+    content = captured["json"]["content"]
+    assert len(content) <= 2000
+    assert content.endswith("(truncated)")
 
 
 # --- publish / rollback alerts (app.routers.businesses) ---------------------
@@ -402,6 +552,7 @@ def test_alert_transport_failure_never_affects_lead_persistence_or_response(
     from app.config import settings
 
     monkeypatch.setattr(settings, "alert_webhook_url", "https://hooks.example.invalid/unreachable")
+    monkeypatch.setattr(settings, "alert_webhook_provider", "slack")
     app.dependency_overrides[get_optional_notification_sender] = lambda: _FailingSender()
 
     response = client.post(
