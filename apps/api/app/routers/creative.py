@@ -788,6 +788,8 @@ def create_creative_generation(
             premium_provider=premium_provider,
             assets=assets,
             reviews=reviews,
+            brand_strategy=payload.brand_strategy,
+            creative_level=payload.creative_level,
         )
     except CreativeProviderError as exc:
         raise AppError(str(exc), code="creative_provider_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc

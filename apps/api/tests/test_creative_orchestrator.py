@@ -14,6 +14,7 @@ from app.db.models.business import Business
 from app.domain.business_config import BusinessConfig
 from app.domain.business_config.creative import CreativeConfig
 from app.domain.enums import (
+    BrandStrategy,
     CreativeGenerationStatus,
     CreativeGenerationType,
     CreativeLevel,
@@ -222,3 +223,95 @@ def test_orchestrate_generation_never_touches_the_business_website(session: Sess
     )
 
     assert business.status == original_status
+
+
+# --- A8.1: per-request brand_strategy/creative_level overrides -------------
+# never read from or written back to the business's own persisted
+# CreativeConfig — only ever change what THIS one generation does.
+
+
+def test_creative_level_override_is_used_instead_of_the_business_default(session: Session, business: Business):
+    config = _config(level=CreativeLevel.CINEMATIC)
+
+    generation = orchestrate_generation(
+        session=session,
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        business_config=config,
+        generation_type=CreativeGenerationType.WEBSITE,
+        internal_provider=_internal(),
+        # No premium_provider supplied — if the override were ignored and
+        # the business's own CINEMATIC level were used, select_provider
+        # would raise NoSuitableProviderError here (see the module's own
+        # "no silent downgrade" tests above). It doesn't: BASIC wins.
+        creative_level=CreativeLevel.BASIC,
+    )
+
+    assert generation.status is CreativeGenerationStatus.COMPLETED
+    assert generation.provider is CreativeProviderName.INTERNAL
+    assert generation.creative_level is CreativeLevel.BASIC
+
+
+def test_creative_level_override_never_mutates_the_business_configs_own_object(session: Session, business: Business):
+    config = _config(level=CreativeLevel.CINEMATIC)
+
+    orchestrate_generation(
+        session=session,
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        business_config=config,
+        generation_type=CreativeGenerationType.WEBSITE,
+        internal_provider=_internal(),
+        creative_level=CreativeLevel.BASIC,
+    )
+
+    # The exact BusinessConfig object passed in — the caller's own,
+    # already-loaded, in-memory representation of what's persisted —
+    # must still read CINEMATIC afterward. Nothing about the override
+    # is ever written back onto it.
+    assert config.creative.level is CreativeLevel.CINEMATIC
+
+
+def test_brand_strategy_override_never_mutates_the_business_configs_own_object(session: Session, business: Business):
+    from app.domain.business_config import BusinessProfile
+    from app.domain.enums import BusinessVertical
+
+    config = BusinessConfig(
+        business_profile=BusinessProfile(name="Acme", slug="acme", industry=BusinessVertical.OTHER),
+        creative=CreativeConfig(level=CreativeLevel.BASIC, strategy=BrandStrategy.PRESERVE),
+    )
+
+    orchestrate_generation(
+        session=session,
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        business_config=config,
+        generation_type=CreativeGenerationType.WEBSITE,
+        internal_provider=_internal(),
+        brand_strategy=BrandStrategy.NEW_DIRECTION,
+    )
+
+    assert config.creative.strategy is BrandStrategy.PRESERVE
+
+
+def test_no_override_falls_back_to_the_business_configs_own_persisted_level_and_strategy(
+    session: Session, business: Business
+):
+    from app.domain.business_config import BusinessProfile
+    from app.domain.enums import BusinessVertical
+
+    config = BusinessConfig(
+        business_profile=BusinessProfile(name="Acme", slug="acme", industry=BusinessVertical.OTHER),
+        creative=CreativeConfig(level=CreativeLevel.BASIC, strategy=BrandStrategy.EVOLVE),
+    )
+
+    generation = orchestrate_generation(
+        session=session,
+        tenant_id=business.tenant_id,
+        business_id=business.id,
+        business_config=config,
+        generation_type=CreativeGenerationType.WEBSITE,
+        internal_provider=_internal(),
+    )
+
+    assert generation.creative_level is CreativeLevel.BASIC

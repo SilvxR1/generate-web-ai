@@ -835,6 +835,23 @@ export function listCreativeGenerations(businessId: string, tenantId: string): P
   );
 }
 
+export interface CreateCreativeGenerationOptions {
+  /** A8.1: per-request override for exactly this one generation — the
+   * backend (app.creative.orchestrator.orchestrate_generation) never
+   * reads or writes this back onto the business's own persisted
+   * CreativeConfig.strategy; omitted, that persisted value applies
+   * exactly as before this option existed. Reuses the same BrandMode
+   * type createCreativeDirections above already uses for the same
+   * underlying domain concept (BrandStrategy on the backend). */
+  brandStrategy?: BrandMode;
+  /** A8.1: per-request override for exactly this one generation — never
+   * read from or written back to CreativeConfig.level. Omitted, the
+   * business's own persisted level applies exactly as before. Reuses
+   * CreativeGenerationLevel, the same type createCreativeDirections
+   * above already uses for CreativeLevel. */
+  creativeLevel?: CreativeGenerationLevel;
+}
+
 /** Triggers one CreativeOrchestrator run (apps/api's
  * app.creative.orchestrator) — generate, regenerate, and "generate a
  * variation" are all this same call (Section 16); the currently
@@ -845,10 +862,14 @@ export function createCreativeGeneration(
   businessId: string,
   generationType: CreativeGenerationType,
   tenantId: string,
+  options: CreateCreativeGenerationOptions = {},
 ): Promise<CreativeGeneration> {
+  const body: Record<string, unknown> = { generation_type: generationType };
+  if (options.brandStrategy) body.brand_strategy = options.brandStrategy;
+  if (options.creativeLevel) body.creative_level = options.creativeLevel;
   return requestJson<CreativeGeneration>(
     `/businesses/${businessId}/creative-generations`,
-    { method: "POST", body: JSON.stringify({ generation_type: generationType }) },
+    { method: "POST", body: JSON.stringify(body) },
     tenantId,
   );
 }

@@ -953,13 +953,7 @@ dd {
   border-width: 2px;
 }
 
-.redesign-flow__style textarea {
-  width: 100%;
-  max-width: 100%;
-}
-
 .redesign-flow__preserve,
-.redesign-flow__ai-visuals,
 .redesign-flow__summary {
   margin-top: 1rem;
 }

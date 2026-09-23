@@ -26,7 +26,13 @@ from app.db.models.creative_generation import CreativeGeneration
 from app.domain.business_config import BusinessConfig
 from app.domain.creative import AssetInput, ReviewInput, build_creative_brief
 from app.domain.creative.brief import CreativeBrief
-from app.domain.enums import CreativeGenerationStatus, CreativeGenerationType, CreativeLevel, CreativeProviderName
+from app.domain.enums import (
+    BrandStrategy,
+    CreativeGenerationStatus,
+    CreativeGenerationType,
+    CreativeLevel,
+    CreativeProviderName,
+)
 from app.repositories.creative_generation import CreativeGenerationRepository
 
 
@@ -114,6 +120,8 @@ def orchestrate_generation(
     premium_provider: CreativeProvider | None = None,
     assets: Sequence[AssetInput] = (),
     reviews: Sequence[ReviewInput] = (),
+    brand_strategy: BrandStrategy | None = None,
+    creative_level: CreativeLevel | None = None,
 ) -> CreativeGeneration:
     """Runs one generation request end to end and returns the persisted,
     terminal CreativeGeneration row — every call (first generation,
@@ -123,8 +131,16 @@ def orchestrate_generation(
     the business's already-loaded, persisted rows (the caller — a router
     — fetches them via the repositories, this function touches only the
     session it's given, never a new query of its own for either).
+
+    brand_strategy/creative_level (A8.1): optional PER-REQUEST overrides
+    for exactly this one generation — never read from or written back to
+    business_config.creative (the business's own persisted preferences).
+    Absent (None), behavior is unchanged: the business's own configured
+    strategy/level apply, exactly as before this parameter existed.
     """
     creative = business_config.creative
+    effective_strategy = brand_strategy or creative.strategy
+    effective_level = creative_level or creative.level
     preferred_provider = None
     if creative.preferred_provider:
         try:
@@ -137,21 +153,27 @@ def orchestrate_generation(
             preferred_provider = None
 
     provider = select_provider(
-        creative_level=creative.level,
+        creative_level=effective_level,
         generation_type=generation_type,
         preferred_provider=preferred_provider,
         internal_provider=internal_provider,
         premium_provider=premium_provider,
     )
 
-    brief = build_creative_brief(business_config=business_config, assets=assets, reviews=reviews)
+    brief = build_creative_brief(
+        business_config=business_config,
+        assets=assets,
+        reviews=reviews,
+        brand_strategy=effective_strategy,
+        creative_level=effective_level,
+    )
 
     generation = CreativeGeneration(
         tenant_id=tenant_id,
         business_id=business_id,
         provider=provider.name,
         generation_type=generation_type,
-        creative_level=creative.level,
+        creative_level=effective_level,
         status=CreativeGenerationStatus.RUNNING,
         started_at=datetime.now(UTC),
     )

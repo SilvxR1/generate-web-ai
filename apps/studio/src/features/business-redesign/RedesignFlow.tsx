@@ -1,24 +1,20 @@
-import type { CreativeConfig } from "@generate-web-ai/business-config-types";
 import { generateSiteConfig } from "@generate-web-ai/website-generator";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import {
   approveWebsiteDraft,
   createCreativeGeneration,
   createWebsiteDraft,
-  listCreativeProviders,
   publishWebsiteDraft,
-  updateCreativeConfig,
   type BusinessAsset,
   type CreatedBusiness,
-  type CreativeProviderAvailability,
   type WebsiteDraft,
   type WebsiteState,
 } from "../../lib/api";
 import { SiteConfigPreview } from "../business-preview/SiteConfigPreview";
 
 type Direction = "evolve" | "new_direction";
-type Step = "intent" | "style" | "generating" | "proposal" | "error";
+type Step = "intent" | "confirm" | "generating" | "proposal" | "error";
 
 interface RedesignFlowProps {
   business: CreatedBusiness;
@@ -33,27 +29,38 @@ interface RedesignFlowProps {
 }
 
 /** A8.1 — the one obvious "redesign this website" entry point. Intent
- * first (what kind of change, then optionally what style), safe
- * defaults second: the primary path here always requests
- * CreativeLevel.BASIC (app.creative.orchestrator never requires a
- * premium provider at that level — see app.domain.business_config.
- * creative.CreativeConfig's own default) and the deterministic/internal
- * engine (app.creative.internal), the same free, always-available path
+ * first (what kind of change), safe defaults second: the primary path
+ * here always requests CreativeLevel.BASIC and BrandStrategy EVOLVE/
+ * NEW_DIRECTION as PER-REQUEST overrides on POST .../creative-generations
+ * (app.creative.orchestrator.orchestrate_generation's own brand_strategy/
+ * creative_level parameters — never written back to the business's own
+ * persisted CreativeConfig, so a redesign experiment never silently
+ * redefines the business's standing brand policy or generation tier).
+ * app.creative.orchestrator never requires a premium provider at BASIC —
+ * see app.domain.business_config.creative.CreativeConfig's own default —
+ * so this always resolves through the deterministic/internal engine
+ * (app.creative.internal), the same free, always-available path
  * GenerationsPanel's "Generate website" already uses — never CINEMATIC/
  * PREMIUM, and never Higgsfield, regardless of which direction the user
- * picks. Brand-change intent (this component's own A/B choice) and
- * paid-generation tier are deliberately kept separate, per A8.1 Section 6.
+ * picks.
+ *
+ * There is deliberately no free-text "describe the style you want" input
+ * here: app.domain.creative.brief.build_creative_brief (the one place a
+ * CreativeBrief is assembled, for every provider including Higgsfield)
+ * has no parameter that consumes arbitrary text — only the enum-valued
+ * brand_strategy/creative_level above. A textarea a user could type into
+ * without it affecting the result would be misleading UI, not a real
+ * feature, so this flow only offers the two real, honored inputs.
  *
  * Generate -> Preview -> Approve -> Publish is preserved exactly:
  * everything before handlePublish below only ever calls read/propose
- * endpoints (creative-config, creative-generations, website-drafts,
- * approve) — none of which touch the live website. Only handlePublish
- * calls POST .../website-drafts/{id}/publish, the one call that can
- * change production. */
+ * endpoints (creative-generations, website-drafts, approve) — none of
+ * which touch the live website. Only handlePublish calls POST
+ * .../website-drafts/{id}/publish, the one call that can change
+ * production. */
 export function RedesignFlow({ business, tenantId, assets, onPublished, onClose }: RedesignFlowProps) {
   const [step, setStep] = useState<Step>("intent");
   const [direction, setDirection] = useState<Direction | null>(null);
-  const [style, setStyle] = useState("");
   const [draft, setDraft] = useState<WebsiteDraft | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -61,30 +68,6 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
   const [approveError, setApproveError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
-
-  // Fetched independently, only while this flow is open — same lazy-load
-  // convention CreativeSection already uses — purely to give an honest
-  // "AI-generated premium visuals aren't available right now" message.
-  // This flow never sends a request that would actually invoke Higgsfield:
-  // it only ever requests CreativeLevel.BASIC (see handleGenerate below).
-  const [providers, setProviders] = useState<CreativeProviderAvailability[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    listCreativeProviders(business.id, tenantId)
-      .then((data) => {
-        if (!cancelled) setProviders(data);
-      })
-      .catch(() => {
-        if (!cancelled) setProviders(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [business.id, tenantId]);
-
-  const higgsfield = providers?.find((provider) => provider.provider === "higgsfield") ?? null;
-  const aiVisualsAvailable = higgsfield?.available === true;
 
   async function handleGenerate() {
     if (!direction) return;
@@ -96,10 +79,10 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
     setIsGenerating(true);
     setErrorMessage(null);
     try {
-      const config: CreativeConfig = { strategy: direction, level: "basic", preferred_provider: null };
-      await updateCreativeConfig(business.id, config, tenantId);
-
-      const generation = await createCreativeGeneration(business.id, "website", tenantId);
+      const generation = await createCreativeGeneration(business.id, "website", tenantId, {
+        brandStrategy: direction,
+        creativeLevel: "basic",
+      });
       if (generation.status !== "completed") {
         setErrorMessage("We couldn't build this proposal. Your live website has not changed.");
         setStep("error");
@@ -179,23 +162,16 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
             <button type="button" onClick={onClose}>
               Cancel
             </button>
-            <button type="button" disabled={!direction} onClick={() => setStep("style")}>
+            <button type="button" disabled={!direction} onClick={() => setStep("confirm")}>
               Continue
             </button>
           </div>
         </div>
       )}
 
-      {step === "style" && direction && (
+      {step === "confirm" && direction && (
         <div className="redesign-flow__style">
-          <h3>Describe the style you want (optional)</h3>
-          <textarea
-            value={style}
-            onChange={(event) => setStyle(event.target.value)}
-            placeholder="e.g. modern, minimal, premium, warm, editorial, playful, elegant…"
-            rows={3}
-            aria-label="Describe the style you want"
-          />
+          <h3>Review and generate</h3>
 
           <div className="redesign-flow__preserve">
             <p>
@@ -208,26 +184,11 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
             </ul>
           </div>
 
-          <div className="redesign-flow__ai-visuals">
-            <strong>AI-generated premium visuals</strong>{" "}
-            <span className="field-hint">
-              {aiVisualsAvailable
-                ? "Available as an advanced enhancement — not used by this proposal."
-                : "AI-generated premium visuals aren't available right now. This proposal will continue without them."}
-            </span>
-          </div>
-
           <div className="redesign-flow__summary">
             <h4>Redesign</h4>
             <dl>
               <dt>Direction</dt>
               <dd>{direction === "evolve" ? "Refresh the current design" : "Create a new design direction"}</dd>
-              {style.trim() && (
-                <>
-                  <dt>Style</dt>
-                  <dd>"{style.trim()}"</dd>
-                </>
-              )}
               <dt>Keeping</dt>
               <dd>Business information, logo, and real photographs</dd>
               <dt>AI-generated premium visuals</dt>
@@ -255,7 +216,7 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
             <button type="button" onClick={onClose}>
               Close
             </button>
-            <button type="button" onClick={() => setStep("style")}>
+            <button type="button" onClick={() => setStep("confirm")}>
               Try again
             </button>
           </div>
