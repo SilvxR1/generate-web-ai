@@ -101,8 +101,8 @@ def get_session(request: Request) -> Iterator[Session]:
         except Exception as exc:
             session.rollback()
             logger.critical(
-                "Database commit failed after a successful %s %s — any external provider call already made by "
-                "this request (e.g. a Cloudflare deployment) may now be ahead of what the database recorded: %s",
+                "Database commit failed after a successful %s %s request; external side effects already caused "
+                "by this request may now be ahead of what the database recorded; operator review required: %s",
                 request.method,
                 request.url.path,
                 exc,

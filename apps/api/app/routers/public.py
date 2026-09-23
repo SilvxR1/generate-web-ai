@@ -146,7 +146,13 @@ def create_public_lead(
         send_operator_alert(
             AlertSeverity.WARNING,
             operation="internal_notification",
-            summary=str(exc),
+            # Never str(exc) here: it can embed the provider's raw
+            # response body (e.g. ResendApiError includes response.text),
+            # which is not guaranteed never to echo back submitted
+            # content — this fixed string is the only thing sent to the
+            # external webhook. The full exception is still logged above,
+            # server-side only.
+            summary="Internal lead notification delivery failed.",
             business_id=business.id,
             tenant_id=business.tenant_id,
             lead_id=lead.id,
@@ -164,7 +170,9 @@ def create_public_lead(
         send_operator_alert(
             AlertSeverity.WARNING,
             operation="lead_acknowledgement_email",
-            summary=str(exc),
+            # Same reasoning as the internal_notification alert above:
+            # never str(exc) in a payload sent to an external webhook.
+            summary="Lead acknowledgement email delivery failed.",
             business_id=business.id,
             tenant_id=business.tenant_id,
             lead_id=lead.id,
