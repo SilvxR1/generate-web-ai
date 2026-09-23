@@ -288,6 +288,76 @@ separate, weaker path). `/public/businesses/{id}/leads`,
 gated solely by `X-Internal-Automation-Token`, with no session concept
 introduced — same file, explicit regression tests.
 
+## A3 / A3.1: Application Security Audit & Remediation
+
+Full audit report and severity classification: see the A3 session report
+(not committed as a standalone doc). This section documents the concrete
+policies the A3.1 remediation put in place — not a claim that the
+application is "fully secure," only what is actually implemented and
+tested as of this commit.
+
+**SVG/image upload policy (F-01).** `image/svg+xml` is no longer accepted
+for any business asset upload (upload, batch upload, or replace) — SVG
+support was removed entirely, not sanitized, since an SVG is fundamentally
+an XML+script document wearing an image extension and this codebase has
+no sanitizer. LOGO and IMAGE asset kinds are validated against their
+**actual bytes** (`app.storage.image_validation.validate_raster_image`):
+a real magic-byte sniff restricted to JPEG/PNG/WebP/GIF, a Pillow decode
+constrained to the sniffed format only, and the same
+`MAX_IMAGE_SIDE`/`MAX_IMAGE_PIXELS` decompression-bomb bounds already
+established in `app.domain.creative.brand_intelligence`. The client's
+declared Content-Type header is never trusted for these two kinds — only
+the real, decoded type is checked against the allowlist. VIDEO/DOCUMENT
+kinds are unaffected (still header-only, outside this finding's scope).
+
+**SSRF / redirect policy (F-02).** `app.monitoring.checks.check_http`
+(the website health checker) follows redirects manually, one hop at a
+time, and re-validates **every** redirect destination through
+`app.security.ssrf.validate_outbound_url` before ever requesting it — a
+public URL that redirects to `localhost`, a private IPv4/IPv6 range,
+link-local, or a cloud metadata address is never followed, reported
+identically to any other unreachable site. A legitimate public-to-public
+redirect (bare domain → www, http → https) is still followed normally, up
+to 5 hops, so real business websites that redirect are not misreported as
+down.
+
+**Paid-provider rate limits (F-03).** `POST .../creative-generations`,
+`POST .../creative-directions`, and `POST .../creative-directions/{id}/develop`
+— the three routes that trigger a real Higgsfield/Anthropic provider
+call — are now rate-limited via the same `rate_limit_dependency`
+infrastructure as login/asset-upload/website-health/public-lead/public-
+analytics (`creative_generation_rate_limit_per_minute`,
+`creative_direction_rate_limit_per_minute`,
+`creative_direction_develop_rate_limit_per_minute`, all in
+`app.config.Settings`, defaults 5/5/10 per minute). This sits alongside —
+never in place of — `CreativeBudget`'s existing per-request fan-out cap:
+the budget bounds one request's own cost, the rate limit bounds how often
+a caller can make that request at all. Tenant authorization
+(`get_current_tenant_id`) still runs independently and is unaffected by
+the rate limiter's presence.
+
+**Astro dependency (F-04).** Every workspace package's `astro` pin was
+bumped from `7.2.3` to `7.2.8`, resolving GHSA-26w7-cxv4-gfx2 (a critical
+RCE via AVIF image optimization). Verified: exactly one `astro` version
+resolves across the whole workspace (`pnpm why astro`), every
+Astro-building package's own tests pass, and all three real site builds
+(`site-template`, `reforma-casa-valencia`, `sacri-barber` — the latter
+via the `@astrojs/cloudflare` adapter) complete successfully.
+
+**Remaining dependency advisories.** `fast-uri`, `sharp`, `js-yaml`,
+`svgo`, and `devalue` were bumped to their patched versions via a
+targeted `pnpm-workspace.yaml` `overrides` block — every one is a deep,
+dev/build-time-only transitive dependency (Astro's own toolchain,
+`@astrojs/cloudflare`'s local Workers emulation, JSON-schema tooling),
+never part of a served runtime, and each bump is patch/minor with no
+breaking-change surface (confirmed: `pnpm audit` now reports 0
+critical/0 high). `vitest`/`@vitest/mocker`'s advisory (moderate, a path-
+traversal issue in Vitest's own dev/browser-mode file serving — not
+exposed by this repo's CI usage) requires a Vitest **major** version
+bump (3.x → 4.x) and was deliberately left alone as out of scope for this
+focused security remediation — tracked as a P2 hardening item for a
+dedicated, separately-tested upgrade.
+
 ## Manual GitHub configuration still required
 
 These are GitHub repository settings this environment cannot verify or

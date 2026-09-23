@@ -5,11 +5,22 @@ import io
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.config import settings
 from app.dependencies import get_rate_limiter, get_session
 from app.main import app
 from app.security.rate_limit import InMemoryRateLimiter, RateLimitExceededError
+
+
+def _valid_png_bytes() -> bytes:
+    """A3 F-01: asset upload now validates LOGO/IMAGE content against its
+    real bytes (app.storage.image_validation), not just the declared
+    Content-Type header — the old placeholder `b"fake-bytes"` no longer
+    passes and isn't what this file is testing anyway (rate limiting)."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), (1, 2, 3)).save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_allows_up_to_the_limit_then_raises():
@@ -66,7 +77,7 @@ def _upload(client: TestClient, business_id, tenant_id):
     return client.post(
         f"/businesses/{business_id}/assets/upload",
         headers={"X-Tenant-Id": str(tenant_id)},
-        files={"file": ("logo.png", io.BytesIO(b"fake-bytes"), "image/png")},
+        files={"file": ("logo.png", io.BytesIO(_valid_png_bytes()), "image/png")},
         data={"kind": "image"},
     )
 

@@ -105,6 +105,7 @@ from app.services.business_service import BusinessNotFoundError, BusinessService
 from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
+from app.storage.image_validation import InvalidImageError, validate_raster_image
 
 router = APIRouter(prefix="/businesses/{business_id}", tags=["creative"])
 
@@ -145,11 +146,63 @@ def _public_base_url(request: Request) -> str:
 # nothing beyond image/logo is exercised by Studio yet, and no
 # video/3D processing exists anywhere in this codebase.
 _ALLOWED_UPLOAD_CONTENT_TYPES: dict[AssetKind, frozenset[str]] = {
-    AssetKind.LOGO: frozenset({"image/jpeg", "image/png", "image/webp", "image/svg+xml"}),
+    # image/svg+xml deliberately removed (A3 F-01): an SVG is an XML+script
+    # document wearing an image extension, not a raster image — this
+    # codebase has no sanitizer and no compelling product requirement for
+    # one. LOGO/IMAGE are both raster-only now, enforced against the
+    # actual bytes (see _validate_uploaded_content), never the caller's
+    # declared Content-Type header.
+    AssetKind.LOGO: frozenset({"image/jpeg", "image/png", "image/webp"}),
     AssetKind.IMAGE: frozenset({"image/jpeg", "image/png", "image/webp", "image/gif"}),
     AssetKind.VIDEO: frozenset({"video/mp4", "video/webm", "video/quicktime"}),
     AssetKind.DOCUMENT: frozenset({"application/pdf"}),
 }
+
+# Kinds whose real bytes are verified with a Pillow decode (A3 F-01) —
+# VIDEO/DOCUMENT are outside this finding's scope and keep their
+# pre-existing header-only check.
+_RASTER_VERIFIED_KINDS = frozenset({AssetKind.LOGO, AssetKind.IMAGE})
+
+
+def _validate_uploaded_content(*, kind: AssetKind, declared_content_type: str | None, content: bytes) -> None:
+    """The real security boundary for LOGO/IMAGE uploads (A3 F-01): the
+    multipart Content-Type header is trivially spoofable, so those two
+    kinds are validated against their ACTUAL bytes (magic-byte sniff + a
+    real, bounded Pillow decode) — the declared header is never trusted,
+    only the sniffed-and-decoded type is checked against the allowlist.
+    VIDEO/DOCUMENT kinds are outside this finding's scope and keep the
+    original header-only check."""
+    allowed_content_types = _ALLOWED_UPLOAD_CONTENT_TYPES.get(kind)
+    if not allowed_content_types:
+        raise AppError(
+            f"Unsupported asset kind {kind.value!r}.",
+            code="unsupported_asset_content_type",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
+
+    if kind not in _RASTER_VERIFIED_KINDS:
+        if declared_content_type not in allowed_content_types:
+            raise AppError(
+                f"Unsupported content type {declared_content_type!r} for asset kind {kind.value!r}.",
+                code="unsupported_asset_content_type",
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            )
+        return
+
+    try:
+        real_content_type = validate_raster_image(content)
+    except InvalidImageError as exc:
+        raise AppError(
+            f"File is not a valid image ({exc.code}).",
+            code="invalid_image_content",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        ) from exc
+    if real_content_type not in allowed_content_types:
+        raise AppError(
+            f"Unsupported content type {real_content_type!r} for asset kind {kind.value!r}.",
+            code="unsupported_asset_content_type",
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+        )
 
 
 def _not_found() -> AppError:
@@ -266,18 +319,12 @@ def _save_uploaded_asset(
     validation failure; the batch endpoint catches that per file so one
     bad file never loses the others (LR-01's "show per-file failures
     without losing successful uploads")."""
-    allowed_content_types = _ALLOWED_UPLOAD_CONTENT_TYPES.get(kind)
-    if not allowed_content_types or file.content_type not in allowed_content_types:
-        raise AppError(
-            f"Unsupported content type {file.content_type!r} for asset kind {kind.value!r}.",
-            code="unsupported_asset_content_type",
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-        )
-
     # Read one byte past the limit so an oversized upload is detected
     # without ever buffering more than max_upload_size_bytes + 1 into
     # memory — this backend has no queue/streaming-to-disk pipeline for
     # uploads, so bounding the in-memory read is the whole size guard.
+    # Read BEFORE the content-type check (A3 F-01): LOGO/IMAGE validation
+    # needs the real bytes, not just the declared header.
     content = file.file.read(settings.max_upload_size_bytes + 1)
     if len(content) > settings.max_upload_size_bytes:
         raise AppError(
@@ -287,6 +334,8 @@ def _save_uploaded_asset(
         )
     if not content:
         raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
+
+    _validate_uploaded_content(kind=kind, declared_content_type=file.content_type, content=content)
 
     storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
     try:
@@ -532,14 +581,6 @@ def replace_business_asset(
     if asset is None:
         raise _asset_not_found()
 
-    allowed_content_types = _ALLOWED_UPLOAD_CONTENT_TYPES.get(asset.kind)
-    if not allowed_content_types or file.content_type not in allowed_content_types:
-        raise AppError(
-            f"Unsupported content type {file.content_type!r} for asset kind {asset.kind.value!r}.",
-            code="unsupported_asset_content_type",
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-        )
-
     content = file.file.read(settings.max_upload_size_bytes + 1)
     if len(content) > settings.max_upload_size_bytes:
         raise AppError(
@@ -549,6 +590,10 @@ def replace_business_asset(
         )
     if not content:
         raise AppError("Uploaded file is empty.", code="empty_asset_upload", status_code=status.HTTP_400_BAD_REQUEST)
+
+    # A3 F-01: real-bytes validation, same as the upload endpoints —
+    # replace must enforce the identical policy, never a weaker one.
+    _validate_uploaded_content(kind=asset.kind, declared_content_type=file.content_type, content=content)
 
     new_storage_key = generate_storage_key(business_id=str(business_id), original_filename=file.filename or "upload")
     try:
@@ -708,6 +753,9 @@ def create_creative_generation(
     session: Session = Depends(get_session),
     internal_provider: CreativeProvider = Depends(get_internal_creative_provider),
     premium_provider: CreativeProvider | None = Depends(get_optional_higgsfield_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="creative_generation", limit_attr="creative_generation_rate_limit_per_minute")
+    ),
 ) -> object:
     """Runs one CreativeOrchestrator generation and persists it —
     generate, regenerate, and "generate a variation" are all the same
@@ -1154,6 +1202,9 @@ def create_creative_directions_route(
     director: CreativeDirectorProvider = Depends(get_creative_director),
     storage: StorageProvider = Depends(get_storage_provider),
     image_qa: GeneratedImageQAService | None = Depends(get_generated_image_qa),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(key_prefix="creative_direction", limit_attr="creative_direction_rate_limit_per_minute")
+    ),
 ) -> list[object]:
     """P2.3 STEP A+B+C: explores candidate creative directions (~3 via
     Higgsfield when configured, 1 honest fallback via
@@ -1216,6 +1267,11 @@ def develop_creative_direction_route(
     session: Session = Depends(get_session),
     director: CreativeDirectorProvider = Depends(get_creative_director),
     storage: StorageProvider = Depends(get_storage_provider),
+    _rate_limit: None = Depends(
+        rate_limit_dependency(
+            key_prefix="creative_direction_develop", limit_attr="creative_direction_develop_rate_limit_per_minute"
+        )
+    ),
 ) -> object:
     """P2.3 STEP D: deepen one already-selected direction — never starts
     a new concept."""

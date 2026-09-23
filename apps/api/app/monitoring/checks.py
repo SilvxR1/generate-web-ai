@@ -46,6 +46,25 @@ class HttpCheckResult:
     error: str | None
 
 
+# A real business website legitimately 30x-redirecting (bare domain ->
+# www, http -> https) is common enough that simply refusing to follow
+# any redirect (follow_redirects=False with no further handling) would
+# misreport plenty of genuinely healthy sites as DOWN/DEGRADED — so
+# check_http follows redirects manually, up to this many hops, and
+# re-validates EVERY hop through validate_outbound_url before ever
+# requesting it (A3 F-02: httpx's own follow_redirects=True never
+# re-validates the destination after the first hop, which is exactly
+# what let a public URL redirect to a private/internal address
+# unnoticed).
+_MAX_REDIRECTS = 5
+
+
+def _is_redirect(response: object) -> bool:
+    status_code = getattr(response, "status_code", None)
+    headers = getattr(response, "headers", {}) or {}
+    return status_code is not None and 300 <= status_code < 400 and "location" in headers
+
+
 def check_http(url: str, *, timeout: float = DEFAULT_HTTP_TIMEOUT_SECONDS) -> HttpCheckResult:
     try:
         validate_outbound_url(url)
@@ -58,8 +77,40 @@ def check_http(url: str, *, timeout: float = DEFAULT_HTTP_TIMEOUT_SECONDS) -> Ht
         )
 
     started = time.monotonic()
+    current_url = url
     try:
-        response = httpx.get(url, timeout=timeout, follow_redirects=True)
+        for _ in range(_MAX_REDIRECTS + 1):
+            response = httpx.get(current_url, timeout=timeout, follow_redirects=False)
+            if not _is_redirect(response):
+                break
+            next_url = str(httpx.URL(current_url).join(response.headers["location"]))
+            try:
+                validate_outbound_url(next_url)
+            except SSRFValidationError:
+                # A public URL redirecting to a blocked destination is
+                # reported exactly like any other unreachable site —
+                # never followed, and never distinguished from a plain
+                # failure (no detail about *why* it was blocked leaks
+                # into an operator-facing field).
+                return HttpCheckResult(
+                    status=HealthStatus.DOWN,
+                    status_code=None,
+                    latency_ms=None,
+                    body=None,
+                    error="Could not reach the website.",
+                )
+            current_url = next_url
+        else:
+            # Exhausted _MAX_REDIRECTS while still redirecting — a
+            # redirect loop or an unreasonably long chain, reported the
+            # same as any other unreachable site.
+            return HttpCheckResult(
+                status=HealthStatus.DOWN,
+                status_code=None,
+                latency_ms=None,
+                body=None,
+                error="Could not reach the website.",
+            )
     except httpx.TimeoutException:
         return HttpCheckResult(
             status=HealthStatus.DOWN, status_code=None, latency_ms=None, body=None, error="Request timed out."

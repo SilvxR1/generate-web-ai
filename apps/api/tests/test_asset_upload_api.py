@@ -3,6 +3,15 @@ ingestion — content-type validation, size limits, safe storage keys,
 tenant/business scoping, and that deletion is scoped to its own business.
 Phase 19: 'asset upload; tenant isolation; cross-tenant asset access;
 asset deletion ownership; invalid asset type; invalid/oversized upload.'
+
+A3 F-01 (SVG upload / stored content injection remediation): LOGO/IMAGE
+uploads are now validated against their REAL bytes (see
+app.storage.image_validation), not the client-declared Content-Type
+header — every fixture below that exercises a successful LOGO/IMAGE
+upload therefore uses a genuinely valid, Pillow-encoded image rather than
+placeholder bytes like the old `b"fake-image-bytes"`. VIDEO/DOCUMENT kinds
+are outside this finding's scope and keep their original header-only
+fixtures unchanged.
 """
 
 import io
@@ -10,6 +19,7 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from app.config import settings
 from app.db.models.tenant import Tenant
@@ -18,6 +28,22 @@ from app.main import app
 from app.security.rate_limit import InMemoryRateLimiter
 from app.storage.errors import StorageProviderError
 from app.storage.provider import StorageProvider, StoredFile
+
+
+def _valid_image_bytes(*, format: str = "PNG", color: tuple[int, int, int] = (10, 20, 30)) -> bytes:
+    """A genuinely valid, tiny, Pillow-encoded image — what every
+    successful LOGO/IMAGE upload fixture below uses now that those two
+    kinds are validated against their real bytes (A3 F-01), not just a
+    declared Content-Type header."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (2, 2), color).save(buffer, format=format)
+    return buffer.getvalue()
+
+
+_VALID_PNG = _valid_image_bytes(format="PNG", color=(10, 20, 30))
+# A second, distinct valid image — used as _replace's default so "the
+# bytes actually changed" assertions stay meaningful.
+_VALID_PNG_REPLACEMENT = _valid_image_bytes(format="PNG", color=(99, 88, 77))
 
 
 @pytest.fixture()
@@ -62,7 +88,7 @@ def _upload(
     tenant_id,
     *,
     kind="image",
-    content=b"fake-image-bytes",
+    content=_VALID_PNG,
     content_type="image/png",
     filename="logo.png",
     category=None,
@@ -101,14 +127,84 @@ def test_upload_creates_a_real_asset_with_bytes_actually_persisted(
     # running against.
     storage_key = body["storage_url"].split("/uploads/", 1)[1]
     saved_path = tmp_path / "uploads" / storage_key
-    assert saved_path.read_bytes() == b"fake-image-bytes"
+    assert saved_path.read_bytes() == _VALID_PNG
 
 
 def test_upload_rejects_a_content_type_not_allowed_for_the_kind(client: TestClient, tenant: Tenant, business):
-    response = _upload(client, business.id, tenant.id, kind="logo", content_type="application/x-msdownload")
+    # VIDEO/DOCUMENT kinds are outside A3 F-01's scope and keep the
+    # original header-only content-type check — an .exe declared as a
+    # video is rejected purely on its declared Content-Type, same as
+    # before this remediation.
+    response = _upload(
+        client,
+        business.id,
+        tenant.id,
+        kind="video",
+        content=b"not-a-real-video",
+        content_type="application/x-msdownload",
+    )
 
     assert response.status_code == 415
     assert response.json()["error"]["code"] == "unsupported_asset_content_type"
+
+
+def test_upload_rejects_non_image_bytes_for_a_raster_verified_kind(client: TestClient, tenant: Tenant, business):
+    """A3 F-01: for LOGO/IMAGE, the declared Content-Type header is never
+    trusted — arbitrary bytes claiming to be a PNG are rejected because
+    they don't actually decode as one, not because of the header."""
+    response = _upload(
+        client,
+        business.id,
+        tenant.id,
+        kind="logo",
+        content=b"not-a-real-image-just-some-bytes",
+        content_type="image/png",
+    )
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "invalid_image_content"
+
+
+def test_upload_rejects_svg_entirely_for_logo(client: TestClient, tenant: Tenant, business):
+    """A3 F-01: SVG upload support was removed entirely (not sanitized) —
+    even a well-formed, script-free SVG is rejected, since the sniffer
+    never recognizes SVG as a supported raster format at all."""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>'
+
+    response = _upload(client, business.id, tenant.id, kind="logo", content=svg, content_type="image/svg+xml")
+
+    assert response.status_code == 415
+    assert response.json()["error"]["code"] == "invalid_image_content"
+
+
+def test_upload_accepts_a_valid_jpeg(client: TestClient, tenant: Tenant, business):
+    jpeg = _valid_image_bytes(format="JPEG")
+
+    response = _upload(client, business.id, tenant.id, kind="logo", content=jpeg, content_type="image/jpeg")
+
+    assert response.status_code == 201, response.text
+
+
+def test_upload_accepts_a_valid_webp(client: TestClient, tenant: Tenant, business):
+    webp = _valid_image_bytes(format="WEBP")
+
+    response = _upload(client, business.id, tenant.id, kind="logo", content=webp, content_type="image/webp")
+
+    assert response.status_code == 201, response.text
+
+
+def test_upload_accepts_the_real_type_even_when_the_declared_header_is_wrong(
+    client: TestClient, tenant: Tenant, business
+):
+    """A3 F-01's key property: policy is decided from the ACTUAL bytes,
+    not the declared header — a real PNG mislabeled as image/jpeg is
+    still accepted (mislabeling isn't itself a security problem once the
+    real bytes are verified safe), while the reverse (real garbage
+    labeled as a safe type) is rejected, per the tests above."""
+    response = _upload(client, business.id, tenant.id, kind="logo", content=_VALID_PNG, content_type="image/jpeg")
+
+    assert response.status_code == 201, response.text
+    assert response.json()["storage_url"]
 
 
 def test_upload_rejects_a_file_over_the_configured_size_limit(client: TestClient, tenant: Tenant, business):
@@ -203,9 +299,9 @@ def _upload_batch(
 
 def test_batch_upload_creates_an_asset_per_file_in_one_request(client: TestClient, tenant: Tenant, business):
     files = [
-        ("photo1.png", b"fake-image-bytes-1", "image/png"),
-        ("photo2.png", b"fake-image-bytes-2", "image/png"),
-        ("photo3.png", b"fake-image-bytes-3", "image/png"),
+        ("photo1.png", _valid_image_bytes(color=(1, 1, 1)), "image/png"),
+        ("photo2.png", _valid_image_bytes(color=(2, 2, 2)), "image/png"),
+        ("photo3.png", _valid_image_bytes(color=(3, 3, 3)), "image/png"),
     ]
 
     response = _upload_batch(client, business.id, tenant.id, files, category="gallery")
@@ -223,9 +319,9 @@ def test_batch_upload_creates_an_asset_per_file_in_one_request(client: TestClien
 
 def test_batch_upload_preserves_successful_files_when_one_fails(client: TestClient, tenant: Tenant, business):
     files = [
-        ("good1.png", b"real-bytes-1", "image/png"),
+        ("good1.png", _valid_image_bytes(color=(4, 4, 4)), "image/png"),
         ("bad.exe", b"not-an-image", "application/x-msdownload"),
-        ("good2.png", b"real-bytes-2", "image/png"),
+        ("good2.png", _valid_image_bytes(color=(5, 5, 5)), "image/png"),
     ]
 
     response = _upload_batch(client, business.id, tenant.id, files)
@@ -245,14 +341,17 @@ def test_batch_upload_preserves_successful_files_when_one_fails(client: TestClie
 
 
 def test_batch_upload_for_unknown_business_is_404(client: TestClient, tenant: Tenant):
-    response = _upload_batch(client, uuid.uuid4(), tenant.id, [("a.png", b"bytes", "image/png")])
+    response = _upload_batch(client, uuid.uuid4(), tenant.id, [("a.png", _VALID_PNG, "image/png")])
     assert response.status_code == 404
 
 
 def test_batch_uploaded_assets_cannot_be_read_through_another_tenant(
     client: TestClient, tenant: Tenant, other_tenant: Tenant, business
 ):
-    files = [("a.png", b"bytes-a", "image/png"), ("b.png", b"bytes-b", "image/png")]
+    files = [
+        ("a.png", _valid_image_bytes(color=(6, 6, 6)), "image/png"),
+        ("b.png", _valid_image_bytes(color=(7, 7, 7)), "image/png"),
+    ]
     created = _upload_batch(client, business.id, tenant.id, files)
     assert created.status_code == 207
     assert all(r["success"] for r in created.json())
@@ -328,7 +427,15 @@ def test_verify_cannot_be_run_through_another_tenant(
 # --- Re-upload / replacement (Phase 7 hotfix) ------------------------------
 
 
-def _replace(client: TestClient, business_id, asset_id, tenant_id, *, content=b"new-bytes", content_type="image/png"):
+def _replace(
+    client: TestClient,
+    business_id,
+    asset_id,
+    tenant_id,
+    *,
+    content=_VALID_PNG_REPLACEMENT,
+    content_type="image/png",
+):
     return client.post(
         f"/businesses/{business_id}/assets/{asset_id}/replace",
         headers=_headers(tenant_id),
@@ -353,7 +460,7 @@ def test_replace_repairs_the_same_asset_row_in_place(client: TestClient, tenant:
     assert updated["unavailable_reason"] is None
 
     new_key = updated["storage_url"].split("/uploads/", 1)[1]
-    assert (tmp_path / "uploads" / new_key).read_bytes() == b"new-bytes"
+    assert (tmp_path / "uploads" / new_key).read_bytes() == _VALID_PNG_REPLACEMENT
 
     # Only one row exists — the fix never created a second, orphaned asset.
     listed = client.get(f"/businesses/{business.id}/assets", headers=_headers(tenant.id))
@@ -371,14 +478,25 @@ def test_replace_deletes_the_old_object_when_it_still_existed(client: TestClient
     assert not (tmp_path / "uploads" / original_key).exists()
 
 
-def test_replace_rejects_a_content_type_not_allowed_for_the_existing_asset_kind(
+def test_replace_rejects_invalid_content_for_the_existing_asset_kind(
     client: TestClient, tenant: Tenant, business
 ):
+    """A3 F-01: replace must enforce the identical real-bytes policy as
+    upload — non-image bytes are rejected regardless of the declared
+    Content-Type, for the SAME existing asset's (raster-verified) kind."""
     created = _upload(client, business.id, tenant.id, kind="logo")
 
-    response = _replace(client, business.id, created.json()["id"], tenant.id, content_type="application/x-msdownload")
+    response = _replace(
+        client,
+        business.id,
+        created.json()["id"],
+        tenant.id,
+        content=b"not-a-real-image",
+        content_type="image/png",
+    )
 
     assert response.status_code == 415
+    assert response.json()["error"]["code"] == "invalid_image_content"
 
 
 def test_replace_for_unknown_asset_is_404(client: TestClient, tenant: Tenant, business):
