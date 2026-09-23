@@ -1,4 +1,5 @@
 import hmac
+import logging
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Annotated
@@ -32,6 +33,7 @@ from app.creative.provider import CreativeProvider
 from app.db.models.user import User
 from app.db.session import make_engine, make_session_factory
 from app.errors import AppError
+from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.notifications.resend import ResendNotificationSender
 from app.notifications.sender import NotificationSender
 from app.notifications.smtp import SmtpNotificationSender
@@ -44,6 +46,8 @@ from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import CloudflareR2StorageProvider, LocalStorageProvider, StorageProvider
+
+logger = logging.getLogger(__name__)
 
 # Module-level: one engine/pool for the process lifetime, per SQLAlchemy's
 # own recommendation (an Engine is meant to be created once, not per
@@ -64,14 +68,51 @@ def get_engine() -> Engine:
     return engine
 
 
-def get_session() -> Iterator[Session]:
+def get_session(request: Request) -> Iterator[Session]:
+    """A6.1 note on the "provider succeeded, DB commit failed" ambiguity
+    the A6 audit identified: `session.commit()` happens HERE, after the
+    route body has already returned successfully — not inside
+    app.publishing.service.publish_website itself, which only ever
+    flushes (see that function's own docstring on why). That means this
+    generic dependency, not the publish/rollback service layer, is the
+    one place that can observe a commit failing right after an
+    otherwise-successful request — but it has no way to know, from here,
+    whether that request was a publish that just made a real Cloudflare
+    deployment live, or an ordinary read/write to any other route. The
+    log line and alert below fire for ANY commit failure after ANY
+    successful route body — a generically useful, safe signal (a commit
+    failure after success is always worth a human looking), but not a
+    precise "a deployment may be live with no matching DB row" detector.
+    Building that precise detector would mean either passing "an
+    irreversible external side effect already happened" state down from
+    publish_website into this shared dependency, or moving commit
+    ownership into publish_website itself — both real transaction-
+    ownership changes, deliberately deferred to P1 rather than done here.
+    """
     session = _session_factory()
     try:
         yield session
-        session.commit()
     except Exception:
         session.rollback()
         raise
+    else:
+        try:
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            logger.critical(
+                "Database commit failed after a successful %s %s — any external provider call already made by "
+                "this request (e.g. a Cloudflare deployment) may now be ahead of what the database recorded: %s",
+                request.method,
+                request.url.path,
+                exc,
+            )
+            send_operator_alert(
+                AlertSeverity.CRITICAL,
+                operation="db_commit_after_success",
+                summary=f"{request.method} {request.url.path}: {exc}",
+            )
+            raise
     finally:
         session.close()
 

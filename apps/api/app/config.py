@@ -280,5 +280,14 @@ class Settings(BaseSettings):
     # of that cutover (see docs/a2-authentication-authorization.md).
     legacy_tenant_header_auth_enabled: bool = False
 
+    # app.monitoring.alerts (A6.1) — a single operator-alert webhook
+    # (Slack incoming-webhook shaped, but the sender itself stays
+    # provider-neutral). Optional: a server with this unset must start
+    # and behave identically, alerting nowhere — same "no default,
+    # feature degrades to a no-op" shape as n8n_base_url above, not a
+    # required-at-startup credential like credential_encryption_key.
+    # Never logged (see app.monitoring.alerts's own docstring).
+    alert_webhook_url: str | None = None
+
 
 settings = Settings()

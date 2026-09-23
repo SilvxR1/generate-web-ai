@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
@@ -106,6 +107,8 @@ from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
 from app.storage.image_validation import InvalidImageError, validate_raster_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/businesses/{business_id}", tags=["creative"])
 
@@ -341,6 +344,7 @@ def _save_uploaded_asset(
     try:
         storage.save(storage_key=storage_key, content=content, content_type=file.content_type)
     except StorageProviderError as exc:
+        logger.error("Asset storage save failed for tenant=%s business=%s: %s", tenant_id, business_id, exc)
         raise AppError(str(exc), code="storage_provider_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
     # _public_base_url resolves however this API is actually reachable
     # externally (Phase 8: never a plain http:// URL when Railway's own
@@ -599,6 +603,7 @@ def replace_business_asset(
     try:
         storage.save(storage_key=new_storage_key, content=content, content_type=file.content_type)
     except StorageProviderError as exc:
+        logger.error("Asset storage save failed for tenant=%s business=%s: %s", tenant_id, business_id, exc)
         raise AppError(str(exc), code="storage_provider_error", status_code=status.HTTP_502_BAD_GATEWAY) from exc
     new_storage_url = absolute_url_path(storage.url_path(new_storage_key), request_base_url=_public_base_url(request))
 

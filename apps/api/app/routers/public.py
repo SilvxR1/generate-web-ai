@@ -27,6 +27,7 @@ steps already below: it runs strictly after the Lead is committed, and
 its failure never loses the lead or fails this request.
 """
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -48,6 +49,7 @@ from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource, NotificationDeliveryStatus, WorkflowStatus
 from app.errors import AppError
 from app.leads.spam import is_spam
+from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.notifications.sender import NotificationSender
 from app.notifications.service import (
     LeadAcknowledgementEmailError,
@@ -61,6 +63,8 @@ from app.repositories.lead import LeadRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.analytics import AnalyticsEventCreateRequest, AnalyticsEventCreateResponse
 from app.schemas.public import PublicLeadCreateRequest, PublicLeadCreateResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/businesses/{business_id}", tags=["public"])
 
@@ -129,15 +133,42 @@ def create_public_lead(
         deliver_internal_notification(
             notification=notification, business_name=business.name, business_config=business_config, sender=sender
         )
-    except NotificationDeliveryError:
-        pass  # notification.delivered stays False; the lead itself is unaffected.
+    except NotificationDeliveryError as exc:
+        # notification.delivered stays False; the lead itself is
+        # unaffected (A6.1: the lead is the invariant, never this best-
+        # effort step). Logged + alerted immediately rather than only
+        # left as the existing NotificationDeliveryStatus.FAILED status
+        # field, which nothing today surfaces to an operator.
+        logger.error(
+            "Internal notification delivery failed for tenant=%s business=%s lead=%s: %s",
+            business.tenant_id, business.id, lead.id, exc,
+        )
+        send_operator_alert(
+            AlertSeverity.WARNING,
+            operation="internal_notification",
+            summary=str(exc),
+            business_id=business.id,
+            tenant_id=business.tenant_id,
+            lead_id=lead.id,
+        )
 
     try:
         deliver_lead_acknowledgement_email(
             lead=lead, business_name=business.name, business_config=business_config, sender=sender
         )
-    except LeadAcknowledgementEmailError:
-        pass
+    except LeadAcknowledgementEmailError as exc:
+        logger.error(
+            "Lead acknowledgement email failed for tenant=%s business=%s lead=%s: %s",
+            business.tenant_id, business.id, lead.id, exc,
+        )
+        send_operator_alert(
+            AlertSeverity.WARNING,
+            operation="lead_acknowledgement_email",
+            summary=str(exc),
+            business_id=business.id,
+            tenant_id=business.tenant_id,
+            lead_id=lead.id,
+        )
 
     _dispatch_to_automation_if_configured(session, lead)
 
@@ -163,8 +194,11 @@ def _dispatch_to_automation_if_configured(session: Session, lead: Lead) -> None:
     try:
         dispatch_lead_to_workflow(lead=lead, workflow=workflow, n8n_base_url=settings.n8n_base_url)
         lead.automation_dispatch_status = NotificationDeliveryStatus.SENT
-    except LeadDispatchError:
+    except LeadDispatchError as exc:
         lead.automation_dispatch_status = NotificationDeliveryStatus.FAILED
+        logger.error(
+            "n8n dispatch failed for tenant=%s business=%s lead=%s: %s", lead.tenant_id, lead.business_id, lead.id, exc
+        )
 
 
 @router.post("/events", response_model=AnalyticsEventCreateResponse, status_code=status.HTTP_201_CREATED)
