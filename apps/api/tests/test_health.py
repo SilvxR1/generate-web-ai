@@ -21,7 +21,7 @@ def test_health_ok_when_database_reachable():
 def test_health_degraded_when_database_unreachable():
     class _BrokenEngine:
         def connect(self):
-            raise RuntimeError("could not connect to database")
+            raise RuntimeError("could not connect to database: postgres.railway.internal unreachable")
 
     app.dependency_overrides[get_engine] = lambda: _BrokenEngine()
     try:
@@ -32,6 +32,26 @@ def test_health_degraded_when_database_unreachable():
         body = response.json()
         assert body["status"] == "degraded"
         assert body["dependencies"]["database"]["status"] == "error"
-        assert "could not connect" in body["dependencies"]["database"]["detail"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_health_never_exposes_raw_exception_details_publicly():
+    """A6.1: /health is public and unauthenticated — a raw SQLAlchemy/
+    driver exception (which can name an internal hostname) must never
+    reach the response body, only the server-side log."""
+
+    class _BrokenEngine:
+        def connect(self):
+            raise RuntimeError("could not connect to database: postgres.railway.internal unreachable")
+
+    app.dependency_overrides[get_engine] = lambda: _BrokenEngine()
+    try:
+        client = TestClient(app)
+        response = client.get("/health")
+
+        assert "detail" not in response.json()["dependencies"]["database"]
+        assert "postgres.railway.internal" not in response.text
+        assert "could not connect" not in response.text
     finally:
         app.dependency_overrides.clear()

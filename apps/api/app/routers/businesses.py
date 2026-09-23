@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -32,6 +33,7 @@ from app.domain.business_config import BusinessConfig, Location
 from app.domain.enums import BusinessVertical, LeadStatus, NotificationDeliveryStatus, WorkflowStatus
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
+from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.publishing.domain_provider import DomainProvider
 from app.publishing.domains import (
     CustomDomainError,
@@ -70,6 +72,8 @@ from app.schemas.readiness import ProductionReadinessReport
 from app.schemas.site_config import SiteConfigPayload
 from app.schemas.website_version import WebsiteVersionSummary
 from app.services.business_service import BusinessNotFoundError, BusinessService, SlugConflictError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/businesses", tags=["businesses"])
 
@@ -405,6 +409,9 @@ def retry_lead_automation_dispatch(
         lead.automation_dispatch_status = NotificationDeliveryStatus.SENT
     except LeadDispatchError as exc:
         lead.automation_dispatch_status = NotificationDeliveryStatus.FAILED
+        logger.error(
+            "n8n dispatch retry failed for tenant=%s business=%s lead=%s: %s", tenant_id, business_id, lead_id, exc
+        )
         session.flush()
         raise AppError(str(exc), code="automation_dispatch_failed", status_code=502) from exc
 
@@ -478,6 +485,18 @@ def publish_business_website(
             publisher=publisher,
         )
     except WebsitePublishError as exc:
+        # publish_website only ever raises this for a real pipeline
+        # failure (code="website_publish_failed", 502) — never for a
+        # user/input error — so every occurrence here is alert-worthy,
+        # no status_code filtering needed (unlike rollback below, which
+        # shares this same except block with a genuine 404 case).
+        send_operator_alert(
+            AlertSeverity.CRITICAL,
+            operation="website_publish",
+            summary=str(exc),
+            business_id=business_id,
+            tenant_id=tenant_id,
+        )
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
 
@@ -595,6 +614,22 @@ def rollback_business_website(
             publisher=publisher,
         )
     except WebsitePublishError as exc:
+        # This except block catches two distinct cases rollback_to_version
+        # can raise: an unknown version_id (code="website_version_not_found",
+        # 404 — a normal, user-caused input error, never alert-worthy) and
+        # a real republish failure bubbled up from publish_website
+        # (code="website_publish_failed", 502 — the same alert-worthy
+        # condition the publish route above reports). status_code is the
+        # generic signal that distinguishes them without hardcoding either
+        # exact code string here.
+        if exc.status_code >= 500:
+            send_operator_alert(
+                AlertSeverity.CRITICAL,
+                operation="website_rollback",
+                summary=str(exc),
+                business_id=business_id,
+                tenant_id=tenant_id,
+            )
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
 

@@ -19,6 +19,7 @@ docstring for the full "why"; this module no longer touches
 `site_config`'s contact-form `action` at all.
 """
 
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -36,6 +37,8 @@ from app.publishing.publisher import WebsitePublisher
 from app.repositories.website import WebsiteRepository
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import StorageProvider
+
+logger = logging.getLogger(__name__)
 
 
 class WebsitePublishError(Exception):
@@ -119,6 +122,19 @@ def publish_website(
         artifact = build_site(site_config)
         published = publisher.publish(site_id=site_id, artifact=artifact)
     except WebsitePublisherError as exc:
+        # One choke point for every publish-pipeline failure (A6.1):
+        # build_site raises SiteBuildError, publisher.publish raises a
+        # plain WebsitePublisherError (wrangler failure/timeout) or
+        # CloudflareApiError (deployment verification failure) — all
+        # WebsitePublisherError subclasses/instances, all caught here,
+        # so this is the one place that needs a log line rather than
+        # scattering one at each of those raise sites. `str(exc)` is
+        # already a sanitized, human-written message (never a raw
+        # subprocess/API response body, never a credential — see each
+        # raise site's own message).
+        logger.error(
+            "Website publish failed for tenant=%s business=%s: %s", tenant_id, business_id, exc
+        )
         if website is None:
             website = Website(
                 tenant_id=tenant_id,
