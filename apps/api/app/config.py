@@ -233,6 +233,21 @@ class Settings(BaseSettings):
     # a real operator logs in rarely, so a low budget costs nothing real
     # while meaningfully slowing brute-force/credential-stuffing attempts.
     auth_login_rate_limit_per_minute: int = 5
+    # A3 F-03: the three routes that trigger a REAL Higgsfield/Anthropic
+    # provider call (app.routers.creative) had no rate limit at all before
+    # this — only get_current_tenant_id (a real session + TenantAccess
+    # grant) and, per-request, CreativeBudget's own fan-out cap. Neither
+    # of those bounds how often an authenticated (or session-hijacked —
+    # see A3's SVG finding) caller can invoke them per minute, which is
+    # exactly the gap a compromised session or a simple retry-loop script
+    # could turn into real, unbounded cost. Budgets below are deliberately
+    # tight — a real operator triggers these a handful of times per
+    # working session, never in a tight loop — while still comfortably
+    # allowing normal Studio use (generate a few candidates, develop one,
+    # try again after reviewing).
+    creative_generation_rate_limit_per_minute: int = 5
+    creative_direction_rate_limit_per_minute: int = 5
+    creative_direction_develop_rate_limit_per_minute: int = 10
 
     # UserSession (A2, app.db.models.user_session) lifetime. A session row
     # is looked up by the SHA-256 digest of its own opaque token on every

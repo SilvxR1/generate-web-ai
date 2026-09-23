@@ -14,8 +14,22 @@ minimumReleaseAgeExclude:
   - '@turbo/linux-arm64@2.10.11'
   - '@turbo/windows-64@2.10.11'
   - '@turbo/windows-arm64@2.10.11'
-  - astro@7.2.3
+  - astro@7.2.8
   - turbo@2.10.11
   - '@cloudflare/workers-types@5.20260821.1'
   - miniflare@5.20260820.0-alpha
   - wrangler@4.125.0
+# A3 F-04/G: targeted, non-breaking patched-version overrides for
+# transitive dependencies flagged by `pnpm audit`/Dependabot — every one
+# below is a deep dev/build-time-only dependency (astro's own internal
+# toolchain, @astrojs/cloudflare's local Workers emulation, json-schema
+# tooling), never part of a served runtime, and each bump is a patch or
+# minor version with no breaking-change surface. `vitest`/`@vitest/mocker`
+# were deliberately left alone here — their fix requires a major version
+# bump (3.x -> 4.x), out of scope for this focused security remediation.
+overrides:
+  fast-uri: ^3.1.6
+  sharp: ^0.35.4
+  js-yaml: ^4.3.2
+  svgo: ^4.1.0
+  devalue: ^5.9.1
