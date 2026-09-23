@@ -1138,7 +1138,9 @@ describe("NewBusiness preview step", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(200, [])); // business assets: none yet
 
     await user.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText(/created/);
+    // A8.1: editing an existing business's info is not a "created" event —
+    // wait for the real signal that we're back on the preview step instead.
+    await screen.findByRole("button", { name: "Redesign website" });
 
     const putCall = fetchMock.mock.calls.find(([, init]) => (init as RequestInit).method === "PUT");
     expect(putCall).toBeDefined();
@@ -1400,9 +1402,15 @@ describe("NewBusiness reopening an existing business (Studio dashboard's Open ac
 
     renderReopenPage("biz-reforma-pepe");
 
+    // A8.1: reopening an existing business must never show creation-success
+    // messaging — only a fresh POST /businesses should ever trigger that.
     expect(
-      await screen.findByText(new RegExp(`Business "${exampleReformaValenciaConfig.business_profile.name}" created`)),
+      await screen.findByText(exampleReformaValenciaConfig.business_profile.name, {
+        selector: ".preview-step__business-name",
+      }),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/created \(slug:/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Redesign website" })).toBeInTheDocument();
     // Same PreviewStep affordances a freshly-created business gets —
     // publish/activate/leads are all reachable from here, once their
     // own (mocked) persisted-state reads have resolved.

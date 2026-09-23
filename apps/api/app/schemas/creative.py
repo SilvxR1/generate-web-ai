@@ -144,11 +144,24 @@ class CreativeGenerationRequest(BaseModel):
     CreativeOrchestrator run (Section 11). Every call is safe to repeat
     (Section 16: generate, regenerate, and variation all go through this
     same endpoint; see app.creative.orchestrator's own docstring for why
-    that never risks the currently published site)."""
+    that never risks the currently published site).
+
+    brand_strategy/creative_level (A8.1): optional PER-REQUEST overrides,
+    threaded straight through to app.domain.creative.brief.
+    build_creative_brief's own existing brand_strategy/creative_level
+    parameters — absent, the business's persisted CreativeConfig.strategy/
+    level apply exactly as before. Never written back to CreativeConfig;
+    this request describes only THIS generation, not a change to the
+    business's standing preferences. Exists specifically so a caller like
+    Studio's redesign flow can request a one-off, deliberately safe/non-
+    paid generation (e.g. always CreativeLevel.BASIC) without silently
+    overwriting whatever level/strategy the business has saved."""
 
     model_config = ConfigDict(extra="forbid")
 
     generation_type: CreativeGenerationType = CreativeGenerationType.WEBSITE
+    brand_strategy: BrandStrategy | None = None
+    creative_level: CreativeLevel | None = None
 
 
 class CreativeProviderAvailability(BaseModel):

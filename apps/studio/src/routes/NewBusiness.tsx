@@ -26,7 +26,11 @@ type Step =
   | { kind: "load-error"; error: CategorizedError }
   | { kind: "briefing"; isAnalyzing: boolean }
   | { kind: "reviewing"; analysis: AnalyzeBusinessResponse; draft: BusinessDraft; editingBusiness: CreatedBusiness | null }
-  | { kind: "preview"; business: CreatedBusiness };
+  // justCreated: true only immediately after a brand-new business was just
+  // saved (never after reopening an existing one, and never after editing
+  // an existing business's info) — PreviewStep uses this, not `businessId`,
+  // to decide whether "created" messaging is accurate (A8.1).
+  | { kind: "preview"; business: CreatedBusiness; justCreated: boolean };
 
 export function NewBusiness() {
   const { tenantId } = useOutletContext<TenantOutletContext>();
@@ -51,7 +55,7 @@ export function NewBusiness() {
     setStep({ kind: "loading-existing" });
     getBusiness(businessId, tenantId)
       .then((business) => {
-        if (!cancelled) setStep({ kind: "preview", business });
+        if (!cancelled) setStep({ kind: "preview", business, justCreated: false });
       })
       .catch((error: unknown) => {
         if (!cancelled) setStep({ kind: "load-error", error: categorizeBusinessFetchError(error) });
@@ -89,7 +93,7 @@ export function NewBusiness() {
       const business = editingBusiness
         ? await updateBusiness(editingBusiness.id, payload, tenantId)
         : await createBusiness(payload, tenantId);
-      setStep({ kind: "preview", business });
+      setStep({ kind: "preview", business, justCreated: editingBusiness === null });
     } catch (error) {
       setSaveError(categorizeSaveError(error));
     } finally {
@@ -142,7 +146,9 @@ export function NewBusiness() {
           onBack={() => {
             setSaveError(null);
             setStep(
-              step.editingBusiness ? { kind: "preview", business: step.editingBusiness } : { kind: "briefing", isAnalyzing: false },
+              step.editingBusiness
+                ? { kind: "preview", business: step.editingBusiness, justCreated: false }
+                : { kind: "briefing", isAnalyzing: false },
             );
           }}
           onCreate={() => handleSave(step.draft, step.editingBusiness)}
@@ -156,6 +162,7 @@ export function NewBusiness() {
         <PreviewStep
           business={step.business}
           tenantId={tenantId}
+          justCreated={step.justCreated}
           onEdit={() => {
             setSaveError(null);
             const analysis: AnalyzeBusinessResponse = {
