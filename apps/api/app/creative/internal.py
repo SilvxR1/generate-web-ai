@@ -18,6 +18,7 @@ BusinessConfig.website docstring warns against for a different field.
 """
 
 from app.creative.errors import CreativeCapabilityNotSupportedError
+from app.creative.internal_direction import derive_website_creative_direction, direction_context_from_brief
 from app.creative.provider import CreativeGenerationResult, CreativeProvider
 from app.domain.creative import CreativeBrief
 from app.domain.enums import CreativeGenerationStatus, CreativeGenerationType, CreativeProviderName
@@ -42,16 +43,24 @@ class InternalCreativeProvider(CreativeProvider):
         )
 
     def generate_website(self, brief: CreativeBrief) -> CreativeGenerationResult:
-        del brief
+        """A8.2.2: deterministically derives a WebsiteCreativeDirection v1
+        from the brief's presentation context (app.creative.
+        internal_direction) — how the site should present the business's
+        real content for the requested brand strategy. Content itself is
+        still produced by packages/website-generator's generateSiteConfig()
+        from the business's own BusinessConfig; the direction is carried
+        on the typed `website_direction` result field only (not yet
+        persisted or consumed — A8.2.4 / A8.2.3)."""
+        direction = derive_website_creative_direction(direction_context_from_brief(brief))
         return CreativeGenerationResult(
             status=CreativeGenerationStatus.COMPLETED,
+            website_direction=direction,
             raw_metadata={
                 "strategy": "deterministic_site_config",
                 "note": (
                     "Website structure/content is produced by packages/website-generator's "
-                    "generateSiteConfig() from the business's own BusinessConfig, not by this "
-                    "provider — this result only records that the internal pipeline (not an "
-                    "external creative provider) satisfied this generation request."
+                    "generateSiteConfig() from the business's own BusinessConfig; this provider "
+                    "derives a deterministic WebsiteCreativeDirection for how it is presented."
                 ),
             },
         )

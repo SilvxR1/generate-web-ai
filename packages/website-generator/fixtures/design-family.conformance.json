@@ -1,0 +1,119 @@
+{
+  "_comment": "A8.2.2 design-family conformance: packages/website-generator's resolveDesignFamily (canonical, TypeScript) and apps/api app.creative.internal_direction.resolve_design_family (its Python mirror, used to derive a WebsiteCreativeDirection) must agree on every case.",
+  "cases": [
+    {
+      "industry": "home_renovation",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "construction"
+    },
+    {
+      "industry": "home_renovation",
+      "visualStyle": "warm, mediterranean, editorial, handmade",
+      "realGalleryAssetCount": 10,
+      "family": "construction"
+    },
+    {
+      "industry": "real_estate",
+      "visualStyle": null,
+      "realGalleryAssetCount": 5,
+      "family": "construction"
+    },
+    {
+      "industry": "clinic",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "professional_services"
+    },
+    {
+      "industry": "agency",
+      "visualStyle": "handmade boutique",
+      "realGalleryAssetCount": 3,
+      "family": "professional_services"
+    },
+    {
+      "industry": "b2b_services",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "professional_services"
+    },
+    {
+      "industry": "restaurant",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "hospitality"
+    },
+    {
+      "industry": "hotel",
+      "visualStyle": "corporate",
+      "realGalleryAssetCount": 9,
+      "family": "hospitality"
+    },
+    {
+      "industry": "ecommerce",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "generic"
+    },
+    {
+      "industry": "ecommerce",
+      "visualStyle": null,
+      "realGalleryAssetCount": 1,
+      "family": "generic"
+    },
+    {
+      "industry": "ecommerce",
+      "visualStyle": null,
+      "realGalleryAssetCount": 2,
+      "family": "artisan"
+    },
+    {
+      "industry": "ecommerce",
+      "visualStyle": "Hecho a mano, crochet",
+      "realGalleryAssetCount": 0,
+      "family": "artisan"
+    },
+    {
+      "industry": "ecommerce",
+      "visualStyle": "industrial, robust",
+      "realGalleryAssetCount": 8,
+      "family": "construction"
+    },
+    {
+      "industry": "other",
+      "visualStyle": null,
+      "realGalleryAssetCount": 0,
+      "family": "generic"
+    },
+    {
+      "industry": "other",
+      "visualStyle": null,
+      "realGalleryAssetCount": 38,
+      "family": "artisan"
+    },
+    {
+      "industry": "other",
+      "visualStyle": "cozy culinary",
+      "realGalleryAssetCount": 0,
+      "family": "hospitality"
+    },
+    {
+      "industry": "other",
+      "visualStyle": "corporate trust",
+      "realGalleryAssetCount": 0,
+      "family": "professional_services"
+    },
+    {
+      "industry": "other",
+      "visualStyle": "minimal",
+      "realGalleryAssetCount": 1,
+      "family": "generic"
+    },
+    {
+      "industry": "other",
+      "visualStyle": "",
+      "realGalleryAssetCount": 0,
+      "family": "generic"
+    }
+  ]
+}
