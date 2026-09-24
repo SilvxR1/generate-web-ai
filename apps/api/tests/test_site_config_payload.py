@@ -140,3 +140,33 @@ def test_block_content_stays_opaque_but_block_level_unknown_keys_are_still_dropp
     dumped = _round_trip(_site_config([block]))
 
     assert dumped["pages"][0]["blocks"][0] == {"type": "gallery", "id": "gallery", "content": {"items": []}}
+
+
+# --- A8.3.3: SiteConfig.navigation --------------------------------------------
+
+
+def test_navigation_round_trips_and_stays_omitted_when_absent():
+    navigation = [{"label": "Nuestra historia", "href": "#about"}, {"label": "Hablemos", "href": "#contact"}]
+
+    assert _round_trip({**_site_config([]), "navigation": navigation})["navigation"] == navigation
+    assert "navigation" not in _round_trip(_site_config([]))
+
+
+@pytest.mark.parametrize(
+    "href", ["https://evil.example.com", "/privacy", "javascript:alert(1)", "#", "#has space", "contact"]
+)
+def test_navigation_only_accepts_in_page_anchors(href):
+    with pytest.raises(ValidationError):
+        SiteConfigPayload.model_validate({**_site_config([]), "navigation": [{"label": "X", "href": href}]})
+
+
+def test_navigation_items_drop_unknown_keys_and_the_list_is_bounded():
+    dumped = _round_trip(
+        {**_site_config([]), "navigation": [{"label": "Hablemos", "href": "#contact", "target": "_blank"}]}
+    )
+    assert dumped["navigation"] == [{"label": "Hablemos", "href": "#contact"}]
+
+    with pytest.raises(ValidationError):
+        SiteConfigPayload.model_validate(
+            {**_site_config([]), "navigation": [{"label": f"S{i}", "href": f"#s{i}"} for i in range(13)]}
+        )

@@ -46,6 +46,7 @@ import {
 import { buildBusiness } from "./business.ts";
 import { sanitizeCustomerCopy, selectHeroSupportingCopy } from "./copy.ts";
 import { buildLegalPages } from "./legal.ts";
+import { buildNavigation } from "./navigation.ts";
 import { getPreset } from "./presets.ts";
 import { resolvePresentation } from "./presentation.ts";
 import { buildSeo } from "./seo.ts";
@@ -150,6 +151,7 @@ export function generateSiteConfig(
   const siteWhatsappConfig = buildWhatsAppConfig(whatsappConfig);
 
   const page: PageConfig = { path: "/", blocks };
+  const navigation = buildNavigation(blocks);
   const legalPages = buildLegalPages(profile, legalProfile ?? undefined, Boolean(contactBlock?.content.form));
   const business = buildBusiness(profile);
 
@@ -173,5 +175,6 @@ export function generateSiteConfig(
     seo: buildSeo(profile, website, customerFacingDescription),
     ...(business ? { business } : {}),
     ...(siteWhatsappConfig ? { whatsapp: siteWhatsappConfig } : {}),
+    ...(navigation.length > 0 ? { navigation } : {}),
   };
 }

@@ -144,6 +144,19 @@ class SitePagePayload(BaseModel):
         return _drop_unset_optionals(self, handler, frozenset({"seo"}))
 
 
+class SiteNavigationItemPayload(BaseModel):
+    """SiteNavigationItem (A8.3.3): one header link. Declared explicitly (the
+    A8.1.2 lesson — extra="ignore" would otherwise drop the whole list) and
+    restricted to in-page "#<id>" anchors, the only links the generator
+    produces; PlatformContract's broken_anchor_target still checks that
+    each resolves in the built page."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    label: str = Field(min_length=1, max_length=80)
+    href: str = Field(pattern=r"^#[\w-]+$", max_length=101)
+
+
 class SiteConfigPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -174,3 +187,10 @@ class SiteConfigPayload(BaseModel):
     # without this, a real business's WhatsApp config would silently
     # vanish between Studio's preview and the actual `astro build`.
     whatsapp: dict[str, Any] | None = None
+    # A8.3.3: header navigation, generated from the sections that render.
+    navigation: list[SiteNavigationItemPayload] | None = Field(default=None, max_length=12)
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Omitted navigation stays omitted (SiteConfig.navigation is optional).
+        return _drop_unset_optionals(self, handler, frozenset({"navigation"}))

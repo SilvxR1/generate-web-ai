@@ -39,7 +39,10 @@ export interface Props {
 }
 
 const { siteConfig } = Astro.props;
-const { theme, seo, brand, pages, whatsapp, businessId } = siteConfig;
+const { theme, seo, brand, pages, whatsapp, businessId, navigation } = siteConfig;
+// A8.3.3: header navigation, generated only for sections that render (see
+// packages/website-generator navigation.ts). `?? []` also covers a JSON null.
+const navItems = navigation ?? [];
 const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL as string | undefined;
 
 // Same digits-only + optional prefilled-message shape
@@ -96,17 +99,37 @@ if (theme.spacing) {
     <meta name="description" content={seo.description} />
   </head>
   <body>
+    {/* A8.3.3: the header owns identity + navigation. The tagline is real
+      * brand data but belongs to the hero (A8.3.2), so it isn't repeated here. */}
     <header class="site-header">
-      {brand.logo ? (
-        <img
-          class="site-header__logo"
-          src={typeof brand.logo.src === "string" ? brand.logo.src : brand.logo.src.src}
-          alt={brand.logo.alt}
-        />
-      ) : (
-        <p class="site-header__brand">{brand.name}</p>
+      <a class="site-header__home" href="/">
+        {brand.logo ? (
+          <img
+            class="site-header__logo"
+            src={typeof brand.logo.src === "string" ? brand.logo.src : brand.logo.src.src}
+            alt={brand.logo.alt}
+          />
+        ) : (
+          <span class="site-header__brand">{brand.name}</span>
+        )}
+      </a>
+      {navItems.length > 0 && (
+        <nav class="site-nav" aria-label="Main">
+          <ul class="site-nav__list">
+            {navItems.map((item) => (
+              <li><a href={item.href}>{item.label}</a></li>
+            ))}
+          </ul>
+          <details class="site-nav__menu">
+            <summary>Menu</summary>
+            <ul>
+              {navItems.map((item) => (
+                <li><a href={item.href}>{item.label}</a></li>
+              ))}
+            </ul>
+          </details>
+        </nav>
       )}
-      {brand.tagline && <p class="site-header__tagline">{brand.tagline}</p>}
     </header>
     <main>
       <slot />
@@ -140,29 +163,133 @@ if (theme.spacing) {
   }
 
   .site-header {
-    padding: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+    padding: 0.875rem 1.25rem;
     border-bottom: 1px solid var(--ui-color-border, #e5e7eb);
   }
 
-  .site-header__brand {
-    margin: 0;
-    font-family: var(--ui-font-display, var(--ui-font-sans, system-ui, sans-serif));
-    font-size: 1.5rem;
-    font-weight: 700;
+  .site-header__home {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    max-width: 100%;
+    color: inherit;
+    text-decoration: none;
   }
 
+  .site-header__brand {
+    font-family: var(--ui-font-display, var(--ui-font-sans, system-ui, sans-serif));
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  /* Legible without dominating: contained (never cropped), aspect ratio kept. */
   .site-header__logo {
     display: block;
-    max-height: 2.75rem;
-    max-width: 12rem;
+    max-height: 3rem;
+    max-width: min(11rem, 60vw);
     width: auto;
     height: auto;
     object-fit: contain;
   }
 
-  .site-header__tagline {
-    margin: 0.25rem 0 0;
-    opacity: 0.75;
+  .site-header a:focus-visible,
+  .site-nav summary:focus-visible {
+    outline: 2px solid var(--ui-color-primary, #2563eb);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+
+  /* Stays right-aligned even when a long business name wraps it to its own row. */
+  .site-nav {
+    margin-left: auto;
+  }
+
+  .site-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .site-nav a {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .site-nav a:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+  }
+
+  /* Mobile: a native disclosure (no JavaScript); the inline list is hidden. */
+  .site-nav__list {
+    display: none;
+  }
+
+  .site-nav__menu summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 0.5rem 0.875rem;
+    border: 1px solid var(--ui-color-border, #e5e7eb);
+    border-radius: var(--ui-radius, 0.5rem);
+    font-weight: 600;
+  }
+
+  .site-nav__menu summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .site-nav__menu ul {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem 1.25rem 1rem;
+    background-color: var(--ui-color-bg, #ffffff);
+    border-bottom: 1px solid var(--ui-color-border, #e5e7eb);
+  }
+
+  .site-nav__menu li a {
+    display: block;
+    padding: 0.75rem 0;
+  }
+
+  .site-header {
+    position: relative;
+  }
+
+  @media (min-width: 768px) {
+    .site-header {
+      padding: 1rem 2rem;
+    }
+
+    .site-header__logo {
+      max-height: 4rem;
+      max-width: 14rem;
+    }
+
+    .site-header__brand {
+      font-size: 1.5rem;
+    }
+
+    .site-nav__list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.75rem;
+    }
+
+    .site-nav__menu {
+      display: none;
+    }
   }
 
   .site-footer {
