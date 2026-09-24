@@ -317,7 +317,21 @@
           "closes": "18:00"
         }
       ]
-    }
+    },
+    "navigation": [
+      {
+        "label": "Nuestros servicios",
+        "href": "#services"
+      },
+      {
+        "label": "Sobre nosotros",
+        "href": "#about"
+      },
+      {
+        "label": "Contacto",
+        "href": "#contact"
+      }
+    ]
   },
   "reforma_projects_and_hero": {
     "brand": {
@@ -692,7 +706,25 @@
           "closes": "18:00"
         }
       ]
-    }
+    },
+    "navigation": [
+      {
+        "label": "Nuestros servicios",
+        "href": "#services"
+      },
+      {
+        "label": "Nuestros proyectos",
+        "href": "#gallery"
+      },
+      {
+        "label": "Sobre nosotros",
+        "href": "#about"
+      },
+      {
+        "label": "Contacto",
+        "href": "#contact"
+      }
+    ]
   },
   "handmade_shop_38_photos": {
     "brand": {
@@ -1113,7 +1145,21 @@
     },
     "business": {
       "email": "hola@example.com"
-    }
+    },
+    "navigation": [
+      {
+        "label": "Nuestras creaciones",
+        "href": "#gallery"
+      },
+      {
+        "label": "Lo que hacemos",
+        "href": "#services"
+      },
+      {
+        "label": "Hablemos",
+        "href": "#contact"
+      }
+    ]
   },
   "clinic_unbranded": {
     "brand": {
@@ -1333,7 +1379,25 @@
     },
     "business": {
       "telephone": "+34 600 111 222"
-    }
+    },
+    "navigation": [
+      {
+        "label": "Servicios",
+        "href": "#services"
+      },
+      {
+        "label": "Quiénes somos",
+        "href": "#about"
+      },
+      {
+        "label": "Nuestro trabajo",
+        "href": "#gallery"
+      },
+      {
+        "label": "Contacto",
+        "href": "#contact"
+      }
+    ]
   },
   "restaurant_with_hero": {
     "brand": {
@@ -1538,7 +1602,17 @@
         "streetAddress": "Calle Mar 1",
         "addressLocality": "Valencia"
       }
-    }
+    },
+    "navigation": [
+      {
+        "label": "Un vistazo por dentro",
+        "href": "#gallery"
+      },
+      {
+        "label": "Contacto",
+        "href": "#contact"
+      }
+    ]
   },
   "minimal": {
     "brand": {

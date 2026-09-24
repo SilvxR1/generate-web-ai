@@ -392,7 +392,25 @@
             "closes": "18:00"
           }
         ]
-      }
+      },
+      "navigation": [
+        {
+          "label": "Nuestros servicios",
+          "href": "#services"
+        },
+        {
+          "label": "Nuestros proyectos",
+          "href": "#gallery"
+        },
+        {
+          "label": "Sobre nosotros",
+          "href": "#about"
+        },
+        {
+          "label": "Contacto",
+          "href": "#contact"
+        }
+      ]
     },
     "new_direction": {
       "brand": {
@@ -770,7 +788,25 @@
             "closes": "18:00"
           }
         ]
-      }
+      },
+      "navigation": [
+        {
+          "label": "Sobre nosotros",
+          "href": "#about"
+        },
+        {
+          "label": "Nuestros proyectos",
+          "href": "#gallery"
+        },
+        {
+          "label": "Nuestros servicios",
+          "href": "#services"
+        },
+        {
+          "label": "Contacto",
+          "href": "#contact"
+        }
+      ]
     },
     "undirected": {
       "brand": {
@@ -1175,7 +1211,25 @@
             "closes": "18:00"
           }
         ]
-      }
+      },
+      "navigation": [
+        {
+          "label": "Nuestros servicios",
+          "href": "#services"
+        },
+        {
+          "label": "Nuestros proyectos",
+          "href": "#gallery"
+        },
+        {
+          "label": "Sobre nosotros",
+          "href": "#about"
+        },
+        {
+          "label": "Contacto",
+          "href": "#contact"
+        }
+      ]
     }
   },
   "handmade_shop": {
@@ -1489,7 +1543,25 @@
       "business": {
         "telephone": "+34 600 111 222",
         "email": "hola@example.com"
-      }
+      },
+      "navigation": [
+        {
+          "label": "Nuestras creaciones",
+          "href": "#gallery"
+        },
+        {
+          "label": "Lo que hacemos",
+          "href": "#services"
+        },
+        {
+          "label": "Nuestra historia",
+          "href": "#about"
+        },
+        {
+          "label": "Hablemos",
+          "href": "#contact"
+        }
+      ]
     },
     "new_direction": {
       "brand": {
@@ -1781,7 +1853,25 @@
       "business": {
         "telephone": "+34 600 111 222",
         "email": "hola@example.com"
-      }
+      },
+      "navigation": [
+        {
+          "label": "Nuestra historia",
+          "href": "#about"
+        },
+        {
+          "label": "Nuestras creaciones",
+          "href": "#gallery"
+        },
+        {
+          "label": "Lo que hacemos",
+          "href": "#services"
+        },
+        {
+          "label": "Hablemos",
+          "href": "#contact"
+        }
+      ]
     },
     "undirected": {
       "brand": {
@@ -2253,7 +2343,25 @@
       "business": {
         "telephone": "+34 600 111 222",
         "email": "hola@example.com"
-      }
+      },
+      "navigation": [
+        {
+          "label": "Nuestras creaciones",
+          "href": "#gallery"
+        },
+        {
+          "label": "Lo que hacemos",
+          "href": "#services"
+        },
+        {
+          "label": "Nuestra historia",
+          "href": "#about"
+        },
+        {
+          "label": "Hablemos",
+          "href": "#contact"
+        }
+      ]
     }
   }
 }

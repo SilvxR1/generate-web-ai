@@ -6,6 +6,13 @@ import type { SEOConfig } from "./seo.ts";
 import type { ThemeConfig } from "./theme.ts";
 import type { WhatsAppConfig } from "./whatsapp.ts";
 
+/** A8.3.3: one header navigation link. Generated navigation only ever
+ * points at an in-page section that actually renders (`href` is "#<id>"). */
+export interface SiteNavigationItem {
+  label: string;
+  href: string;
+}
+
 export interface SiteConfig {
   brand: BrandConfig;
   theme: ThemeConfig;
@@ -28,4 +35,6 @@ export interface SiteConfig {
    * is a safe no-op when this is absent (e.g. a local `astro build` run
    * outside the real publishing pipeline). */
   businessId?: string;
+  /** Header navigation, in page order. Omitted when there are no sections worth linking. */
+  navigation?: SiteNavigationItem[];
 }

@@ -1,0 +1,830 @@
+{
+  "full_with_logo": {
+    "brand": {
+      "name": "Taller Ovillo",
+      "logo": {
+        "src": "https://cdn.example.com/logo.png",
+        "alt": "Logo de Taller Ovillo"
+      }
+    },
+    "theme": {
+      "colors": {
+        "primary": "#b5651d",
+        "secondary": "#6b4226",
+        "accent": "#e8a33d",
+        "background": "#fdf8f3",
+        "foreground": "#3a2e28"
+      },
+      "fonts": {
+        "sans": "'Trebuchet MS', 'Segoe UI', sans-serif",
+        "display": "Georgia, 'Times New Roman', serif"
+      },
+      "radius": {
+        "base": "1rem",
+        "lg": "1.5rem"
+      }
+    },
+    "pages": [
+      {
+        "path": "/",
+        "blocks": [
+          {
+            "type": "hero",
+            "id": "hero",
+            "content": {
+              "heading": "Taller Ovillo",
+              "subheading": "Taller familiar de piezas de ganchillo hechas a mano en Valencia.",
+              "primaryAction": {
+                "label": "Contactar",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Ver servicios",
+                "href": "#services"
+              },
+              "image": {
+                "src": "https://cdn.example.com/photo-0.jpg",
+                "alt": "Foto de Taller Ovillo"
+              }
+            }
+          },
+          {
+            "type": "gallery",
+            "id": "gallery",
+            "content": {
+              "heading": "Nuestras creaciones",
+              "items": [
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-1.jpg",
+                    "alt": "Taller Ovillo — foto 1"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-2.jpg",
+                    "alt": "Taller Ovillo — foto 2"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-3.jpg",
+                    "alt": "Taller Ovillo — foto 3"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-4.jpg",
+                    "alt": "Taller Ovillo — foto 4"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-5.jpg",
+                    "alt": "Taller Ovillo — foto 5"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-6.jpg",
+                    "alt": "Taller Ovillo — foto 6"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-7.jpg",
+                    "alt": "Taller Ovillo — foto 7"
+                  }
+                }
+              ]
+            },
+            "background": "base"
+          },
+          {
+            "type": "services",
+            "id": "services",
+            "content": {
+              "heading": "Lo que hacemos",
+              "items": [
+                {
+                  "title": "Encargos personalizados",
+                  "description": "Piezas únicas bajo pedido."
+                }
+              ]
+            },
+            "background": "surface"
+          },
+          {
+            "type": "features",
+            "id": "about",
+            "content": {
+              "heading": "Nuestra historia",
+              "subheading": "Taller familiar de piezas de ganchillo hechas a mano en Valencia. Creamos muñecos y decoración infantil por encargo.",
+              "items": [
+                {
+                  "title": "¿Para quién?",
+                  "description": "Familias que buscan regalos hechos a mano."
+                }
+              ]
+            },
+            "background": "base"
+          },
+          {
+            "type": "cta",
+            "id": "cta",
+            "content": {
+              "heading": "¿Tienes una idea en mente?",
+              "primaryAction": {
+                "label": "Cuéntanosla",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Llamar ahora",
+                "href": "tel:+34600111222"
+              }
+            }
+          },
+          {
+            "type": "contact",
+            "id": "contact",
+            "content": {
+              "heading": "Hablemos",
+              "details": [
+                {
+                  "label": "Teléfono",
+                  "value": "+34 600 111 222",
+                  "href": "tel:+34600111222"
+                },
+                {
+                  "label": "Email",
+                  "value": "hola@example.com",
+                  "href": "mailto:hola@example.com"
+                }
+              ],
+              "form": {
+                "fields": [
+                  {
+                    "name": "name",
+                    "label": "Nombre",
+                    "type": "text",
+                    "required": true
+                  },
+                  {
+                    "name": "email",
+                    "label": "Email",
+                    "type": "email",
+                    "required": true
+                  }
+                ],
+                "submitLabel": "Enviar mensaje"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "path": "/privacy",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Privacy Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Who we are",
+                  "body": "Taller Ovillo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                },
+                {
+                  "heading": "Information we collect",
+                  "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                },
+                {
+                  "heading": "Cookies",
+                  "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
+                },
+                {
+                  "heading": "Third parties we work with",
+                  "body": "No third-party data processors have been listed for this business."
+                },
+                {
+                  "heading": "Your rights",
+                  "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
+                },
+                {
+                  "heading": "Changes to this policy",
+                  "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/terms",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Terms of Service",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Acceptance of these terms",
+                  "body": "By using this website, you agree to these terms. This website is operated by Taller Ovillo."
+                },
+                {
+                  "heading": "Use of this website",
+                  "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                },
+                {
+                  "heading": "No warranty",
+                  "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                },
+                {
+                  "heading": "Contact",
+                  "body": "Questions about these terms can be sent to hola@example.com."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/cookies",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Cookie Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "How this site uses cookies",
+                  "body": "Taller Ovillo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                },
+                {
+                  "heading": "Managing your preferences",
+                  "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "features": {
+      "contactForm": true,
+      "chatbot": false,
+      "booking": false
+    },
+    "seo": {
+      "title": "Taller Ovillo",
+      "description": "Taller familiar de piezas de ganchillo hechas a mano en Valencia. Creamos muñecos y decoración infantil por encargo."
+    },
+    "business": {
+      "telephone": "+34 600 111 222",
+      "email": "hola@example.com"
+    },
+    "navigation": [
+      {
+        "label": "Nuestras creaciones",
+        "href": "#gallery"
+      },
+      {
+        "label": "Lo que hacemos",
+        "href": "#services"
+      },
+      {
+        "label": "Nuestra historia",
+        "href": "#about"
+      },
+      {
+        "label": "Hablemos",
+        "href": "#contact"
+      }
+    ]
+  },
+  "no_logo_missing_sections_long_name": {
+    "brand": {
+      "name": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar"
+    },
+    "theme": {
+      "colors": {
+        "primary": "#1f2937",
+        "secondary": "#374151",
+        "accent": "#d97706",
+        "background": "#ffffff",
+        "foreground": "#111827"
+      },
+      "fonts": {
+        "sans": "-apple-system, 'Segoe UI', sans-serif",
+        "display": "'Arial Black', 'Helvetica Neue', sans-serif"
+      },
+      "radius": {
+        "base": "0.25rem",
+        "lg": "0.375rem"
+      }
+    },
+    "pages": [
+      {
+        "path": "/",
+        "blocks": [
+          {
+            "type": "hero",
+            "id": "hero",
+            "content": {
+              "heading": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar",
+              "subheading": "Reformas integrales y servicios para el hogar.",
+              "primaryAction": {
+                "label": "Contactar",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Ver servicios",
+                "href": "#services"
+              }
+            }
+          },
+          {
+            "type": "services",
+            "id": "services",
+            "content": {
+              "heading": "Nuestros servicios",
+              "items": [
+                {
+                  "title": "Reforma de baños",
+                  "description": "Baños completos."
+                }
+              ]
+            }
+          },
+          {
+            "type": "cta",
+            "id": "cta",
+            "content": {
+              "heading": "¿Listo para empezar tu proyecto?",
+              "primaryAction": {
+                "label": "Solicitar presupuesto",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Llamar ahora",
+                "href": "tel:+34600333444"
+              },
+              "variant": "emphasis"
+            }
+          },
+          {
+            "type": "contact",
+            "id": "contact",
+            "content": {
+              "heading": "Contacto",
+              "details": [
+                {
+                  "label": "Teléfono",
+                  "value": "+34 600 333 444",
+                  "href": "tel:+34600333444"
+                }
+              ],
+              "form": {
+                "fields": [
+                  {
+                    "name": "name",
+                    "label": "Nombre",
+                    "type": "text",
+                    "required": true
+                  },
+                  {
+                    "name": "email",
+                    "label": "Email",
+                    "type": "email",
+                    "required": true
+                  }
+                ],
+                "submitLabel": "Enviar solicitud"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "path": "/privacy",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Privacy Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Who we are",
+                  "body": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: Not provided."
+                },
+                {
+                  "heading": "Information we collect",
+                  "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                },
+                {
+                  "heading": "Cookies",
+                  "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
+                },
+                {
+                  "heading": "Third parties we work with",
+                  "body": "No third-party data processors have been listed for this business."
+                },
+                {
+                  "heading": "Your rights",
+                  "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at Not provided.."
+                },
+                {
+                  "heading": "Changes to this policy",
+                  "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/terms",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Terms of Service",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Acceptance of these terms",
+                  "body": "By using this website, you agree to these terms. This website is operated by Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar."
+                },
+                {
+                  "heading": "Use of this website",
+                  "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                },
+                {
+                  "heading": "No warranty",
+                  "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                },
+                {
+                  "heading": "Contact",
+                  "body": "Questions about these terms can be sent to Not provided.."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/cookies",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Cookie Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "How this site uses cookies",
+                  "body": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                },
+                {
+                  "heading": "Managing your preferences",
+                  "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "features": {
+      "contactForm": true,
+      "chatbot": false,
+      "booking": false
+    },
+    "seo": {
+      "title": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar",
+      "description": "Reformas Sur, Instalaciones y Mantenimiento Integral del Hogar — servicios profesionales"
+    },
+    "business": {
+      "telephone": "+34 600 333 444"
+    },
+    "navigation": [
+      {
+        "label": "Nuestros servicios",
+        "href": "#services"
+      },
+      {
+        "label": "Contacto",
+        "href": "#contact"
+      }
+    ]
+  },
+  "reordered_new_direction": {
+    "brand": {
+      "name": "Taller Ovillo",
+      "logo": {
+        "src": "https://cdn.example.com/logo.png",
+        "alt": "Logo de Taller Ovillo"
+      }
+    },
+    "theme": {
+      "colors": {
+        "primary": "#7c2d12",
+        "secondary": "#78350f",
+        "accent": "#ea580c",
+        "background": "#fffbf5",
+        "foreground": "#292524"
+      },
+      "fonts": {
+        "sans": "Georgia, 'Times New Roman', serif",
+        "display": "Georgia, 'Times New Roman', serif"
+      },
+      "radius": {
+        "base": "0.5rem",
+        "lg": "0.75rem"
+      },
+      "spacing": {
+        "sectionSm": "clamp(2rem, 1.8rem + 1vw, 2.75rem)",
+        "sectionMd": "clamp(2.5rem, 2.2rem + 1.5vw, 3.5rem)",
+        "sectionLg": "clamp(3rem, 2.5rem + 2vw, 4.25rem)"
+      }
+    },
+    "pages": [
+      {
+        "path": "/",
+        "blocks": [
+          {
+            "type": "hero",
+            "id": "hero",
+            "content": {
+              "heading": "Taller Ovillo",
+              "subheading": "Taller familiar de piezas de ganchillo hechas a mano en Valencia.",
+              "primaryAction": {
+                "label": "Contactar",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Ver servicios",
+                "href": "#services"
+              },
+              "image": {
+                "src": "https://cdn.example.com/photo-0.jpg",
+                "alt": "Foto de Taller Ovillo"
+              },
+              "layout": "centered"
+            }
+          },
+          {
+            "type": "features",
+            "id": "about",
+            "content": {
+              "heading": "Nuestra historia",
+              "subheading": "Taller familiar de piezas de ganchillo hechas a mano en Valencia. Creamos muñecos y decoración infantil por encargo.",
+              "items": [
+                {
+                  "title": "¿Para quién?",
+                  "description": "Familias que buscan regalos hechos a mano."
+                }
+              ]
+            }
+          },
+          {
+            "type": "services",
+            "id": "services",
+            "content": {
+              "heading": "Lo que hacemos",
+              "items": [
+                {
+                  "title": "Encargos personalizados",
+                  "description": "Piezas únicas bajo pedido."
+                }
+              ]
+            }
+          },
+          {
+            "type": "gallery",
+            "id": "gallery",
+            "content": {
+              "heading": "Nuestras creaciones",
+              "items": [
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-1.jpg",
+                    "alt": "Taller Ovillo — foto 1"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-2.jpg",
+                    "alt": "Taller Ovillo — foto 2"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-3.jpg",
+                    "alt": "Taller Ovillo — foto 3"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-4.jpg",
+                    "alt": "Taller Ovillo — foto 4"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-5.jpg",
+                    "alt": "Taller Ovillo — foto 5"
+                  }
+                },
+                {
+                  "image": {
+                    "src": "https://cdn.example.com/photo-6.jpg",
+                    "alt": "Taller Ovillo — foto 6"
+                  }
+                }
+              ],
+              "layout": "grid"
+            }
+          },
+          {
+            "type": "cta",
+            "id": "cta",
+            "content": {
+              "heading": "¿Tienes una idea en mente?",
+              "primaryAction": {
+                "label": "Cuéntanosla",
+                "href": "#contact"
+              },
+              "secondaryAction": {
+                "label": "Llamar ahora",
+                "href": "tel:+34600111222"
+              },
+              "variant": "emphasis"
+            }
+          },
+          {
+            "type": "contact",
+            "id": "contact",
+            "content": {
+              "heading": "Hablemos",
+              "details": [
+                {
+                  "label": "Teléfono",
+                  "value": "+34 600 111 222",
+                  "href": "tel:+34600111222"
+                },
+                {
+                  "label": "Email",
+                  "value": "hola@example.com",
+                  "href": "mailto:hola@example.com"
+                }
+              ],
+              "form": {
+                "fields": [
+                  {
+                    "name": "name",
+                    "label": "Nombre",
+                    "type": "text",
+                    "required": true
+                  },
+                  {
+                    "name": "email",
+                    "label": "Email",
+                    "type": "email",
+                    "required": true
+                  }
+                ],
+                "submitLabel": "Enviar mensaje"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "path": "/privacy",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Privacy Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Who we are",
+                  "body": "Taller Ovillo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                },
+                {
+                  "heading": "Information we collect",
+                  "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                },
+                {
+                  "heading": "Cookies",
+                  "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
+                },
+                {
+                  "heading": "Third parties we work with",
+                  "body": "No third-party data processors have been listed for this business."
+                },
+                {
+                  "heading": "Your rights",
+                  "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
+                },
+                {
+                  "heading": "Changes to this policy",
+                  "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/terms",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Terms of Service",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "Acceptance of these terms",
+                  "body": "By using this website, you agree to these terms. This website is operated by Taller Ovillo."
+                },
+                {
+                  "heading": "Use of this website",
+                  "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                },
+                {
+                  "heading": "No warranty",
+                  "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                },
+                {
+                  "heading": "Contact",
+                  "body": "Questions about these terms can be sent to hola@example.com."
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "path": "/cookies",
+        "blocks": [
+          {
+            "type": "legal_text",
+            "content": {
+              "heading": "Cookie Policy",
+              "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+              "sections": [
+                {
+                  "heading": "How this site uses cookies",
+                  "body": "Taller Ovillo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                },
+                {
+                  "heading": "Managing your preferences",
+                  "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ],
+    "features": {
+      "contactForm": true,
+      "chatbot": false,
+      "booking": false
+    },
+    "seo": {
+      "title": "Taller Ovillo",
+      "description": "Taller familiar de piezas de ganchillo hechas a mano en Valencia. Creamos muñecos y decoración infantil por encargo."
+    },
+    "business": {
+      "telephone": "+34 600 111 222",
+      "email": "hola@example.com"
+    },
+    "navigation": [
+      {
+        "label": "Nuestra historia",
+        "href": "#about"
+      },
+      {
+        "label": "Lo que hacemos",
+        "href": "#services"
+      },
+      {
+        "label": "Nuestras creaciones",
+        "href": "#gallery"
+      },
+      {
+        "label": "Hablemos",
+        "href": "#contact"
+      }
+    ]
+  }
+}
