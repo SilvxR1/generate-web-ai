@@ -19,9 +19,9 @@ never this backend. `business`/`features` pass through opaque and
 untouched — this backend has nothing to say about their shape either.
 """
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 
 class SiteBrandPayload(BaseModel):
@@ -72,11 +72,43 @@ class SiteThemePayload(BaseModel):
     radius: SiteThemeRadiusPayload
 
 
+def _drop_unset_optionals(
+    model: BaseModel, handler: SerializerFunctionWrapHandler, optional_fields: frozenset[str]
+) -> dict[str, Any]:
+    """Serializes `model`, omitting each of `optional_fields` whose value is
+    None. packages/site-config models these as TypeScript optional
+    properties (`id?: string`, `reveal?: boolean`, ...), and the Astro
+    blocks fall back to their own defaults only for a genuinely *absent*
+    prop (`reveal = true`, `background = "base"`) — never for JSON
+    `null` — so an omitted field must stay omitted on its way to the real
+    build, not become `null`."""
+    data = handler(model)
+    return {key: value for key, value in data.items() if not (key in optional_fields and value is None)}
+
+
 class SiteBlockPayload(BaseModel):
+    """One BlockConfig (packages/site-config's blocks.ts): `type`/`content`
+    plus BlockConfigBase's own metadata — `id` (the in-page anchor target
+    a "#services"/"#contact" link resolves to), `background` and
+    `reveal`. Declared explicitly (A8.1.2) because extra="ignore" used to
+    silently drop all three before the real build, so every generated
+    section rendered without its id and PlatformContract rightly rejected
+    the resulting dead anchors."""
+
     model_config = ConfigDict(extra="ignore")
 
     type: str
     content: dict[str, Any] = Field(default_factory=dict)
+    # Same character class app.qa.platform_contract matches ids/anchors
+    # with, so an accepted id is always one an in-page "#id" link can
+    # resolve to — anything else (spaces, quotes) is a clean 422 here.
+    id: str | None = Field(default=None, max_length=100, pattern=r"^[\w-]+$")
+    background: Literal["base", "surface"] | None = None
+    reveal: bool | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _drop_unset_optionals(self, handler, frozenset({"id", "background", "reveal"}))
 
 
 class SitePagePayload(BaseModel):
@@ -84,6 +116,14 @@ class SitePagePayload(BaseModel):
 
     path: str
     blocks: list[SiteBlockPayload] = Field(default_factory=list)
+    # PageConfig.seo (packages/site-config pages.ts): an optional per-page
+    # override of the site-wide `seo` — part of the same canonical
+    # contract, so preserved rather than silently dropped.
+    seo: SiteSEOPayload | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _drop_unset_optionals(self, handler, frozenset({"seo"}))
 
 
 class SiteConfigPayload(BaseModel):

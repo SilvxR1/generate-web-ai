@@ -489,3 +489,85 @@ def test_republish_after_deactivate_brings_the_site_back_live(client: TestClient
     assert republished.status_code == 200, republished.text
     assert republished.json()["status"] == "live"
     assert republished.json()["live_url"] is not None
+
+
+# --- A8.1.2: the direct publish route enforces PlatformContract ----------
+
+
+def _give_business_a_config(session, business_id: str) -> None:
+    from app.db.models.business import Business
+    from app.domain.business_config import BusinessConfig, BusinessProfile
+    from app.domain.enums import BusinessVertical
+
+    business = session.get(Business, uuid.UUID(business_id))
+    business.config = BusinessConfig(
+        business_profile=BusinessProfile(
+            name="Reforma Casa Valencia", slug="reforma-casa-valencia", industry=BusinessVertical.HOME_RENOVATION
+        )
+    ).model_dump(mode="json")
+    session.flush()
+
+
+def _contract_compliant_artifact(index_html: bytes) -> WebsiteArtifact:
+    def page(title: str) -> bytes:
+        return (
+            f'<html><head><title>{title}</title><meta name="description" content="{title}">'
+            '<meta name="viewport" content="width=device-width"></head><body>'
+            "<script>window.gwaConsent={}</script></body></html>"
+        ).encode()
+
+    return WebsiteArtifact(
+        files={
+            "index.html": index_html,
+            "privacy/index.html": page("Privacy"),
+            "terms/index.html": page("Terms"),
+            "cookies/index.html": page("Cookies"),
+        }
+    )
+
+
+_INDEX_WITH_ANCHOR = (
+    b'<html><head><title>Reforma</title><meta name="description" content="Reformas">'
+    b'<meta name="viewport" content="width=device-width"></head><body><script>window.gwaConsent={}</script>'
+    b'<a href="#contact">Contactar</a>%s<form data-gwa-lead-form></form><script>submitLead()</script></body></html>'
+)
+
+
+def test_direct_publish_refuses_a_build_that_fails_platform_contract_and_never_deploys(
+    client: TestClient, tenant: Tenant, session, monkeypatch: pytest.MonkeyPatch
+):
+    artifact = _contract_compliant_artifact(_INDEX_WITH_ANCHOR % b"")  # #contact with no id="contact"
+    monkeypatch.setattr("app.publishing.service.build_site", lambda site_config: artifact)
+    alerts: list = []
+    monkeypatch.setattr("app.routers.businesses.send_operator_alert", lambda *a, **k: alerts.append((a, k)))
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("must not call Cloudflare for a build PlatformContract refused")
+
+    _mock_cloudflare(handler)
+    business = _create_business(client, tenant.id)
+    _give_business_a_config(session, business["id"])
+
+    response = _publish(client, business["id"], tenant.id)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "platform_contract_violation"
+    assert 'An anchor targets "#contact"' in response.json()["error"]["message"]
+    assert alerts == []  # a refused build is not a pipeline failure
+    # Nothing was deployed, so nothing is recorded — never a FAILED row.
+    assert _get_website(client, business["id"], tenant.id).json() is None
+
+
+def test_direct_publish_of_a_contract_compliant_build_still_goes_live(
+    client: TestClient, tenant: Tenant, session, monkeypatch: pytest.MonkeyPatch
+):
+    artifact = _contract_compliant_artifact(_INDEX_WITH_ANCHOR % b'<section id="contact"></section>')
+    monkeypatch.setattr("app.publishing.service.build_site", lambda site_config: artifact)
+    _mock_cloudflare(_successful_cloudflare_handler())
+    business = _create_business(client, tenant.id)
+    _give_business_a_config(session, business["id"])
+
+    response = _publish(client, business["id"], tenant.id)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "live"

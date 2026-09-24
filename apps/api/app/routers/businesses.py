@@ -483,13 +483,21 @@ def publish_business_website(
             business_id=business_id,
             site_config=payload,
             publisher=publisher,
+            # A8.1.2: the same PlatformContract gate the draft flow applies
+            # — a direct publish must never ship a build a draft of the
+            # same config would have been refused for.
+            business_config=_load_business_config(session, tenant_id, business_id),
         )
     except WebsitePublishError as exc:
-        # publish_website only ever raises this for a real pipeline
+        if exc.code == "platform_contract_violation":
+            # A refused build, not a pipeline failure: nothing was
+            # deployed and the live site is untouched — not alert-worthy.
+            raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
+        # Otherwise publish_website only raises this for a real pipeline
         # failure (code="website_publish_failed", 502) — never for a
-        # user/input error — so every occurrence here is alert-worthy,
-        # no status_code filtering needed (unlike rollback below, which
-        # shares this same except block with a genuine 404 case).
+        # user/input error — so every such occurrence is alert-worthy
+        # (unlike rollback below, which shares this same except block
+        # with a genuine 404 case).
         send_operator_alert(
             AlertSeverity.CRITICAL,
             operation="website_publish",

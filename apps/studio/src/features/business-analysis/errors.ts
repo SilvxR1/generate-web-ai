@@ -173,6 +173,16 @@ export function categorizePublishError(error: unknown): CategorizedError {
   if (error instanceof NetworkError) {
     return { ...NETWORK_ERROR, category: "publish_failed" };
   }
+  if (error instanceof ApiError && error.code === "platform_contract_violation") {
+    // The build was refused before anything was deployed — the raw
+    // violation list is for operators, never the primary message.
+    return {
+      category: "publish_failed",
+      title: "This website didn't pass the pre-publish checks",
+      message: "Nothing was published. Your live website has not changed.",
+      technicalDetail: error.message,
+    };
+  }
   if (error instanceof ApiError) {
     return {
       category: "publish_failed",
