@@ -189,3 +189,53 @@ def test_build_failure_raises_a_clear_error_not_a_silent_empty_artifact():
 
     with pytest.raises(SiteBuildError):
         build_site(site_config)
+
+
+# --- A8.3.4-P0: the build bakes in a usable public API origin -------------------
+
+
+def _rendered_runtime_config(artifact) -> dict:
+    html = artifact.files["index.html"].decode("utf-8")
+    return json.loads(re.search(r'id="lead-submission-config"[^>]*>(.*?)</script>', html, re.S).group(1))
+
+
+def test_build_renders_the_resolved_public_api_origin(monkeypatch: pytest.MonkeyPatch):
+    from app.config import settings
+    from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG
+    from app.qa.platform_contract import validate_platform_contract
+
+    monkeypatch.delenv("PUBLIC_API_BASE_URL", raising=False)
+    monkeypatch.setattr(settings, "internal_api_base_url", "https://api.example.com/")
+    site_config = _reforma_site_config()
+    site_config.businessId = "biz-123"
+
+    artifact = build_site(site_config)
+    config = _rendered_runtime_config(artifact)
+    html = artifact.files["index.html"].decode("utf-8")
+
+    assert config == {"businessId": "biz-123", "apiBaseUrl": "https://api.example.com"}
+    assert 'apiBaseUrl = "https://api.example.com"' in html  # analytics beacon too
+    result = validate_platform_contract(artifact.files, business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG)
+    assert "lead_endpoint_unconfigured" not in [f.rule for f in result.findings]
+    assert "analytics_endpoint_unconfigured" not in [f.rule for f in result.findings]
+
+
+def test_an_explicit_public_api_base_url_takes_precedence(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("PUBLIC_API_BASE_URL", "https://public.example.com")
+    site_config = _reforma_site_config()
+    site_config.businessId = "biz-123"
+
+    assert _rendered_runtime_config(build_site(site_config))["apiBaseUrl"] == "https://public.example.com"
+
+
+def test_a_malformed_origin_is_rendered_but_blocked_by_platform_contract(monkeypatch: pytest.MonkeyPatch):
+    from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG
+    from app.qa.platform_contract import validate_platform_contract
+
+    monkeypatch.setenv("PUBLIC_API_BASE_URL", "http://api.example.com")  # plain http, not local
+    site_config = _reforma_site_config()
+    site_config.businessId = "biz-123"
+
+    result = validate_platform_contract(build_site(site_config).files, business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG)
+
+    assert "lead_endpoint_unconfigured" in [f.rule for f in result.blocking_violations]

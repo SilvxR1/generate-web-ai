@@ -49,9 +49,18 @@ def _business_config(name: str) -> BusinessConfig:
 def builds() -> dict:
     """One real build per (case, strategy), shared by every test here."""
     return {
-        (name, strategy): build_module.build_site(SiteConfigPayload.model_validate(SITE_CONFIGS[name][strategy]))
+        (name, strategy): build_module.build_site(_payload(SITE_CONFIGS[name][strategy]))
         for name, strategy in ALL_BUILDS
     }
+
+
+def _payload(site: dict) -> SiteConfigPayload:
+    # The real draft/publish pipeline always sets businessId server-side
+    # before building (app.publishing.drafts / service); mirror it so the
+    # built site has a usable lead endpoint (A8.3.4-P0 contract rule).
+    payload = SiteConfigPayload.model_validate(site)
+    payload.businessId = "00000000-0000-4000-8000-000000000001"
+    return payload
 
 
 def _html(builds: dict, name: str, strategy: str) -> str:
@@ -108,7 +117,7 @@ def test_refresh_and_new_direction_render_materially_different_html(builds, name
 
 def test_the_same_directed_config_renders_identical_html(builds):
     name, strategy = CASES[0]
-    again = build_module.build_site(SiteConfigPayload.model_validate(SITE_CONFIGS[name][strategy]))
+    again = build_module.build_site(_payload(SITE_CONFIGS[name][strategy]))
 
     assert again.files["index.html"] == builds[(name, strategy)].files["index.html"]
 
