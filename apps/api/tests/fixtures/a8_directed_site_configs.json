@@ -37,7 +37,7 @@
               "content": {
                 "eyebrow": "Valencia",
                 "heading": "Reforma Casa Valencia",
-                "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+                "subheading": "Reformas con seguimiento profesional, de principio a fin.",
                 "primaryAction": {
                   "label": "Contactar",
                   "href": "#contact"
@@ -99,72 +99,54 @@
                 "heading": "Nuestros proyectos",
                 "items": [
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-1.jpg",
                       "alt": "Reforma Casa Valencia — foto 1"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-2.jpg",
                       "alt": "Reforma Casa Valencia — foto 2"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-3.jpg",
                       "alt": "Reforma Casa Valencia — foto 3"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-4.jpg",
                       "alt": "Reforma Casa Valencia — foto 4"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-5.jpg",
                       "alt": "Reforma Casa Valencia — foto 5"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-6.jpg",
                       "alt": "Reforma Casa Valencia — foto 6"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-7.jpg",
                       "alt": "Reforma Casa Valencia — foto 7"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-8.jpg",
                       "alt": "Reforma Casa Valencia — foto 8"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-9.jpg",
                       "alt": "Reforma Casa Valencia — foto 9"
@@ -448,7 +430,7 @@
               "content": {
                 "eyebrow": "Valencia",
                 "heading": "Reforma Casa Valencia",
-                "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+                "subheading": "Reformas con seguimiento profesional, de principio a fin.",
                 "primaryAction": {
                   "label": "Contactar",
                   "href": "#contact"
@@ -490,48 +472,36 @@
                 "heading": "Nuestros proyectos",
                 "items": [
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-1.jpg",
                       "alt": "Reforma Casa Valencia — foto 1"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-2.jpg",
                       "alt": "Reforma Casa Valencia — foto 2"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-3.jpg",
                       "alt": "Reforma Casa Valencia — foto 3"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-4.jpg",
                       "alt": "Reforma Casa Valencia — foto 4"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-5.jpg",
                       "alt": "Reforma Casa Valencia — foto 5"
                     }
                   },
                   {
-                    "title": "Proyecto",
-                    "category": "Proyecto",
                     "image": {
                       "src": "https://cdn.example.com/project-6.jpg",
                       "alt": "Reforma Casa Valencia — foto 6"
@@ -581,6 +551,411 @@
                 ]
               },
               "background": "base"
+            },
+            {
+              "type": "cta",
+              "id": "cta",
+              "content": {
+                "heading": "¿Listo para empezar tu proyecto?",
+                "primaryAction": {
+                  "label": "Solicitar presupuesto",
+                  "href": "#contact"
+                },
+                "secondaryAction": {
+                  "label": "Llamar ahora",
+                  "href": "tel:+34960000000"
+                },
+                "variant": "emphasis"
+              }
+            },
+            {
+              "type": "contact",
+              "id": "contact",
+              "content": {
+                "heading": "Contacto",
+                "details": [
+                  {
+                    "label": "Teléfono",
+                    "value": "+34 960 00 00 00",
+                    "href": "tel:+34960000000"
+                  },
+                  {
+                    "label": "Email",
+                    "value": "info@reformacasavalencia.example",
+                    "href": "mailto:info@reformacasavalencia.example"
+                  },
+                  {
+                    "label": "WhatsApp",
+                    "value": "+34 600 00 00 00",
+                    "href": "https://wa.me/34600000000"
+                  },
+                  {
+                    "label": "Dirección",
+                    "value": "Carrer de Colon 1, Valencia, Comunidad Valenciana, 46004"
+                  }
+                ],
+                "form": {
+                  "fields": [
+                    {
+                      "name": "name",
+                      "label": "Nombre",
+                      "type": "text",
+                      "required": true
+                    },
+                    {
+                      "name": "phone",
+                      "label": "Teléfono",
+                      "type": "tel",
+                      "required": true
+                    },
+                    {
+                      "name": "service",
+                      "label": "Servicio",
+                      "type": "select",
+                      "required": true,
+                      "options": [
+                        {
+                          "label": "Reforma integral",
+                          "value": "reforma-integral"
+                        },
+                        {
+                          "label": "Cocinas",
+                          "value": "cocinas"
+                        },
+                        {
+                          "label": "Banos",
+                          "value": "banos"
+                        },
+                        {
+                          "label": "Electricidad y fontaneria",
+                          "value": "electricidad-fontaneria"
+                        },
+                        {
+                          "label": "Pintura",
+                          "value": "pintura"
+                        },
+                        {
+                          "label": "Diseno y planificacion",
+                          "value": "diseno-planificacion"
+                        }
+                      ]
+                    }
+                  ],
+                  "submitLabel": "Enviar solicitud"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": "/privacy",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Privacy Policy",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "Who we are",
+                    "body": "Reforma Casa Valencia operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: info@reformacasavalencia.example"
+                  },
+                  {
+                    "heading": "Information we collect",
+                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                  },
+                  {
+                    "heading": "Cookies",
+                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
+                  },
+                  {
+                    "heading": "Third parties we work with",
+                    "body": "No third-party data processors have been listed for this business."
+                  },
+                  {
+                    "heading": "Your rights",
+                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at info@reformacasavalencia.example."
+                  },
+                  {
+                    "heading": "Changes to this policy",
+                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "path": "/terms",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Terms of Service",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "Acceptance of these terms",
+                    "body": "By using this website, you agree to these terms. This website is operated by Reforma Casa Valencia."
+                  },
+                  {
+                    "heading": "Use of this website",
+                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                  },
+                  {
+                    "heading": "No warranty",
+                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                  },
+                  {
+                    "heading": "Contact",
+                    "body": "Questions about these terms can be sent to info@reformacasavalencia.example."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "path": "/cookies",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Cookie Policy",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "How this site uses cookies",
+                    "body": "Reforma Casa Valencia's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                  },
+                  {
+                    "heading": "Managing your preferences",
+                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "features": {
+        "contactForm": true,
+        "chatbot": false,
+        "booking": false
+      },
+      "seo": {
+        "title": "Reforma Casa Valencia | Reformas integrales en Valencia",
+        "description": "Reformas integrales, cocinas y banos en Valencia con seguimiento profesional de principio a fin."
+      },
+      "business": {
+        "telephone": "+34 960 00 00 00",
+        "email": "info@reformacasavalencia.example",
+        "address": {
+          "streetAddress": "Carrer de Colon 1",
+          "addressLocality": "Valencia",
+          "addressRegion": "Comunidad Valenciana",
+          "postalCode": "46004",
+          "addressCountry": "ES"
+        },
+        "openingHours": [
+          {
+            "dayOfWeek": [
+              "Monday",
+              "Tuesday",
+              "Wednesday",
+              "Thursday",
+              "Friday"
+            ],
+            "opens": "09:00",
+            "closes": "18:00"
+          }
+        ]
+      }
+    },
+    "undirected": {
+      "brand": {
+        "name": "Reforma Casa Valencia",
+        "tagline": "Reformas con seguimiento profesional, de principio a fin."
+      },
+      "theme": {
+        "colors": {
+          "primary": "#b45309",
+          "secondary": "#0f766e",
+          "accent": "#f59e0b",
+          "background": "#ffffff",
+          "foreground": "#111827"
+        },
+        "fonts": {
+          "sans": "Inter, system-ui, sans-serif",
+          "display": "Fraunces, serif"
+        },
+        "radius": {
+          "base": "0.25rem",
+          "lg": "0.375rem"
+        }
+      },
+      "pages": [
+        {
+          "path": "/",
+          "blocks": [
+            {
+              "type": "hero",
+              "id": "hero",
+              "content": {
+                "eyebrow": "Valencia",
+                "heading": "Reforma Casa Valencia",
+                "subheading": "Reformas con seguimiento profesional, de principio a fin.",
+                "primaryAction": {
+                  "label": "Contactar",
+                  "href": "#contact"
+                },
+                "secondaryAction": {
+                  "label": "Ver servicios",
+                  "href": "#services"
+                },
+                "image": {
+                  "src": "https://cdn.example.com/hero_candidate-0.jpg",
+                  "alt": "Foto de Reforma Casa Valencia"
+                }
+              }
+            },
+            {
+              "type": "services",
+              "id": "services",
+              "content": {
+                "heading": "Nuestros servicios",
+                "items": [
+                  {
+                    "title": "Reforma integral",
+                    "description": "Reforma completa de vivienda, de principio a fin.",
+                    "featured": true
+                  },
+                  {
+                    "title": "Cocinas",
+                    "description": "Diseno y reforma de cocinas a medida.",
+                    "featured": false
+                  },
+                  {
+                    "title": "Banos",
+                    "description": "Renovacion completa de cuartos de bano.",
+                    "featured": false
+                  },
+                  {
+                    "title": "Electricidad y fontaneria",
+                    "description": "Instalaciones electricas y de fontaneria.",
+                    "featured": false
+                  },
+                  {
+                    "title": "Pintura",
+                    "description": "Pintura interior y exterior.",
+                    "featured": false
+                  },
+                  {
+                    "title": "Diseno y planificacion",
+                    "description": "Diseno de espacios y planificacion de obra.",
+                    "featured": false
+                  }
+                ]
+              }
+            },
+            {
+              "type": "gallery",
+              "id": "gallery",
+              "content": {
+                "heading": "Nuestros proyectos",
+                "items": [
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-1.jpg",
+                      "alt": "Reforma Casa Valencia — foto 1"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-2.jpg",
+                      "alt": "Reforma Casa Valencia — foto 2"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-3.jpg",
+                      "alt": "Reforma Casa Valencia — foto 3"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-4.jpg",
+                      "alt": "Reforma Casa Valencia — foto 4"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-5.jpg",
+                      "alt": "Reforma Casa Valencia — foto 5"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-6.jpg",
+                      "alt": "Reforma Casa Valencia — foto 6"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-7.jpg",
+                      "alt": "Reforma Casa Valencia — foto 7"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-8.jpg",
+                      "alt": "Reforma Casa Valencia — foto 8"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-9.jpg",
+                      "alt": "Reforma Casa Valencia — foto 9"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-10.jpg",
+                      "alt": "Reforma Casa Valencia — foto 10"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-11.jpg",
+                      "alt": "Reforma Casa Valencia — foto 11"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/project-12.jpg",
+                      "alt": "Reforma Casa Valencia — foto 12"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "features",
+              "id": "about",
+              "content": {
+                "heading": "Sobre nosotros",
+                "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+                "items": [
+                  {
+                    "title": "Zona de servicio",
+                    "description": "Valencia, Benimaclet, Ruzafa, Patraix, Campanar, Pla del Real, Eixample"
+                  },
+                  {
+                    "title": "¿Para quién?",
+                    "description": "Propietarios de vivienda en Valencia que buscan una reforma integral o parcial con seguimiento profesional."
+                  }
+                ]
+              }
             },
             {
               "type": "cta",
@@ -862,72 +1237,54 @@
                 "heading": "Nuestras creaciones",
                 "items": [
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-1.jpg",
                       "alt": "Taller de Hilo — foto 1"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-2.jpg",
                       "alt": "Taller de Hilo — foto 2"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-3.jpg",
                       "alt": "Taller de Hilo — foto 3"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-4.jpg",
                       "alt": "Taller de Hilo — foto 4"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-5.jpg",
                       "alt": "Taller de Hilo — foto 5"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-6.jpg",
                       "alt": "Taller de Hilo — foto 6"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-7.jpg",
                       "alt": "Taller de Hilo — foto 7"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-8.jpg",
                       "alt": "Taller de Hilo — foto 8"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-9.jpg",
                       "alt": "Taller de Hilo — foto 9"
@@ -961,7 +1318,6 @@
               "id": "about",
               "content": {
                 "heading": "Nuestra historia",
-                "subheading": "Piezas de crochet hechas a mano en Valencia.",
                 "items": [
                   {
                     "title": "Zona de servicio",
@@ -1191,7 +1547,6 @@
               "id": "about",
               "content": {
                 "heading": "Nuestra historia",
-                "subheading": "Piezas de crochet hechas a mano en Valencia.",
                 "items": [
                   {
                     "title": "Zona de servicio",
@@ -1207,48 +1562,36 @@
                 "heading": "Nuestras creaciones",
                 "items": [
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-1.jpg",
                       "alt": "Taller de Hilo — foto 1"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-2.jpg",
                       "alt": "Taller de Hilo — foto 2"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-3.jpg",
                       "alt": "Taller de Hilo — foto 3"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-4.jpg",
                       "alt": "Taller de Hilo — foto 4"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-5.jpg",
                       "alt": "Taller de Hilo — foto 5"
                     }
                   },
                   {
-                    "title": "Trabajo realizado",
-                    "category": "Trabajo realizado",
                     "image": {
                       "src": "https://cdn.example.com/gallery-6.jpg",
                       "alt": "Taller de Hilo — foto 6"
@@ -1289,6 +1632,478 @@
                   "href": "tel:+34600111222"
                 },
                 "variant": "emphasis"
+              }
+            },
+            {
+              "type": "contact",
+              "id": "contact",
+              "content": {
+                "heading": "Hablemos",
+                "details": [
+                  {
+                    "label": "Teléfono",
+                    "value": "+34 600 111 222",
+                    "href": "tel:+34600111222"
+                  },
+                  {
+                    "label": "Email",
+                    "value": "hola@example.com",
+                    "href": "mailto:hola@example.com"
+                  }
+                ],
+                "form": {
+                  "fields": [
+                    {
+                      "name": "name",
+                      "label": "Nombre",
+                      "type": "text",
+                      "required": true
+                    },
+                    {
+                      "name": "email",
+                      "label": "Email",
+                      "type": "email",
+                      "required": true
+                    },
+                    {
+                      "name": "message",
+                      "label": "Mensaje",
+                      "type": "textarea",
+                      "required": true
+                    }
+                  ],
+                  "submitLabel": "Enviar mensaje"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "path": "/privacy",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Privacy Policy",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "Who we are",
+                    "body": "Taller de Hilo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                  },
+                  {
+                    "heading": "Information we collect",
+                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                  },
+                  {
+                    "heading": "Cookies",
+                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
+                  },
+                  {
+                    "heading": "Third parties we work with",
+                    "body": "No third-party data processors have been listed for this business."
+                  },
+                  {
+                    "heading": "Your rights",
+                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
+                  },
+                  {
+                    "heading": "Changes to this policy",
+                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "path": "/terms",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Terms of Service",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "Acceptance of these terms",
+                    "body": "By using this website, you agree to these terms. This website is operated by Taller de Hilo."
+                  },
+                  {
+                    "heading": "Use of this website",
+                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                  },
+                  {
+                    "heading": "No warranty",
+                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                  },
+                  {
+                    "heading": "Contact",
+                    "body": "Questions about these terms can be sent to hola@example.com."
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "path": "/cookies",
+          "blocks": [
+            {
+              "type": "legal_text",
+              "content": {
+                "heading": "Cookie Policy",
+                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "sections": [
+                  {
+                    "heading": "How this site uses cookies",
+                    "body": "Taller de Hilo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                  },
+                  {
+                    "heading": "Managing your preferences",
+                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "features": {
+        "contactForm": true,
+        "chatbot": false,
+        "booking": false
+      },
+      "seo": {
+        "title": "Taller de Hilo",
+        "description": "Piezas de crochet hechas a mano en Valencia."
+      },
+      "business": {
+        "telephone": "+34 600 111 222",
+        "email": "hola@example.com"
+      }
+    },
+    "undirected": {
+      "brand": {
+        "name": "Taller de Hilo"
+      },
+      "theme": {
+        "colors": {
+          "primary": "#b5651d",
+          "secondary": "#6b4226",
+          "accent": "#e8a33d",
+          "background": "#fdf8f3",
+          "foreground": "#3a2e28"
+        },
+        "fonts": {
+          "sans": "Inter, sans-serif"
+        },
+        "radius": {
+          "base": "1rem",
+          "lg": "1.5rem"
+        }
+      },
+      "pages": [
+        {
+          "path": "/",
+          "blocks": [
+            {
+              "type": "hero",
+              "id": "hero",
+              "content": {
+                "heading": "Taller de Hilo",
+                "subheading": "Piezas de crochet hechas a mano en Valencia.",
+                "primaryAction": {
+                  "label": "Contactar",
+                  "href": "#contact"
+                },
+                "secondaryAction": {
+                  "label": "Ver servicios",
+                  "href": "#services"
+                },
+                "image": {
+                  "src": "https://cdn.example.com/gallery-0.jpg",
+                  "alt": "Foto de Taller de Hilo"
+                }
+              }
+            },
+            {
+              "type": "gallery",
+              "id": "gallery",
+              "content": {
+                "heading": "Nuestras creaciones",
+                "items": [
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-1.jpg",
+                      "alt": "Taller de Hilo — foto 1"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-2.jpg",
+                      "alt": "Taller de Hilo — foto 2"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-3.jpg",
+                      "alt": "Taller de Hilo — foto 3"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-4.jpg",
+                      "alt": "Taller de Hilo — foto 4"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-5.jpg",
+                      "alt": "Taller de Hilo — foto 5"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-6.jpg",
+                      "alt": "Taller de Hilo — foto 6"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-7.jpg",
+                      "alt": "Taller de Hilo — foto 7"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-8.jpg",
+                      "alt": "Taller de Hilo — foto 8"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-9.jpg",
+                      "alt": "Taller de Hilo — foto 9"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-10.jpg",
+                      "alt": "Taller de Hilo — foto 10"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-11.jpg",
+                      "alt": "Taller de Hilo — foto 11"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-12.jpg",
+                      "alt": "Taller de Hilo — foto 12"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-13.jpg",
+                      "alt": "Taller de Hilo — foto 13"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-14.jpg",
+                      "alt": "Taller de Hilo — foto 14"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-15.jpg",
+                      "alt": "Taller de Hilo — foto 15"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-16.jpg",
+                      "alt": "Taller de Hilo — foto 16"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-17.jpg",
+                      "alt": "Taller de Hilo — foto 17"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-18.jpg",
+                      "alt": "Taller de Hilo — foto 18"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-19.jpg",
+                      "alt": "Taller de Hilo — foto 19"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-20.jpg",
+                      "alt": "Taller de Hilo — foto 20"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-21.jpg",
+                      "alt": "Taller de Hilo — foto 21"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-22.jpg",
+                      "alt": "Taller de Hilo — foto 22"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-23.jpg",
+                      "alt": "Taller de Hilo — foto 23"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-24.jpg",
+                      "alt": "Taller de Hilo — foto 24"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-25.jpg",
+                      "alt": "Taller de Hilo — foto 25"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-26.jpg",
+                      "alt": "Taller de Hilo — foto 26"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-27.jpg",
+                      "alt": "Taller de Hilo — foto 27"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-28.jpg",
+                      "alt": "Taller de Hilo — foto 28"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-29.jpg",
+                      "alt": "Taller de Hilo — foto 29"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-30.jpg",
+                      "alt": "Taller de Hilo — foto 30"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-31.jpg",
+                      "alt": "Taller de Hilo — foto 31"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-32.jpg",
+                      "alt": "Taller de Hilo — foto 32"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-33.jpg",
+                      "alt": "Taller de Hilo — foto 33"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-34.jpg",
+                      "alt": "Taller de Hilo — foto 34"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-35.jpg",
+                      "alt": "Taller de Hilo — foto 35"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-36.jpg",
+                      "alt": "Taller de Hilo — foto 36"
+                    }
+                  },
+                  {
+                    "image": {
+                      "src": "https://cdn.example.com/gallery-37.jpg",
+                      "alt": "Taller de Hilo — foto 37"
+                    }
+                  }
+                ]
+              },
+              "background": "base"
+            },
+            {
+              "type": "services",
+              "id": "services",
+              "content": {
+                "heading": "Lo que hacemos",
+                "items": [
+                  {
+                    "title": "Encargos",
+                    "description": "Piezas personalizadas por encargo."
+                  },
+                  {
+                    "title": "Talleres",
+                    "description": "Clases de crochet en grupo."
+                  }
+                ]
+              },
+              "background": "surface"
+            },
+            {
+              "type": "features",
+              "id": "about",
+              "content": {
+                "heading": "Nuestra historia",
+                "items": [
+                  {
+                    "title": "Zona de servicio",
+                    "description": "Valencia"
+                  }
+                ]
+              },
+              "background": "base"
+            },
+            {
+              "type": "cta",
+              "id": "cta",
+              "content": {
+                "heading": "¿Tienes una idea en mente?",
+                "primaryAction": {
+                  "label": "Cuéntanosla",
+                  "href": "#contact"
+                },
+                "secondaryAction": {
+                  "label": "Llamar ahora",
+                  "href": "tel:+34600111222"
+                }
               }
             },
             {

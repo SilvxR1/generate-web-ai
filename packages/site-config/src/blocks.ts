@@ -77,7 +77,9 @@ export interface GalleryBeforeAfterConfig {
 }
 
 export interface GalleryItemConfig {
-  title: string;
+  /** Optional (A8.3.2): only set when there is real item-specific text.
+   * The generator never manufactures one from a category label. */
+  title?: string;
   category?: string;
   image: AssetConfig;
   description?: string;

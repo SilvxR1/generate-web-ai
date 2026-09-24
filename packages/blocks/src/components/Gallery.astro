@@ -25,7 +25,8 @@ export interface GalleryBeforeAfter {
 }
 
 export interface GalleryItem {
-  title: string;
+  /** Optional: omitted when there is no real item-specific text. */
+  title?: string;
   /** e.g. a service or work type this item belongs to. */
   category?: string;
   image: BlockImage;
@@ -119,15 +120,18 @@ const hasExplicitFeatured = items.some((item) => item.featured);
               />
             </div>
           )}
+          {(item.category || item.title || item.description || item.link) && (
           <div class="block-gallery__body">
             {item.category && (
               <Badge as="span" variant="neutral" class="block-gallery__category">
                 {item.category}
               </Badge>
             )}
-            <Heading level={3} size={isFeatured ? "lg" : "md"}>
-              {item.title}
-            </Heading>
+            {item.title && (
+              <Heading level={3} size={isFeatured ? "lg" : "md"}>
+                {item.title}
+              </Heading>
+            )}
             {item.description && (
               <Text variant="muted" size="sm">
                 {item.description}
@@ -139,6 +143,7 @@ const hasExplicitFeatured = items.some((item) => item.featured);
               </Link>
             )}
           </div>
+          )}
         </li>
       );
     })}
