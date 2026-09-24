@@ -74,3 +74,41 @@ export function sanitizeCustomerCopy(text: string | null | undefined): string | 
   const result = kept.join(" ").trim();
   return result.length > 0 ? result : undefined;
 }
+
+/**
+ * A8.3.2 — hero supporting copy is SELECTED from existing customer-facing
+ * text, never written. Priority, deterministic:
+ *
+ * 1. The business's real `brand.tagline`, exactly as written (trimmed only).
+ * 2. Otherwise the FIRST whole sentence of the already-sanitized
+ *    description (the same `sanitizeCustomerCopy` output About uses), and
+ *    only if that sentence is at most HERO_SENTENCE_MAX_LENGTH characters.
+ *    A longer first sentence is never cut, and a later sentence is never
+ *    substituted: it may depend on the first for context. Instead the hero
+ *    carries no supporting copy, and the full text still appears in About.
+ * 3. No usable description at all: `undefined`. The caller keeps its
+ *    existing preset fallback line for that case only.
+ *
+ * Returns which source was used so the caller can avoid showing the same
+ * paragraph twice (see generateSiteConfig).
+ */
+export const HERO_SENTENCE_MAX_LENGTH = 200;
+
+export type HeroCopySource = "tagline" | "description_sentence" | "none";
+
+export interface HeroSupportingCopy {
+  text?: string;
+  source: HeroCopySource;
+}
+
+export function selectHeroSupportingCopy(
+  tagline: string | null | undefined,
+  customerFacingDescription: string | undefined,
+): HeroSupportingCopy {
+  const realTagline = tagline?.trim();
+  if (realTagline) return { text: realTagline, source: "tagline" };
+
+  const first = customerFacingDescription ? splitSentences(customerFacingDescription)[0] : undefined;
+  if (first && first.length <= HERO_SENTENCE_MAX_LENGTH) return { text: first, source: "description_sentence" };
+  return { source: "none" };
+}

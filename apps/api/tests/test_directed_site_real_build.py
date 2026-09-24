@@ -35,6 +35,9 @@ DIRECTIONS = json.loads(
     ).read_text("utf-8")
 )
 CASES = [(name, strategy) for name in sorted(SITE_CONFIGS) for strategy in ("evolve", "new_direction")]
+ALL_BUILDS = [
+    (name, strategy) for name in sorted(SITE_CONFIGS) for strategy in ("evolve", "new_direction", "undirected")
+]
 _SECTION_ID = re.compile(r'<section\b[^>]*\bid="([\w-]+)"')
 
 
@@ -47,7 +50,7 @@ def builds() -> dict:
     """One real build per (case, strategy), shared by every test here."""
     return {
         (name, strategy): build_module.build_site(SiteConfigPayload.model_validate(SITE_CONFIGS[name][strategy]))
-        for name, strategy in CASES
+        for name, strategy in ALL_BUILDS
     }
 
 
@@ -55,7 +58,7 @@ def _html(builds: dict, name: str, strategy: str) -> str:
     return builds[(name, strategy)].files["index.html"].decode("utf-8")
 
 
-@pytest.mark.parametrize(("name", "strategy"), CASES)
+@pytest.mark.parametrize(("name", "strategy"), ALL_BUILDS)
 def test_directed_site_passes_platform_contract_with_zero_blocking_findings(builds, name, strategy):
     result = validate_platform_contract(builds[(name, strategy)].files, business_config=_business_config(name))
 
@@ -124,3 +127,39 @@ def test_a_directed_draft_reaches_ready_through_the_real_draft_pipeline(
 
     assert draft.build_error is None
     assert draft.status is WebsiteDraftStatus.READY
+
+
+# --- A8.3.2: content distribution in the real build ---------------------------
+
+
+@pytest.mark.parametrize(("name", "strategy"), ALL_BUILDS)
+def test_title_less_gallery_renders_no_empty_heading_or_body(builds, name, strategy):
+    html = _html(builds, name, strategy)
+    items = re.findall(r'<li class="block-gallery__item".*?</li>', html, re.S)
+
+    assert items
+    for item in items:
+        assert "<img" in item
+        assert not re.search(r"<h[1-6][^>]*>\s*</h[1-6]>", item)
+        assert not re.search(r'class="block-gallery__body"[^>]*>\s*</div>', item)
+    assert "Trabajo realizado" not in html  # no repeated fallback label
+    assert not re.search(r"<h[1-6][^>]*>\s*</h[1-6]>", html)
+
+
+@pytest.mark.parametrize(("name", "strategy"), ALL_BUILDS)
+def test_hero_and_about_never_render_the_same_paragraph(builds, name, strategy):
+    site = SITE_CONFIGS[name][strategy]
+    blocks = site["pages"][0]["blocks"]
+    hero = next(b for b in blocks if b["type"] == "hero")["content"].get("subheading")
+    about = next((b for b in blocks if b["type"] == "features"), {}).get("content", {}).get("subheading")
+
+    assert hero is None or hero != about
+    html = _html(builds, name, strategy)
+    hero_section = re.search(r'<section[^>]*id="hero".*?</section>', html, re.S).group(0)
+    about_match = re.search(r'<section[^>]*id="about".*?</section>', html, re.S)
+    if hero:
+        assert hero in hero_section
+    if about_match and about:
+        # About renders the full description; the hero only a selected part.
+        assert about in about_match.group(0)
+        assert about not in hero_section

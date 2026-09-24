@@ -104,3 +104,39 @@ def test_unknown_block_keys_are_still_ignored_not_passed_to_the_build():
     dumped = _round_trip(_site_config([{"type": "hero", "id": "hero", "content": {}, "onload": "x"}]))
 
     assert dumped["pages"][0]["blocks"][0] == {"type": "hero", "id": "hero", "content": {}}
+
+
+# --- A8.3.2: GalleryItemConfig.title is optional ------------------------------
+
+
+def test_gallery_items_with_and_without_title_survive_the_round_trip_unchanged():
+    items = [
+        {"image": {"src": "https://cdn.example.com/a.jpg", "alt": "Foto A"}},
+        {
+            "title": "Cocina en Ruzafa",
+            "category": "Proyecto",
+            "image": {"src": "https://cdn.example.com/b.jpg", "alt": "B"},
+        },
+        {
+            "image": {"src": "https://cdn.example.com/c.jpg", "alt": "C"},
+            "featured": True,
+            "description": "Real caption",
+        },
+    ]
+    block = {"type": "gallery", "id": "gallery", "content": {"heading": "Galería", "items": items, "layout": "grid"}}
+
+    dumped = _round_trip(_site_config([block]))
+
+    assert dumped["pages"][0]["blocks"][0]["content"]["items"] == items
+    assert "title" not in dumped["pages"][0]["blocks"][0]["content"]["items"][0]
+
+
+def test_block_content_stays_opaque_but_block_level_unknown_keys_are_still_dropped():
+    # Block `content` is interpreted only by the renderer (this module's
+    # documented policy), so its fields pass through untouched; the typed
+    # block envelope around it still ignores unknown keys.
+    block = {"type": "gallery", "id": "gallery", "content": {"items": []}, "html": "<script>x</script>"}
+
+    dumped = _round_trip(_site_config([block]))
+
+    assert dumped["pages"][0]["blocks"][0] == {"type": "gallery", "id": "gallery", "content": {"items": []}}

@@ -350,6 +350,8 @@ describe("directed SiteConfig fixtures for the backend real-build test", () => {
           {
             evolve: generateSiteConfig(c.businessConfig, c.assets, c.directions.evolve),
             new_direction: generateSiteConfig(c.businessConfig, c.assets, c.directions.new_direction),
+            // A8.3.2: the undirected site too, so the real build covers both.
+            undirected: generateSiteConfig(c.businessConfig, c.assets),
           },
         ];
       }),

@@ -44,7 +44,7 @@ import {
   buildWhatsAppConfig,
 } from "./blocks.ts";
 import { buildBusiness } from "./business.ts";
-import { sanitizeCustomerCopy } from "./copy.ts";
+import { sanitizeCustomerCopy, selectHeroSupportingCopy } from "./copy.ts";
 import { buildLegalPages } from "./legal.ts";
 import { getPreset } from "./presets.ts";
 import { resolvePresentation } from "./presentation.ts";
@@ -95,6 +95,13 @@ export function generateSiteConfig(
   }
 
   const customerFacingDescription = sanitizeCustomerCopy(profile.description);
+  // A8.3.2 content distribution: the hero shows the real tagline or one
+  // whole sentence (copy.ts), and About keeps the full description. If the
+  // hero's selection is already the ENTIRE description (a one-sentence
+  // description), About drops that paragraph instead of repeating it.
+  const heroCopy = selectHeroSupportingCopy(brand?.tagline, customerFacingDescription);
+  const heroRepeatsFullDescription =
+    heroCopy.text !== undefined && heroCopy.text === customerFacingDescription;
 
   // Built first so the hero/CTA only link to "#contact" when that
   // section will actually be rendered — never a dangling in-page anchor.
@@ -103,9 +110,10 @@ export function generateSiteConfig(
   const heroBlock: HeroBlockConfig = buildHeroBlock(
     profile,
     preset,
-    customerFacingDescription,
+    heroCopy.text,
     heroAsset,
     contactBlock !== null,
+    customerFacingDescription !== undefined,
   );
   if (presentation.heroLayout) heroBlock.content.layout = presentation.heroLayout;
 
@@ -115,7 +123,7 @@ export function generateSiteConfig(
   const optionalSections: Record<MovableSection, BlockConfig | null> = {
     services: buildServicesBlock(profile, preset),
     gallery: galleryBlock,
-    about: buildAboutBlock(profile, preset, customerFacingDescription),
+    about: buildAboutBlock(profile, preset, customerFacingDescription, !heroRepeatsFullDescription),
   };
 
   // Hero first, then only the optional sections that actually exist, in the

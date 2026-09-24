@@ -31,7 +31,7 @@
             "content": {
               "eyebrow": "Valencia",
               "heading": "Reforma Casa Valencia",
-              "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+              "subheading": "Reformas con seguimiento profesional, de principio a fin.",
               "primaryAction": {
                 "label": "Contactar",
                 "href": "#contact"
@@ -351,7 +351,7 @@
             "content": {
               "eyebrow": "Valencia",
               "heading": "Reforma Casa Valencia",
-              "subheading": "Empresa de reformas integrales en Valencia, especializada en cocinas, banos y reformas completas de vivienda.",
+              "subheading": "Reformas con seguimiento profesional, de principio a fin.",
               "primaryAction": {
                 "label": "Contactar",
                 "href": "#contact"
@@ -412,7 +412,6 @@
               "heading": "Nuestros proyectos",
               "items": [
                 {
-                  "title": "Proyecto",
                   "category": "Proyecto",
                   "image": {
                     "src": "https://cdn.example.com/project-1.jpg",
@@ -420,7 +419,6 @@
                   }
                 },
                 {
-                  "title": "Proyecto",
                   "category": "Proyecto",
                   "image": {
                     "src": "https://cdn.example.com/project-2.jpg",
@@ -428,7 +426,6 @@
                   }
                 },
                 {
-                  "title": "Proyecto",
                   "category": "Proyecto",
                   "image": {
                     "src": "https://cdn.example.com/project-3.jpg",
@@ -436,7 +433,6 @@
                   }
                 },
                 {
-                  "title": "Proyecto",
                   "category": "Proyecto",
                   "image": {
                     "src": "https://cdn.example.com/project-4.jpg",
@@ -444,7 +440,6 @@
                   }
                 },
                 {
-                  "title": "Proyecto",
                   "category": "Proyecto",
                   "image": {
                     "src": "https://cdn.example.com/project-5.jpg",
@@ -452,7 +447,6 @@
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
                   "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-6.jpg",
@@ -751,296 +745,222 @@
               "heading": "Nuestras creaciones",
               "items": [
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-1.jpg",
                     "alt": "Taller de Hilo — foto 1"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-2.jpg",
                     "alt": "Taller de Hilo — foto 2"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-3.jpg",
                     "alt": "Taller de Hilo — foto 3"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-4.jpg",
                     "alt": "Taller de Hilo — foto 4"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-5.jpg",
                     "alt": "Taller de Hilo — foto 5"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-6.jpg",
                     "alt": "Taller de Hilo — foto 6"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-7.jpg",
                     "alt": "Taller de Hilo — foto 7"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-8.jpg",
                     "alt": "Taller de Hilo — foto 8"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-9.jpg",
                     "alt": "Taller de Hilo — foto 9"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-10.jpg",
                     "alt": "Taller de Hilo — foto 10"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-11.jpg",
                     "alt": "Taller de Hilo — foto 11"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-12.jpg",
                     "alt": "Taller de Hilo — foto 12"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-13.jpg",
                     "alt": "Taller de Hilo — foto 13"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-14.jpg",
                     "alt": "Taller de Hilo — foto 14"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-15.jpg",
                     "alt": "Taller de Hilo — foto 15"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-16.jpg",
                     "alt": "Taller de Hilo — foto 16"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-17.jpg",
                     "alt": "Taller de Hilo — foto 17"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-18.jpg",
                     "alt": "Taller de Hilo — foto 18"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-19.jpg",
                     "alt": "Taller de Hilo — foto 19"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-20.jpg",
                     "alt": "Taller de Hilo — foto 20"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-21.jpg",
                     "alt": "Taller de Hilo — foto 21"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-22.jpg",
                     "alt": "Taller de Hilo — foto 22"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-23.jpg",
                     "alt": "Taller de Hilo — foto 23"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-24.jpg",
                     "alt": "Taller de Hilo — foto 24"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-25.jpg",
                     "alt": "Taller de Hilo — foto 25"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-26.jpg",
                     "alt": "Taller de Hilo — foto 26"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-27.jpg",
                     "alt": "Taller de Hilo — foto 27"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-28.jpg",
                     "alt": "Taller de Hilo — foto 28"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-29.jpg",
                     "alt": "Taller de Hilo — foto 29"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-30.jpg",
                     "alt": "Taller de Hilo — foto 30"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-31.jpg",
                     "alt": "Taller de Hilo — foto 31"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-32.jpg",
                     "alt": "Taller de Hilo — foto 32"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-33.jpg",
                     "alt": "Taller de Hilo — foto 33"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-34.jpg",
                     "alt": "Taller de Hilo — foto 34"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-35.jpg",
                     "alt": "Taller de Hilo — foto 35"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-36.jpg",
                     "alt": "Taller de Hilo — foto 36"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-37.jpg",
                     "alt": "Taller de Hilo — foto 37"
@@ -1063,16 +983,6 @@
               ]
             },
             "background": "surface"
-          },
-          {
-            "type": "features",
-            "id": "about",
-            "content": {
-              "heading": "Nuestra historia",
-              "subheading": "Piezas de crochet hechas a mano.",
-              "items": []
-            },
-            "background": "base"
           },
           {
             "type": "cta",
@@ -1282,8 +1192,6 @@
               "heading": "Nuestro trabajo",
               "items": [
                 {
-                  "title": "Equipo",
-                  "category": "Equipo",
                   "image": {
                     "src": "https://cdn.example.com/team-2.jpg",
                     "alt": "Clínica Norte — foto 1"
@@ -1474,16 +1382,12 @@
               "heading": "Un vistazo por dentro",
               "items": [
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-1.jpg",
                     "alt": "Casa Marea — foto 1"
                   }
                 },
                 {
-                  "title": "Trabajo realizado",
-                  "category": "Trabajo realizado",
                   "image": {
                     "src": "https://cdn.example.com/gallery-2.jpg",
                     "alt": "Casa Marea — foto 2"
@@ -1492,16 +1396,6 @@
               ]
             },
             "background": "base"
-          },
-          {
-            "type": "features",
-            "id": "about",
-            "content": {
-              "heading": "Nuestra historia",
-              "subheading": "Cocina de mercado.",
-              "items": []
-            },
-            "background": "surface"
           },
           {
             "type": "cta",

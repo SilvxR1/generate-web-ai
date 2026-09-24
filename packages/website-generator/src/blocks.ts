@@ -62,10 +62,10 @@ export function buildWhatsAppConfig(whatsappConfig: BusinessWhatsAppConfig | und
  * like "+10 años de experiencia", exactly the kind of unverifiable
  * business fact this generator must never invent.
  *
- * `subheading` is real customer-facing description only — see copy.ts's
- * `sanitizeCustomerCopy`, applied by the caller before this function ever
- * sees it, so no internal briefing/strategy sentence reaches this block
- * (LR-08). `heroImage` is a real BusinessAsset chosen by the caller
+ * `subheading` is selected existing customer-facing text only: the real
+ * tagline or one whole sentence of the sanitized description (copy.ts'
+ * `selectHeroSupportingCopy`, LR-08, A8.3.2). The full description lives
+ * in About, so the hero never repeats it. `heroImage` is a real BusinessAsset chosen by the caller
  * (assets.ts's `selectHeroAsset`) — never a generated/stock substitute
  * while a real photo exists (LR-05).
  *
@@ -77,9 +77,10 @@ export function buildWhatsAppConfig(whatsappConfig: BusinessWhatsAppConfig | und
 export function buildHeroBlock(
   profile: BusinessProfile,
   preset: WebsiteGeneratorPreset,
-  customerFacingDescription: string | undefined,
+  heroSupportingCopy: string | undefined,
   heroImage?: BusinessAssetInput,
   hasContactSection = true,
+  hasDescription = heroSupportingCopy !== undefined,
 ): HeroBlockConfig {
   const services = profile.services ?? [];
 
@@ -89,7 +90,11 @@ export function buildHeroBlock(
     content: {
       ...(profile.location?.city ? { eyebrow: profile.location.city } : {}),
       heading: profile.name,
-      subheading: customerFacingDescription || preset.heroSubheadingFallback || undefined,
+      // A8.3.2: `heroSupportingCopy` is a tagline or a single whole sentence
+      // chosen by copy.ts' selectHeroSupportingCopy; never the full
+      // description (that belongs to About). The preset line is kept only
+      // for a business with no usable description at all.
+      subheading: heroSupportingCopy ?? (hasDescription ? undefined : preset.heroSubheadingFallback || undefined),
       ...(hasContactSection ? { primaryAction: { label: "Contactar", href: "#contact" } } : {}),
       ...(services.length > 0 ? { secondaryAction: { label: "Ver servicios", href: "#services" } } : {}),
       ...(heroImage ? { image: assetToImageConfig(heroImage, `Foto de ${profile.name}`) } : {}),
@@ -130,6 +135,9 @@ export function buildAboutBlock(
   profile: BusinessProfile,
   preset: WebsiteGeneratorPreset,
   customerFacingDescription: string | undefined,
+  // A8.3.2: false when the hero already shows this exact text, so the same
+  // paragraph is never shown twice. The text still appears once, in the hero.
+  includeDescription = true,
 ): FeaturesBlockConfig | null {
   const items: FeaturesBlockConfig["content"]["items"] = [];
   const serviceArea = profile.service_area ?? [];
@@ -141,24 +149,33 @@ export function buildAboutBlock(
     items.push({ title: "¿Para quién?", description: profile.target_customers });
   }
 
-  if (items.length === 0 && !customerFacingDescription) return null;
+  const description = includeDescription ? customerFacingDescription : undefined;
+  if (items.length === 0 && !description) return null;
 
   return {
     type: "features",
     id: "about",
     content: {
       heading: preset.aboutHeading,
-      ...(customerFacingDescription ? { subheading: customerFacingDescription } : {}),
+      ...(description ? { subheading: description } : {}),
       items,
     },
   };
 }
 
 /** Only generated when the business has real gallery-worthy photography
- * (assets.ts's `selectGalleryAssets`) — never invented placeholder
- * imagery. Each item's `title` is deliberately generic (its category,
- * title-cased) rather than a fabricated project name this generator has
- * no basis to invent. */
+ * (assets.ts's `selectGalleryAssets`), never placeholder imagery.
+ *
+ * A8.3.2: item text is shown only when it adds information.
+ * - No title is manufactured. The asset model has no per-photo title or
+ *   caption, and a category label ("Trabajo realizado") is not the photo's
+ *   title, so `title` is omitted.
+ * - The category badge is real, owner-classified metadata, but it is shown
+ *   only when the displayed photos span at least two categories. There it
+ *   actually distinguishes items; a single repeated label adds nothing.
+ * - Alt text is unchanged: the real `alt_text`, otherwise the deterministic
+ *   "{business} — foto N" fallback. Nothing is inferred from the image or
+ *   its filename. */
 const CATEGORY_LABELS: Record<string, string> = {
   project: "Proyecto",
   gallery: "Trabajo realizado",
@@ -176,16 +193,21 @@ export function buildGalleryBlock(
 ): GalleryBlockConfig | null {
   if (images.length === 0) return null;
 
+  const distinctCategories = new Set(images.map((asset) => asset.category));
+  const showCategory = distinctCategories.size >= 2;
+
   return {
     type: "gallery",
     id: "gallery",
     content: {
       heading: preset.galleryHeading,
-      items: images.map((asset, index) => ({
-        title: CATEGORY_LABELS[asset.category] ?? businessName,
-        ...(asset.category ? { category: CATEGORY_LABELS[asset.category] } : {}),
-        image: assetToImageConfig(asset, `${businessName} — foto ${index + 1}`),
-      })),
+      items: images.map((asset, index) => {
+        const category = CATEGORY_LABELS[asset.category];
+        return {
+          ...(showCategory && category ? { category } : {}),
+          image: assetToImageConfig(asset, `${businessName} — foto ${index + 1}`),
+        };
+      }),
     },
   };
 }
