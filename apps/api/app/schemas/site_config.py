@@ -24,6 +24,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 
+def _drop_unset_optionals(
+    model: BaseModel, handler: SerializerFunctionWrapHandler, optional_fields: frozenset[str]
+) -> dict[str, Any]:
+    """Serializes `model`, omitting each of `optional_fields` whose value is
+    None. packages/site-config models these as TypeScript optional
+    properties (`id?: string`, `reveal?: boolean`, ...), and the Astro
+    blocks fall back to their own defaults only for a genuinely *absent*
+    prop (`reveal = true`, `background = "base"`) — never for JSON
+    `null` — so an omitted field must stay omitted on its way to the real
+    build, not become `null`."""
+    data = handler(model)
+    return {key: value for key, value in data.items() if not (key in optional_fields and value is None)}
+
+
 class SiteBrandPayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -64,26 +78,30 @@ class SiteThemeRadiusPayload(BaseModel):
     lg: str = Field(min_length=1)
 
 
+class SiteThemeSpacingPayload(BaseModel):
+    """ThemeSpacingConfig (A8.2.3 density): CSS lengths for the section
+    spacing tokens. Declared explicitly for the same reason as block
+    metadata (A8.1.2): extra="ignore" would otherwise silently drop it."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    sectionSm: str = Field(min_length=1, max_length=100)  # noqa: N815 — mirrors the TS field name verbatim
+    sectionMd: str = Field(min_length=1, max_length=100)  # noqa: N815
+    sectionLg: str = Field(min_length=1, max_length=100)  # noqa: N815
+
+
 class SiteThemePayload(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     colors: SiteThemeColorsPayload
     fonts: SiteThemeFontsPayload
     radius: SiteThemeRadiusPayload
+    spacing: SiteThemeSpacingPayload | None = None
 
-
-def _drop_unset_optionals(
-    model: BaseModel, handler: SerializerFunctionWrapHandler, optional_fields: frozenset[str]
-) -> dict[str, Any]:
-    """Serializes `model`, omitting each of `optional_fields` whose value is
-    None. packages/site-config models these as TypeScript optional
-    properties (`id?: string`, `reveal?: boolean`, ...), and the Astro
-    blocks fall back to their own defaults only for a genuinely *absent*
-    prop (`reveal = true`, `background = "base"`) — never for JSON
-    `null` — so an omitted field must stay omitted on its way to the real
-    build, not become `null`."""
-    data = handler(model)
-    return {key: value for key, value in data.items() if not (key in optional_fields and value is None)}
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Omitted spacing must stay omitted (each block keeps its own).
+        return _drop_unset_optionals(self, handler, frozenset({"spacing"}))
 
 
 class SiteBlockPayload(BaseModel):

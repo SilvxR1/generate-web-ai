@@ -56,7 +56,7 @@ assets. The direction decides only how that content is arranged and styled.
 | `density` | compact / comfortable / airy | section spacing scale; comfortable = today |
 | `sectionOrder` | permutation of services, gallery, about | reorders real sections; hero first and cta+contact last are fixed; cannot hide or invent a section |
 | `hero.layout` | split / centered | the two layouts Hero.astro already renders |
-| `gallery` | `maxItems` 3–24, `layout` grid / featured_grid | caps the real photos used (asset *selection* stays in the generator); featured_grid uses the existing `featured` item |
+| `gallery` | `maxItems` 3–24, `layout` grid / featured_grid | caps the real photos used (asset *selection* stays in the generator). `featured_grid` enlarges the explicitly featured item, or the first one; that is today's gallery. `grid` renders uniform cells with nothing enlarged. |
 | `surfaces.mode` | alternate / flat | alternating section backgrounds |
 | `cta.variant` | default / emphasis | CTA.astro's existing variants |
 
@@ -113,3 +113,34 @@ conformance fixtures in parallel.
   Both keep their existing tenant scoping.
 - **Traceability:** `WebsiteDraft.creative_generation_id` links a draft to its CreativeGeneration,
   which holds the direction. There is no second copy on the draft.
+
+## Generator consumption (A8.2.3)
+
+The signature is `generateSiteConfig(config, assets, direction?)`, and the direction is optional. Without one,
+the output is byte-identical to the pre-A8.2.3 generator, guarded by
+`packages/website-generator/fixtures/no-direction-golden.json`.
+
+`packages/website-generator/src/presentation.ts` (`resolvePresentation`) is the single place a direction
+becomes presentation. The block builders receive resolved values and never branch on the direction.
+
+| Direction field | Effect |
+|---|---|
+| `family` | The theme family for palette purposes. The copy preset (headings, CTA wording) still follows the business's own content family, so no other industry's wording appears. |
+| `palette` | `brand`: the real brand colours (the family palette if there is no brand). `family`: the family palette. `brand_derived`: a pure HSL derivation of the brand hex colours (`palette.ts`), with the foreground forced to at least 4.5:1 against the background. With no brand it uses the family palette; with a non-hex brand colour it keeps the brand colours. |
+| `typography.pairing` | One of 5 local font stacks, with no remote fonts. A `preserve` direction keeps the business's own brand typography. |
+| `radius` | sharp 0.25/0.375rem, soft 0.5/0.75rem, round 1/1.5rem |
+| `density` | `theme.spacing` sets the `--ui-space-section-*` tokens: compact is tighter, airy is looser, and comfortable sets nothing (today's spacing). |
+| `sectionOrder` | Orders the sections that exist. The hero stays first and cta+contact stay last; missing sections are skipped. |
+| `hero.layout` | `content.layout` becomes `data-layout`: split (today's with-image layout) or centered (centered copy, photo below). |
+| `gallery` | `maxItems` applies after the hero is excluded, keeps the existing real-before-generated order, and de-duplicates by URL. `layout` grid is uniform; featured_grid is today's look. |
+| `surfaces` | alternate uses base/surface rhythm; flat sets no section backgrounds. |
+| `cta.variant` | The CTA variant only; copy and destination are unchanged. |
+| `rationale` | Never read by the generator and never rendered. |
+
+Studio's RedesignFlow passes the exact `website_direction` its generation returned, after validating it with
+`validateWebsiteCreativeDirection`. A missing or invalid direction is refused with a safe message and technical
+details; the flow never falls back to the undirected proposal. Other callers (for example CreativeSection) remain
+undirected.
+
+The backend `SiteThemePayload` now declares `spacing` explicitly, the same A8.1.2 lesson: `extra="ignore"` would
+otherwise drop it silently before the real build.

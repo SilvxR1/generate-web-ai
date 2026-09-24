@@ -214,7 +214,7 @@ def _preserve(context: DirectionContext, family: str) -> WebsiteCreativeDirectio
             "density": "comfortable",
             "sectionOrder": list(profile.section_order),
             "hero": {"layout": "split" if context.has_hero_image else "centered"},
-            "gallery": {"maxItems": max_items, "layout": "grid"},
+            "gallery": {"maxItems": max_items, "layout": "featured_grid"},  # today's gallery look
             "surfaces": {"mode": profile.surfaces},
             "cta": {"variant": profile.cta},
             "rationale": (

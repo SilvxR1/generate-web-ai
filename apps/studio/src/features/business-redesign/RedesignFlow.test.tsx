@@ -12,6 +12,7 @@ import { generateSiteConfig } from "@generate-web-ai/website-generator";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WebsiteCreativeDirection } from "@generate-web-ai/site-config";
 import type { BusinessAsset, CreatedBusiness } from "../../lib/api";
 import { RedesignFlow } from "./RedesignFlow";
 
@@ -51,6 +52,25 @@ function asset(overrides: Partial<BusinessAsset> = {}): BusinessAsset {
   };
 }
 
+// A real, canonical v1 direction (the shape the internal provider stores on
+// a generation, A8.2.2/A8.2.4). Deliberately distinctive (story-first order,
+// centered hero, compact density) so tests can see it reach the proposal.
+const NEW_DIRECTION: WebsiteCreativeDirection = {
+  version: "1",
+  strategy: "new_direction",
+  family: "professional_services",
+  palette: { mode: "brand_derived", derivation: "contrast_up" },
+  typography: { pairing: "system_sans" },
+  radius: "soft",
+  density: "compact",
+  sectionOrder: ["about", "gallery", "services"],
+  hero: { layout: "centered" },
+  gallery: { maxItems: 6, layout: "grid" },
+  surfaces: { mode: "alternate" },
+  cta: { variant: "emphasis" },
+  rationale: "A distinctly different presentation with a story-first section order.",
+};
+
 function creativeGeneration(overrides: Record<string, unknown> = {}) {
   return {
     id: "gen-1",
@@ -66,6 +86,7 @@ function creativeGeneration(overrides: Record<string, unknown> = {}) {
     completed_at: "2026-01-01T00:00:05Z",
     error: null,
     created_at: "2026-01-01T00:00:00Z",
+    website_direction: NEW_DIRECTION,
     ...overrides,
   };
 }
@@ -381,5 +402,53 @@ describe("RedesignFlow", () => {
     );
     const detail = screen.getByText(/pages\.0\.blocks\.1\.background/);
     expect(detail.closest("details")?.open).toBe(false);
+  });
+
+  it("builds the proposal from the exact direction the generation returned, never re-deriving it", async () => {
+    const user = userEvent.setup();
+    const photos = Array.from({ length: 12 }, (_, n) =>
+      asset({ id: `photo-${n}`, kind: "image", category: "gallery", storage_url: `https://cdn.example.com/p${n}.jpg` }),
+    );
+    renderFlow(photos);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, websiteDraft()));
+
+    // "Refresh" is clicked, but the generation's stored direction (new_direction)
+    // is what shapes the proposal — the button is never re-interpreted here.
+    await goToConfirmStep(user);
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+
+    const draftCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/website-drafts"));
+    const body = JSON.parse((draftCall as [string, RequestInit])[1].body as string);
+    const expected = generateSiteConfig(exampleReformaValenciaConfig, photos, NEW_DIRECTION);
+
+    expect(body.site_config).toEqual(JSON.parse(JSON.stringify(expected)));
+    expect(body.creative_generation_id).toBe("gen-1");
+    const blocks = body.site_config.pages[0].blocks;
+    expect(blocks.map((b: { id?: string }) => b.id)).toEqual(["hero", "about", "gallery", "services", "cta", "contact"]);
+    expect(blocks[0].content.layout).toBe("centered");
+    expect(blocks.find((b: { type: string }) => b.type === "gallery").content.items).toHaveLength(6);
+    expect(JSON.stringify(body.site_config)).not.toContain(NEW_DIRECTION.rationale);
+  });
+
+  it.each([
+    ["missing", { website_direction: null }, "returned no website_direction"],
+    ["invalid", { website_direction: { ...NEW_DIRECTION, family: "luxury" } }, "invalid website_direction"],
+  ])("refuses a %s direction instead of silently building the old undirected proposal", async (_label, overrides, detail) => {
+    const user = userEvent.setup();
+    renderFlow();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration(overrides)));
+
+    await goToConfirmStep(user, "Create a new design direction");
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector(":scope > p")?.textContent).toBe(
+      "We couldn't create a design direction for this proposal. Please try again. Your live website has not changed.",
+    );
+    const technical = screen.getByText(new RegExp(detail));
+    expect(technical.closest("details")?.open).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/website-drafts"))).toBe(false);
   });
 });

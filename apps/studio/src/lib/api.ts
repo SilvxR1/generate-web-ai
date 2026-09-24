@@ -1,5 +1,5 @@
 import type { BusinessConfig, BusinessVertical, CreativeConfig } from "@generate-web-ai/business-config-types";
-import type { SiteConfig } from "@generate-web-ai/site-config";
+import type { SiteConfig, WebsiteCreativeDirection } from "@generate-web-ai/site-config";
 import type { WorkflowConfig } from "@generate-web-ai/workflow-config-types";
 
 // The only backend this dashboard talks to — see apps/api.
@@ -825,6 +825,10 @@ export interface CreativeGeneration {
   completed_at: string | null;
   error: string | null;
   created_at: string;
+  /** A8.2.4: the normalized presentation direction this generation
+   * produced (WebsiteCreativeDirection v1), or null for a provider that
+   * produced none and for generations recorded before it existed. */
+  website_direction?: WebsiteCreativeDirection | null;
 }
 
 export function listCreativeGenerations(businessId: string, tenantId: string): Promise<CreativeGeneration[]> {

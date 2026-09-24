@@ -79,6 +79,13 @@ const themeStyle: Record<string, string> = {
 if (theme.fonts.display) {
   themeStyle["--ui-font-display"] = theme.fonts.display;
 }
+// A8.2.3 density: only emitted when a creative direction set it —
+// otherwise every block keeps its own built-in section spacing (today's).
+if (theme.spacing) {
+  themeStyle["--ui-space-section-sm"] = theme.spacing.sectionSm;
+  themeStyle["--ui-space-section-md"] = theme.spacing.sectionMd;
+  themeStyle["--ui-space-section-lg"] = theme.spacing.sectionLg;
+}
 ---
 
 <html lang="en" style={themeStyle}>

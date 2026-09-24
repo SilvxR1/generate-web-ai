@@ -87,8 +87,9 @@ export const MOVABLE_SECTIONS = ["services", "gallery", "about"] as const;
  * (today chosen by whether an image exists). */
 export const HERO_LAYOUTS = ["split", "centered"] as const;
 
-/** grid: uniform grid (today); featured_grid: the first real photo
- * rendered larger via Gallery.astro's existing `featured` item support. */
+/** featured_grid: Gallery.astro's existing behaviour (and today's), the
+ * featured item (or the first real photo) is rendered larger. grid: uniform
+ * cells with no item enlarged. */
 export const GALLERY_LAYOUTS = ["grid", "featured_grid"] as const;
 export const GALLERY_MAX_ITEMS_MIN = 3;
 export const GALLERY_MAX_ITEMS_MAX = 24;
