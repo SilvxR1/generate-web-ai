@@ -22,9 +22,13 @@
  * / determinism requirement).
  */
 import type { BusinessVertical } from "@generate-web-ai/business-config-types";
-import type { ThemeConfig } from "@generate-web-ai/site-config";
+import type { ThemeConfig, WebsiteDesignFamily } from "@generate-web-ai/site-config";
 
-export type DesignFamily = "artisan" | "construction" | "professional_services" | "hospitality" | "generic";
+// The family vocabulary is canonical in @generate-web-ai/site-config
+// (WebsiteCreativeDirection.family, A8.2.1) — aliased here, never
+// redefined, so a direction can only ever name a family this module has
+// tokens for.
+export type DesignFamily = WebsiteDesignFamily;
 
 export interface DesignTokens {
   family: DesignFamily;

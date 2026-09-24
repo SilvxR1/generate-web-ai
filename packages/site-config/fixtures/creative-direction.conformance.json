@@ -1,0 +1,2600 @@
+{
+  "_comment": "A8.2.1 WebsiteCreativeDirection conformance fixture — the ONE vocabulary + case set both packages/site-config (TypeScript) and apps/api app.domain.creative.website_direction (Pydantic) are tested against. Changing the contract means changing this file, and both suites must still agree.",
+  "vocabulary": {
+    "version": "1",
+    "strategy": [
+      "preserve",
+      "evolve",
+      "new_direction"
+    ],
+    "family": [
+      "artisan",
+      "construction",
+      "professional_services",
+      "hospitality",
+      "generic"
+    ],
+    "palette.mode": [
+      "brand",
+      "brand_derived",
+      "family"
+    ],
+    "palette.derivation": [
+      "tonal_shift",
+      "contrast_up",
+      "muted",
+      "vivid"
+    ],
+    "typography.pairing": [
+      "modern_sans",
+      "system_sans",
+      "humanist_serif_display",
+      "bold_display_sans",
+      "classic_serif"
+    ],
+    "radius": [
+      "sharp",
+      "soft",
+      "round"
+    ],
+    "density": [
+      "compact",
+      "comfortable",
+      "airy"
+    ],
+    "sectionOrder": [
+      "services",
+      "gallery",
+      "about"
+    ],
+    "hero.layout": [
+      "split",
+      "centered"
+    ],
+    "gallery.layout": [
+      "grid",
+      "featured_grid"
+    ],
+    "gallery.maxItems": {
+      "min": 3,
+      "max": 24
+    },
+    "surfaces.mode": [
+      "alternate",
+      "flat"
+    ],
+    "cta.variant": [
+      "default",
+      "emphasis"
+    ],
+    "rationale.maxLength": 280
+  },
+  "valid": {
+    "preserve": {
+      "version": "1",
+      "strategy": "preserve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "round",
+      "density": "comfortable",
+      "sectionOrder": [
+        "gallery",
+        "services",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 12,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Keeps the existing brand palette and handmade feel; tidies spacing and limits the gallery to the strongest photos."
+    },
+    "evolve": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "new_direction": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "about",
+        "services",
+        "gallery"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "gallery_max_items_3": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 3,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_max_items_24": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 24,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "section_order_services_gallery_about": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "section_order_services_about_gallery": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "services",
+        "about",
+        "gallery"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "section_order_gallery_services_about": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "gallery",
+        "services",
+        "about"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "section_order_gallery_about_services": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "gallery",
+        "about",
+        "services"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "section_order_about_services_gallery": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "about",
+        "services",
+        "gallery"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "section_order_about_gallery_services": {
+      "version": "1",
+      "strategy": "new_direction",
+      "family": "hospitality",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "classic_serif"
+      },
+      "radius": "sharp",
+      "density": "compact",
+      "sectionOrder": [
+        "about",
+        "gallery",
+        "services"
+      ],
+      "hero": {
+        "layout": "centered"
+      },
+      "gallery": {
+        "maxItems": 6,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "flat"
+      },
+      "cta": {
+        "variant": "emphasis"
+      },
+      "rationale": "A distinctly different editorial direction: classic serif type, flat surfaces, story-first order, stronger call to action."
+    },
+    "palette_brand_derived_tonal_shift": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "palette_brand_derived_contrast_up": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "contrast_up"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "palette_brand_derived_muted": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "muted"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "palette_brand_derived_vivid": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "vivid"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "rationale_at_max_length": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  },
+  "invalid": {
+    "unknown_strategy": {
+      "version": "1",
+      "strategy": "reimagine",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_family": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "luxury",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_palette_mode": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "ai_generated"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "brand_derived_without_derivation": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_palette_derivation": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "neon"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "derivation_on_brand_mode": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand",
+        "derivation": "muted"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "raw_palette_colors": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "family",
+        "colors": {
+          "primary": "#ff0000"
+        }
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "preserve_without_brand_palette": {
+      "version": "1",
+      "strategy": "preserve",
+      "family": "artisan",
+      "palette": {
+        "mode": "family"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "round",
+      "density": "comfortable",
+      "sectionOrder": [
+        "gallery",
+        "services",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 12,
+        "layout": "grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Keeps the existing brand palette and handmade feel; tidies spacing and limits the gallery to the strongest photos."
+    },
+    "arbitrary_font_pairing": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "Comic Sans MS"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "remote_font_url": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "modern_sans",
+        "fontUrl": "https://fonts.example.com/x.css"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_radius": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "12px",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_density": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "dense",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "arbitrary_section_type": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "testimonials",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "invented_section_added": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about",
+        "pricing"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "section_hidden_by_subset": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "duplicate_section": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "services",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "hero_moved": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "hero",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_hero_layout": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "video_background"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_max_items_below_bound": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 2,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_max_items_above_bound": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 25,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_max_items_not_integer": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 6.5,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_max_items_string": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": "12",
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_gallery_layout": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "carousel"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_asset_urls": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid",
+        "items": [
+          "https://cdn.example.com/photo.jpg"
+        ]
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "gallery_asset_ids": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid",
+        "assetIds": [
+          "asset-1"
+        ]
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_surface_mode": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "gradient"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unknown_cta_variant": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "popup"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "cta_custom_label": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default",
+        "label": "Compra ya — 50% dto."
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "unsupported_version": {
+      "version": "2",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "numeric_version": {
+      "version": 1,
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "missing_version": {
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo."
+    },
+    "missing_rationale": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      }
+    },
+    "empty_rationale": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "   "
+    },
+    "rationale_too_long": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "rationale_html": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "<script>alert(1)</script>"
+    },
+    "rationale_multiline": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "line one\nline two"
+    },
+    "extra_field_businessName": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "businessName": "Cositas y Puntos"
+    },
+    "extra_field_description": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "description": "Handmade since 1990"
+    },
+    "extra_field_services": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "services": [
+        {
+          "name": "Crochet"
+        }
+      ]
+    },
+    "extra_field_products": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "products": [
+        {
+          "name": "Amigurumi",
+          "price": 25
+        }
+      ]
+    },
+    "extra_field_prices": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "prices": {
+        "amigurumi": 25
+      }
+    },
+    "extra_field_address": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "address": "Calle Falsa 1"
+    },
+    "extra_field_phone": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "phone": "+34 600 000 000"
+    },
+    "extra_field_email": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "email": "hola@example.com"
+    },
+    "extra_field_whatsapp": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "whatsapp": "+34600000000"
+    },
+    "extra_field_reviews": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "reviews": [
+        {
+          "author": "Ana",
+          "rating": 5
+        }
+      ]
+    },
+    "extra_field_testimonials": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "testimonials": [
+        "Great!"
+      ]
+    },
+    "extra_field_rating": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "rating": 4.9
+    },
+    "extra_field_projects": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "projects": [
+        "Wedding set"
+      ]
+    },
+    "extra_field_claims": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "claims": [
+        "Best in Valencia"
+      ]
+    },
+    "extra_field_stats": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "stats": {
+        "years": 20
+      }
+    },
+    "extra_field_html": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "html": "<section>Hi</section>"
+    },
+    "extra_field_css": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "css": "body{color:red}"
+    },
+    "extra_field_style": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "style": {
+        "color": "red"
+      }
+    },
+    "extra_field_provider": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "provider": "higgsfield"
+    },
+    "extra_field_model": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "model": "some-model"
+    },
+    "extra_field_credits": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "credits": 3
+    },
+    "extra_field_cost": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "cost": 0.4
+    },
+    "extra_field_requestId": {
+      "version": "1",
+      "strategy": "evolve",
+      "family": "artisan",
+      "palette": {
+        "mode": "brand_derived",
+        "derivation": "tonal_shift"
+      },
+      "typography": {
+        "pairing": "humanist_serif_display"
+      },
+      "radius": "soft",
+      "density": "airy",
+      "sectionOrder": [
+        "services",
+        "gallery",
+        "about"
+      ],
+      "hero": {
+        "layout": "split"
+      },
+      "gallery": {
+        "maxItems": 9,
+        "layout": "featured_grid"
+      },
+      "surfaces": {
+        "mode": "alternate"
+      },
+      "cta": {
+        "variant": "default"
+      },
+      "rationale": "Recognizable brand colours in a lighter tonal range, more breathing room, and a featured first photo.",
+      "requestId": "req_123"
+    },
+    "not_an_object": [
+      "evolve"
+    ]
+  }
+}

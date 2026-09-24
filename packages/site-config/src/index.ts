@@ -59,3 +59,39 @@ export type { SEOConfig } from "./seo.ts";
 export type { SiteConfig } from "./site-config.ts";
 export type { WhatsAppConfig } from "./whatsapp.ts";
 export { exampleSiteConfig } from "./example.ts";
+export type {
+  CreativeStrategy,
+  CtaVariant,
+  DensityScale,
+  GalleryLayout,
+  HeroLayout,
+  MovableSection,
+  PaletteDerivation,
+  PaletteDirection,
+  PaletteMode,
+  RadiusScale,
+  SurfaceMode,
+  TypographyPairing,
+  WebsiteCreativeDirection,
+  WebsiteCreativeDirectionValidation,
+  WebsiteDesignFamily,
+} from "./creative-direction.ts";
+export {
+  CREATIVE_STRATEGIES,
+  CTA_VARIANTS,
+  DENSITY_SCALES,
+  GALLERY_LAYOUTS,
+  GALLERY_MAX_ITEMS_MAX,
+  GALLERY_MAX_ITEMS_MIN,
+  HERO_LAYOUTS,
+  MOVABLE_SECTIONS,
+  PALETTE_DERIVATIONS,
+  PALETTE_MODES,
+  RADIUS_SCALES,
+  RATIONALE_MAX_LENGTH,
+  SURFACE_MODES,
+  TYPOGRAPHY_PAIRINGS,
+  WEBSITE_CREATIVE_DIRECTION_VERSION,
+  WEBSITE_DESIGN_FAMILIES,
+  validateWebsiteCreativeDirection,
+} from "./creative-direction.ts";
