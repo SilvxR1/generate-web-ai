@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.domain.creative.website_direction import WebsiteCreativeDirection, parse_website_direction
 from app.domain.enums import (
     AssetCategory,
     AssetKind,
@@ -195,6 +196,18 @@ class CreativeGenerationRead(BaseModel):
     completed_at: datetime | None
     error: str | None
     created_at: datetime
+    # A8.2.4: the normalized presentation direction this generation
+    # produced (WebsiteCreativeDirection v1, typed — never a raw dict), or
+    # null for a provider that produced none and for every generation
+    # recorded before A8.2.4. Read through the versioned
+    # parse_website_direction, so an unknown future version fails loudly
+    # rather than being interpreted as v1.
+    website_direction: WebsiteCreativeDirection | None = None
+
+    @field_validator("website_direction", mode="before")
+    @classmethod
+    def _parse_versioned_direction(cls, value: object) -> WebsiteCreativeDirection | None:
+        return None if value is None else parse_website_direction(value)
 
 
 # --- P2: CreativeDirection / generative workflow -------------------------

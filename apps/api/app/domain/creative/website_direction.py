@@ -151,3 +151,22 @@ class WebsiteCreativeDirection(_Strict):
         if self.strategy is BrandStrategy.PRESERVE and self.palette.mode != "brand":
             raise ValueError('a "preserve" direction must keep the brand palette (palette.mode="brand")')
         return self
+
+
+class UnsupportedWebsiteDirectionVersionError(ValueError):
+    """A stored/received direction declares a version this code has no
+    model for — never silently read as v1."""
+
+
+def parse_website_direction(data: object) -> WebsiteCreativeDirection:
+    """The one version-dispatch point for reading a direction back
+    (persisted row, API boundary). Only v1 exists; a future version adds
+    its own model and branch here instead of reinterpreting old rows."""
+    if isinstance(data, WebsiteCreativeDirection):
+        data = data.model_dump(mode="json")
+    if not isinstance(data, dict):
+        raise ValueError("A website direction must be a JSON object.")
+    version = data.get("version")
+    if version != WEBSITE_CREATIVE_DIRECTION_VERSION:
+        raise UnsupportedWebsiteDirectionVersionError(f"Unsupported website direction version: {version!r}.")
+    return WebsiteCreativeDirection.model_validate(data)

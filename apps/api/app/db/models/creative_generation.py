@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
 from app.db.models.columns import str_enum
@@ -57,6 +57,26 @@ class CreativeGeneration(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin,
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     generation_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # A8.2.4: the normalized WebsiteCreativeDirection v1 (app.domain.
+    # creative.website_direction) this generation produced — presentation
+    # decisions only, stored exactly as the canonical JSON contract
+    # (including `version`). Distinct from generation_metadata, which is
+    # free-form provider bookkeeping. NULL when the provider produced no
+    # direction (every non-internal provider today, and every generation
+    # recorded before A8.2.4 — never backfilled or reconstructed).
+    # Written once by app.creative.orchestrator; a WebsiteDraft reaches it
+    # through its own creative_generation_id.
+    website_direction: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     business: Mapped["Business"] = relationship(back_populates="creative_generations")
     produced_assets: Mapped[list["BusinessAsset"]] = relationship(back_populates="generation")
+
+    @validates("website_direction")
+    def _website_direction_is_write_once(self, key: str, value: dict | None) -> dict | None:
+        """A recorded direction is a historical result: normal application
+        code may set it once (None -> direction) but never overwrite or
+        clear it, so a draft built from this generation stays explainable."""
+        current = self.__dict__.get(key)
+        if current is not None and value != current:
+            raise ValueError("CreativeGeneration.website_direction is immutable once recorded.")
+        return value
