@@ -144,3 +144,37 @@ undirected.
 
 The backend `SiteThemePayload` now declares `spacing` explicitly, the same A8.1.2 lesson: `extra="ignore"` would
 otherwise drop it silently before the real build.
+
+## Owner UX (A8.2.5)
+
+- **Primary path:** Business → **Redesign website** → Refresh the current design / Create a new design direction →
+  Generate proposal → Preview → Use this design → Publish (unchanged). "Advanced creative tools" (brand & assets,
+  AI visuals, experimental generation) is a collapsed disclosure below. It notes that some of those tools may use
+  paid AI providers, and it is not mounted or fetched until opened.
+- **Server authority:** the proposal is labelled from the stored `website_direction.strategy` ("Redesign type:
+  Refresh / New direction"). If the stored strategy doesn't match the requested one, no draft is built, and the
+  owner sees a safe error with technical details collapsed.
+- **What changed:**
+  - the stored `rationale`, shown verbatim, which Studio never generates or infers
+  - four plain-language lines translated from the validated direction by `directionSummary.ts` (Layout, Visual
+    style, Spacing, Gallery, e.g. "Showing up to 6 photos on the homepage"), with no enum names
+  - a preservation note: business information and logo unchanged, only real photos used, the homepage shows a
+    selection, none deleted
+- **Preview state:** a status banner reads "This is a preview. Your live website has not changed." Publish
+  semantics are unchanged.
+
+## Next deployment sequence (not yet executed)
+
+A8.2.4 added migration `c4d7e2a9f1b3`, and production startup runs `alembic upgrade head`.
+
+1. Confirm `alembic heads` is the single head `c4d7e2a9f1b3` on main.
+2. Record the pre-deploy Cositas baseline (read-only): WebsiteVersion / CreativeGeneration / WebsiteDraft counts and the live version.
+3. Deploy the API from main (normal Railway deploy). Startup applies `c4d7e2a9f1b3`.
+4. Verify (read-only): `creative_generations.website_direction` exists and is nullable, old rows read `null`, and
+   `GET /creative-generations` still works.
+5. Verify `/health`: `status=ok`, `database=ok`.
+6. Deploy Studio from the same main SHA to Cloudflare Pages (`generate-web-ai-studio`). Verify the bundle and credentialed CORS.
+7. Re-check the baseline counts (unchanged).
+8. The owner runs one BASIC **Refresh** redesign, then one BASIC **New direction** redesign.
+9. Compare the two previews (and their "What changed" panels).
+10. **Do not publish** until explicitly approved.

@@ -9,11 +9,12 @@
 // submissions.
 import { exampleReformaValenciaConfig } from "@generate-web-ai/business-config-types";
 import { generateSiteConfig } from "@generate-web-ai/website-generator";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsiteCreativeDirection } from "@generate-web-ai/site-config";
 import type { BusinessAsset, CreatedBusiness } from "../../lib/api";
+import internalDirectionsFixture from "../../../../../packages/website-generator/fixtures/internal-directions.json";
 import { RedesignFlow } from "./RedesignFlow";
 
 const TENANT_ID = "11111111-1111-1111-1111-111111111111";
@@ -52,24 +53,14 @@ function asset(overrides: Partial<BusinessAsset> = {}): BusinessAsset {
   };
 }
 
-// A real, canonical v1 direction (the shape the internal provider stores on
-// a generation, A8.2.2/A8.2.4). Deliberately distinctive (story-first order,
-// centered hero, compact density) so tests can see it reach the proposal.
-const NEW_DIRECTION: WebsiteCreativeDirection = {
-  version: "1",
-  strategy: "new_direction",
-  family: "professional_services",
-  palette: { mode: "brand_derived", derivation: "contrast_up" },
-  typography: { pairing: "system_sans" },
-  radius: "soft",
-  density: "compact",
-  sectionOrder: ["about", "gallery", "services"],
-  hero: { layout: "centered" },
-  gallery: { maxItems: 6, layout: "grid" },
-  surfaces: { mode: "alternate" },
-  cta: { variant: "emphasis" },
-  rationale: "A distinctly different presentation with a story-first section order.",
+// The REAL directions the internal provider derives for this same business
+// (exampleReformaValenciaConfig) — packages/website-generator's shared,
+// drift-guarded fixture, never hand-written here.
+const INTERNAL_DIRECTIONS = internalDirectionsFixture as unknown as {
+  cases: { renovation: { directions: Record<"preserve" | "evolve" | "new_direction", WebsiteCreativeDirection> } };
 };
+const REFRESH_DIRECTION = INTERNAL_DIRECTIONS.cases.renovation.directions.evolve;
+const NEW_DIRECTION = INTERNAL_DIRECTIONS.cases.renovation.directions.new_direction;
 
 function creativeGeneration(overrides: Record<string, unknown> = {}) {
   return {
@@ -86,7 +77,7 @@ function creativeGeneration(overrides: Record<string, unknown> = {}) {
     completed_at: "2026-01-01T00:00:05Z",
     error: null,
     created_at: "2026-01-01T00:00:00Z",
-    website_direction: NEW_DIRECTION,
+    website_direction: REFRESH_DIRECTION,
     ...overrides,
   };
 }
@@ -207,7 +198,7 @@ describe("RedesignFlow", () => {
   it('"Create a new design direction" sends brand_strategy=new_direction and creative_level=basic, and never calls creative-config', async () => {
     const user = userEvent.setup();
     renderFlow();
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: NEW_DIRECTION })));
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft()));
 
     await goToConfirmStep(user, "Create a new design direction");
@@ -365,7 +356,7 @@ describe("RedesignFlow", () => {
     renderFlow();
     const buildError =
       'PlatformContract violation(s): An anchor targets "#contact", which has no matching id="contact" anywhere in the build.';
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: NEW_DIRECTION })));
     fetchMock.mockResolvedValueOnce(jsonResponse(201, websiteDraft({ status: "build_failed", build_error: buildError })));
 
     await goToConfirmStep(user, "Create a new design direction");
@@ -410,12 +401,10 @@ describe("RedesignFlow", () => {
       asset({ id: `photo-${n}`, kind: "image", category: "gallery", storage_url: `https://cdn.example.com/p${n}.jpg` }),
     );
     renderFlow(photos);
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: NEW_DIRECTION })));
     fetchMock.mockResolvedValueOnce(jsonResponse(201, websiteDraft()));
 
-    // "Refresh" is clicked, but the generation's stored direction (new_direction)
-    // is what shapes the proposal — the button is never re-interpreted here.
-    await goToConfirmStep(user);
+    await goToConfirmStep(user, "Create a new design direction");
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
     await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
 
@@ -450,5 +439,158 @@ describe("RedesignFlow", () => {
     const technical = screen.getByText(new RegExp(detail));
     expect(technical.closest("details")?.open).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/website-drafts"))).toBe(false);
+  });
+});
+
+// A8.2.5 — owner-facing creative direction UX + Refresh vs New direction proof.
+describe("RedesignFlow — what changed (A8.2.5)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const photos = Array.from({ length: 12 }, (_, n) =>
+    asset({ id: `photo-${n}`, kind: "image", category: "project", storage_url: `https://cdn.example.com/p${n}.jpg` }),
+  );
+
+  async function generate(choice: "Refresh the current design" | "Create a new design direction", stored: WebsiteCreativeDirection) {
+    const user = userEvent.setup();
+    render(<RedesignFlow business={business()} tenantId={TENANT_ID} assets={photos} onPublished={vi.fn()} onClose={vi.fn()} />);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: stored })));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, websiteDraft()));
+    await user.click(await screen.findByText(choice));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    const draftCall = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/website-drafts")).at(-1);
+    const siteConfig = JSON.parse((draftCall as [string, RequestInit])[1].body as string).site_config;
+    const panel = screen.getByRole("region", { name: "What changed" });
+    return { user, panel, siteConfig };
+  }
+
+  function summaryValue(panel: HTMLElement, label: string): string {
+    const term = within(panel).getByText(label, { selector: "dt" });
+    return term.nextElementSibling?.textContent ?? "";
+  }
+
+  function facts(siteConfig: { brand: unknown; seo: unknown; business?: unknown; pages: { blocks: { type: string; content: Record<string, unknown> }[] }[] }) {
+    const byType = (type: string) => siteConfig.pages[0]!.blocks.find((b) => b.type === type)?.content;
+    const hero = byType("hero") as Record<string, unknown>;
+    return {
+      brand: siteConfig.brand,
+      seo: siteConfig.seo,
+      business: siteConfig.business,
+      heroText: [hero.heading, hero.subheading, hero.eyebrow],
+      services: byType("services"),
+      contact: byType("contact"),
+      legal: siteConfig.pages.slice(1),
+    };
+  }
+
+  it("Refresh shows the stored evolve rationale and its plain-language summary", async () => {
+    const { panel } = await generate("Refresh the current design", REFRESH_DIRECTION);
+
+    expect(REFRESH_DIRECTION.strategy).toBe("evolve");
+    expect(screen.getByText("Refresh", { selector: "strong" })).toBeInTheDocument();
+    expect(within(panel).getByRole("heading", { level: 4, name: "What changed" })).toBeInTheDocument();
+    expect(within(panel).getByText(REFRESH_DIRECTION.rationale)).toBeInTheDocument();
+    expect(summaryValue(panel, "Spacing")).toBe("More breathing room");
+    expect(summaryValue(panel, "Gallery")).toBe(
+      `Showing up to ${REFRESH_DIRECTION.gallery.maxItems} photos on the homepage, led by a larger featured photo`,
+    );
+  });
+
+  it("New direction shows a different stored rationale and summary", async () => {
+    const { panel } = await generate("Create a new design direction", NEW_DIRECTION);
+
+    expect(NEW_DIRECTION.strategy).toBe("new_direction");
+    expect(screen.getByText("New direction", { selector: "strong" })).toBeInTheDocument();
+    expect(within(panel).getByText(NEW_DIRECTION.rationale)).toBeInTheDocument();
+    expect(NEW_DIRECTION.rationale).not.toBe(REFRESH_DIRECTION.rationale);
+    expect(summaryValue(panel, "Spacing")).toBe("More compact");
+    expect(summaryValue(panel, "Layout")).toBe("Headline centered above your main photo; your story comes first");
+    expect(summaryValue(panel, "Gallery")).toBe(`Showing up to ${NEW_DIRECTION.gallery.maxItems} photos on the homepage`);
+  });
+
+  it("the two proposals differ materially, keep identical facts, and neither publishes", async () => {
+    const refresh = await generate("Refresh the current design", REFRESH_DIRECTION);
+    const refreshSummary = ["Layout", "Visual style", "Spacing", "Gallery"].map((l) => summaryValue(refresh.panel, l));
+    const refreshConfig = refresh.siteConfig;
+    document.body.innerHTML = "";
+
+    const next = await generate("Create a new design direction", NEW_DIRECTION);
+    const nextSummary = ["Layout", "Visual style", "Spacing", "Gallery"].map((l) => summaryValue(next.panel, l));
+
+    expect(nextSummary).not.toEqual(refreshSummary);
+    expect(next.siteConfig.theme).not.toEqual(refreshConfig.theme);
+    expect(next.siteConfig.pages[0].blocks.map((b: { id?: string }) => b.id)).not.toEqual(
+      refreshConfig.pages[0].blocks.map((b: { id?: string }) => b.id),
+    );
+    expect(facts(next.siteConfig)).toEqual(facts(refreshConfig));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/publish"))).toBe(false);
+  });
+
+  it("makes the preview state unmistakable and describes preservation accurately", async () => {
+    await generate("Create a new design direction", NEW_DIRECTION);
+
+    const state = screen.getByRole("status");
+    expect(state.textContent).toBe("This is a preview. Your live website has not changed.");
+    const preserved = screen.getByText(/Your business information and logo are unchanged/);
+    expect(preserved.textContent).toContain("only your real photos are used");
+    expect(preserved.textContent).toContain("none are deleted");
+    expect(preserved.textContent).not.toMatch(/all (of )?your photos/i);
+    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+  });
+
+  it("never exposes contract enum names in the owner-facing panel", async () => {
+    const { panel } = await generate("Create a new design direction", NEW_DIRECTION);
+
+    for (const raw of ["evolve", "new_direction", "basic", "hospitality", "professional_services", "brand_derived", "contrast_up", "featured_grid", "sectionOrder", "{"]) {
+      expect(panel.textContent).not.toContain(raw);
+    }
+  });
+
+  it("the stored direction is authoritative: a strategy mismatch is refused, never mislabeled", async () => {
+    const user = userEvent.setup();
+    render(<RedesignFlow business={business()} tenantId={TENANT_ID} assets={photos} onPublished={vi.fn()} onClose={vi.fn()} />);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: NEW_DIRECTION })));
+
+    await user.click(await screen.findByText("Refresh the current design"));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector(":scope > p")?.textContent).toBe(
+      "We couldn't confirm this proposal matches the redesign you chose. Please try again. Your live website has not changed.",
+    );
+    expect(screen.getByText(/Requested brand_strategy=evolve/).closest("details")?.open).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/website-drafts"))).toBe(false);
+    expect(screen.queryByText("What changed")).not.toBeInTheDocument();
+  });
+
+  it("technical details stay keyboard-operable", async () => {
+    const user = userEvent.setup();
+    render(<RedesignFlow business={business()} tenantId={TENANT_ID} assets={photos} onPublished={vi.fn()} onClose={vi.fn()} />);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration({ website_direction: null })));
+    await user.click(await screen.findByText("Refresh the current design"));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+
+    // A native <details>/<summary> pair: browsers make the summary
+    // focusable and toggle it with Enter/Space (jsdom doesn't emulate that
+    // activation, so the semantics and the toggle are asserted instead).
+    const summary = (await screen.findByText("Technical details")) as HTMLElement;
+    const details = summary.closest("details") as HTMLDetailsElement;
+    expect(summary.tagName).toBe("SUMMARY");
+    expect(details.firstElementChild).toBe(summary);
+    expect(details.open).toBe(false);
+    await user.click(summary);
+    expect(details.open).toBe(true);
   });
 });

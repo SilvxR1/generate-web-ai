@@ -1425,6 +1425,34 @@ describe("NewBusiness reopening an existing business (Studio dashboard's Open ac
     ).toBe(true);
   });
 
+  it("A8.2.5: Redesign is the primary path; advanced creative tools stay collapsed and unmounted until opened", async () => {
+    fetchMock.mockResolvedValueOnce(reformaBusinessResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, REFORMA_WORKFLOW_PREVIEW));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, []));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, null));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, []));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { checks: [], has_blocking_issues: false }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, []));
+
+    renderReopenPage("biz-reforma-pepe");
+
+    const redesign = await screen.findByRole("button", { name: "Redesign website" });
+    const advancedSummary = screen.getByText("Advanced creative tools", { selector: "summary" });
+    const advanced = advancedSummary.closest("details") as HTMLDetailsElement;
+
+    expect(advanced.open).toBe(false);
+    // The primary action comes first in the page; the tools sit below it.
+    expect(redesign.compareDocumentPosition(advancedSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(advanced.textContent).toContain("may use paid AI providers");
+    // Nothing from the advanced tools has mounted or fetched.
+    expect(screen.queryByRole("heading", { name: "Creative providers" })).not.toBeInTheDocument();
+    expect(
+      fetchMock.mock.calls.some(([url]) => /creative-(providers|config|directions|generations)/.test(String(url))),
+    ).toBe(false);
+  });
+
   it("a business that doesn't exist for this tenant shows a friendly error and a way back, not a crash", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(404, { error: { code: "business_not_found", message: "Business not found." } }),

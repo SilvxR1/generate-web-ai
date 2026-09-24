@@ -435,14 +435,23 @@ export function PreviewStep({ business, tenantId, justCreated, onEdit, onCreateA
         }
       />
 
-      <h2>Advanced</h2>
-      {showCreative ? (
-        <CreativeSection business={business} tenantId={tenantId} reloadToken={reloadToken} />
-      ) : (
-        <button type="button" onClick={() => setShowCreative(true)}>
-          Brand & assets, AI visuals, and advanced generation tools
-        </button>
-      )}
+      {/* A8.2.5: the redesign flow above is the primary path. These tools
+       * (brand & assets, AI visuals, experimental generation) stay
+       * available but collapsed and clearly secondary; some can use paid
+       * AI providers. CreativeSection still mounts only once opened. */}
+      <details
+        className="preview-step__advanced"
+        onToggle={(event) => {
+          if ((event.currentTarget as HTMLDetailsElement).open) setShowCreative(true);
+        }}
+      >
+        <summary>Advanced creative tools</summary>
+        <p className="field-hint">
+          For specialists: brand assets, AI visuals and experimental generation. Some of these tools may use paid AI
+          providers. To redesign your website, use “Redesign website” above.
+        </p>
+        {showCreative && <CreativeSection business={business} tenantId={tenantId} reloadToken={reloadToken} />}
+      </details>
 
       <h2>Leads</h2>
       <LeadsList

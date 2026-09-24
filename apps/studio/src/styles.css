@@ -970,3 +970,42 @@ dd {
   gap: 0.75rem;
   margin-top: 1.25rem;
 }
+
+/* A8.2.5 — "What changed" panel on a redesign proposal. */
+.redesign-flow__mode {
+  font-weight: 400;
+}
+
+.redesign-flow__changes {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid light-dark(#d1d5db, #374151);
+  border-radius: 0.5rem;
+}
+
+.redesign-flow__changes h4 {
+  margin: 0 0 0.5rem;
+}
+
+.redesign-flow__rationale {
+  margin: 0 0 0.75rem;
+}
+
+.redesign-flow__change-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+}
+
+.redesign-flow__change-list dt {
+  font-weight: 600;
+}
+
+.redesign-flow__change-list dd {
+  margin: 0;
+}
+
+.redesign-flow__preserved {
+  margin: 0.75rem 0 0;
+  font-size: 0.9375rem;
+}
