@@ -97,6 +97,8 @@ def test_real_npm_install_and_astro_build_produce_a_valid_static_site():
         html = artifact.files["index.html"].decode("utf-8")
         assert "platform-config" in html  # server-injected tenant identity
         assert '"businessId": "test-business-id"' in html
+        # A8.3.4-P0.2: connect-src allows exactly the injected API origin.
+        assert "connect-src 'self' https://api.example.com;" in artifact.files["_headers"].decode()
 
         result = validate_platform_contract(artifact.files, business_config=_business_config())
         assert result.passed, [f.message for f in result.blocking_violations]

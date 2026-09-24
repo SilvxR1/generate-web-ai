@@ -112,6 +112,12 @@ const { businessId, apiBaseUrl } = Astro.props;
     const payload = buildPublicLeadPayload({ fields, serviceLabel: resolveServiceLabel(form) });
 
     let succeeded = false;
+    // A8.3.4-P0.2: the visitor always sees the same safe message below, but
+    // the console records WHICH boundary failed (only a category and the
+    // HTTP status — never the response body or any submitted field), so a
+    // CSP/network block is no longer indistinguishable from a 4xx/429/5xx.
+    let failure: "network_or_csp" | "validation" | "rate_limited" | "server" | null = null;
+    let failureStatus: number | undefined;
     try {
       const response = await fetch(leadsUrl, {
         method: "POST",
@@ -124,11 +130,18 @@ const { businessId, apiBaseUrl } = Astro.props;
       // real vs. a silently-dropped spam submission" behavior, which
       // this code never tries to see past (both look like `response.ok`
       // here, and both correctly show the same success state).
-      if (!response.ok) throw new Error(`lead submission failed with status ${response.status}`);
-      succeeded = true;
+      if (response.ok) {
+        succeeded = true;
+      } else {
+        failureStatus = response.status;
+        failure = response.status === 429 ? "rate_limited" : response.status >= 500 ? "server" : "validation";
+      }
     } catch {
-      succeeded = false;
+      // fetch() rejects without a response: offline, DNS, CORS, or a
+      // Content-Security-Policy connect-src block.
+      failure = "network_or_csp";
     }
+    if (failure) console.warn("[gwa] lead submission failed", { reason: failure, status: failureStatus });
 
     if (succeeded) {
       form.dataset.leadSubmissionState = "submitted";

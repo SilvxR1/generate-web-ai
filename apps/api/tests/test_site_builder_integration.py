@@ -218,6 +218,16 @@ def test_build_renders_the_resolved_public_api_origin(monkeypatch: pytest.Monkey
     result = validate_platform_contract(artifact.files, business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG)
     assert "lead_endpoint_unconfigured" not in [f.rule for f in result.findings]
     assert "analytics_endpoint_unconfigured" not in [f.rule for f in result.findings]
+    # A8.3.4-P0.2: the CSP the browser enforces allows exactly that origin.
+    assert "public_api_csp_disconnected" not in [f.rule for f in result.findings]
+    assert _connect_src(artifact) == ["'self'", "https://api.example.com"]
+
+
+def _connect_src(artifact) -> list[str]:
+    headers = artifact.files["_headers"].decode("utf-8")
+    policy = re.search(r"Content-Security-Policy:(.*)", headers).group(1)
+    [directive] = [d.split() for d in policy.split(";") if d.split()[:1] == ["connect-src"]]
+    return directive[1:]
 
 
 def test_an_explicit_public_api_base_url_takes_precedence(monkeypatch: pytest.MonkeyPatch):
@@ -225,7 +235,9 @@ def test_an_explicit_public_api_base_url_takes_precedence(monkeypatch: pytest.Mo
     site_config = _reforma_site_config()
     site_config.businessId = "biz-123"
 
-    assert _rendered_runtime_config(build_site(site_config))["apiBaseUrl"] == "https://public.example.com"
+    artifact = build_site(site_config)
+    assert _rendered_runtime_config(artifact)["apiBaseUrl"] == "https://public.example.com"
+    assert _connect_src(artifact) == ["'self'", "https://public.example.com"]
 
 
 def test_a_malformed_origin_is_rendered_but_blocked_by_platform_contract(monkeypatch: pytest.MonkeyPatch):

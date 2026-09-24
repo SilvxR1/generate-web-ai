@@ -61,3 +61,44 @@ def test_customer_site_headers_file_allow_lists_real_inline_script_hashes():
     assert "'sha256-abc123=='" in content
     assert "X-Frame-Options: DENY" in content
     assert "Strict-Transport-Security" in content
+
+
+# --- A8.3.4-P0.2: connect-src must allow the site's public API origin ------
+
+
+def _csp_directives(content: str) -> dict[str, list[str]]:
+    policy = next(line for line in content.splitlines() if "Content-Security-Policy:" in line).split(":", 1)[1]
+    return {tokens[0]: tokens[1:] for tokens in (part.split() for part in policy.split(";")) if tokens}
+
+
+def test_a_valid_public_api_origin_is_the_only_extra_connect_src_source():
+    content = generate_headers_file(public_api_origin="https://API.example.com/").decode()
+
+    assert _csp_directives(content)["connect-src"] == ["'self'", "https://api.example.com"]
+
+
+@pytest.mark.parametrize(
+    "origin", [None, "", "http://api.example.com", "javascript:alert(1)", "https://a.example.com/x"]
+)
+def test_an_unusable_origin_leaves_connect_src_at_self(origin):
+    content = generate_headers_file(public_api_origin=origin).decode()
+
+    assert _csp_directives(content)["connect-src"] == ["'self'"]
+
+
+def test_the_api_origin_never_broadens_or_weakens_any_other_directive():
+    without = _csp_directives(generate_headers_file(script_hashes=frozenset({"abc=="})).decode())
+    with_origin_content = generate_headers_file(
+        script_hashes=frozenset({"abc=="}), public_api_origin="https://api.example.com"
+    ).decode()
+    with_origin = _csp_directives(with_origin_content)
+
+    assert {k: v for k, v in with_origin.items() if k != "connect-src"} == {
+        k: v for k, v in without.items() if k != "connect-src"
+    }
+    assert list(with_origin) == list(without)  # directive order unchanged
+    for wildcard in ("*", "https:", "http:", "'unsafe-inline'", "'unsafe-eval'"):
+        assert wildcard not in with_origin["connect-src"]
+    for line in ("X-Frame-Options: DENY", "X-Content-Type-Options: nosniff", "Strict-Transport-Security"):
+        assert line in with_origin_content
+    assert with_origin["frame-ancestors"] == ["'none'"]

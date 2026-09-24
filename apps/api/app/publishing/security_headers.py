@@ -34,18 +34,31 @@ can change between dependency versions) via `script_hashes`, so the CSP
 allow-lists exactly those bytes and nothing else — a real XSS payload
 injected through business/user content would produce a *different* inline
 script with a different hash and stay blocked.
+
+`connect-src` (A8.3.4-P0.2) is `'self'` plus exactly one extra origin: the
+public API origin the site's own browser scripts call (lead form
+submission and the analytics beacon). A site is served from its own
+*.pages.dev / custom domain, never from the API's origin, so `'self'` alone
+made the browser refuse both requests before they left the page. The
+origin is whatever value the build rendered into the page's runtime
+config, normalized by app.publishing.public_origin.canonical_public_origin;
+an unusable value adds nothing (PlatformContract reports it instead). Both
+the deterministic and generative engines always ship the analytics beacon
+alongside any lead form, so the origin is added whenever one is
+configured, not per feature. Never a wildcard, never a scheme-only source.
 """
 
-_BASE_CSP_DIRECTIVES = (
+from app.publishing.public_origin import canonical_public_origin
+
+# `connect-src` sits between these two groups (built per site, below), in
+# the same position it always had.
+_CSP_DIRECTIVES_BEFORE_CONNECT = (
     "default-src 'self'; "
     "img-src 'self' data: https:; "
     "style-src 'self' 'unsafe-inline'; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
-    "connect-src 'self'; "
-    "frame-ancestors 'none'; "
-    "base-uri 'self'; "
-    "form-action 'self'"
+    "font-src 'self' https://fonts.gstatic.com data:"
 )
+_CSP_DIRECTIVES_AFTER_CONNECT = "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 _OTHER_HEADER_LINES = [
     "X-Content-Type-Options: nosniff",
@@ -56,7 +69,9 @@ _OTHER_HEADER_LINES = [
 ]
 
 
-def generate_headers_file(*, script_hashes: frozenset[str] = frozenset()) -> bytes:
+def generate_headers_file(
+    *, script_hashes: frozenset[str] = frozenset(), public_api_origin: str | None = None
+) -> bytes:
     """Cloudflare Pages' `_headers` file format: a path pattern line
     followed by indented `Header: value` lines. `/*` applies to every
     route on the site, including the legal pages (Section 17) and any
@@ -64,8 +79,14 @@ def generate_headers_file(*, script_hashes: frozenset[str] = frozenset()) -> byt
     different policy. `script_hashes` are bare base64 SHA-256 digests
     (no `sha256-` prefix, no quotes) of every inline `<script>` this
     specific build actually contains — see app.publishing.build's
-    extraction of them."""
+    extraction of them. `public_api_origin` is the API origin rendered
+    into this build's runtime config (see the module docstring)."""
     script_src_sources = ["'self'", *(f"'sha256-{digest}'" for digest in sorted(script_hashes))]
-    csp = f"script-src {' '.join(script_src_sources)}; {_BASE_CSP_DIRECTIVES}"
+    api_origin = canonical_public_origin(public_api_origin)
+    connect_src_sources = ["'self'", *([api_origin] if api_origin else [])]
+    csp = (
+        f"script-src {' '.join(script_src_sources)}; {_CSP_DIRECTIVES_BEFORE_CONNECT}; "
+        f"connect-src {' '.join(connect_src_sources)}; {_CSP_DIRECTIVES_AFTER_CONNECT}"
+    )
     lines = ["/*", f"  Content-Security-Policy: {csp}", *(f"  {line}" for line in _OTHER_HEADER_LINES)]
     return ("\n".join(lines) + "\n").encode("utf-8")

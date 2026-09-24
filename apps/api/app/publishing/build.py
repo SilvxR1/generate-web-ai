@@ -101,6 +101,9 @@ def build_site(site_config: SiteConfigPayload) -> WebsiteArtifact:
             "alongside the generate-web-ai monorepo checkout to build real websites."
         )
 
+    # One value for both the page's runtime config (PUBLIC_API_BASE_URL)
+    # and the CSP `connect-src` that must allow it (A8.3.4-P0.2).
+    public_api_origin = resolve_public_api_base_url()
     build_id = uuid.uuid4().hex
     scratch_dir = _BUILD_SCRATCH_DIR / build_id
     out_dir = scratch_dir / "dist"
@@ -121,7 +124,7 @@ def build_site(site_config: SiteConfigPayload) -> WebsiteArtifact:
                 # Without it every deterministic site rendered
                 # `apiBaseUrl = ""` and silently dropped leads/events.
                 # PlatformContract validates the rendered value.
-                "PUBLIC_API_BASE_URL": resolve_public_api_base_url(),
+                "PUBLIC_API_BASE_URL": public_api_origin,
             },
             capture_output=True,
             text=True,
@@ -130,7 +133,7 @@ def build_site(site_config: SiteConfigPayload) -> WebsiteArtifact:
         if result.returncode != 0:
             raise SiteBuildError(f"astro build failed (exit {result.returncode}): {_tail(result.stderr)}")
 
-        return _read_artifact(out_dir)
+        return _read_artifact(out_dir, public_api_origin=public_api_origin)
     except subprocess.TimeoutExpired as exc:
         raise SiteBuildError(f"astro build timed out after {_BUILD_TIMEOUT_SECONDS}s") from exc
     except OSError as exc:
@@ -147,7 +150,7 @@ def _subprocess_env() -> dict[str, str]:
     return dict(os.environ)
 
 
-def _read_artifact(out_dir: Path) -> WebsiteArtifact:
+def _read_artifact(out_dir: Path, *, public_api_origin: str | None = None) -> WebsiteArtifact:
     if not out_dir.is_dir():
         raise SiteBuildError(f"astro build reported success but {out_dir} doesn't exist")
 
@@ -169,7 +172,9 @@ def _read_artifact(out_dir: Path) -> WebsiteArtifact:
     # HTML page in this build (legal pages included, once those exist),
     # not just index.html.
     html_files = [content for path, content in files.items() if path.endswith(".html")]
-    files["_headers"] = generate_headers_file(script_hashes=_inline_script_hashes(html_files))
+    files["_headers"] = generate_headers_file(
+        script_hashes=_inline_script_hashes(html_files), public_api_origin=public_api_origin
+    )
 
     return WebsiteArtifact(files=files, entry_point="index.html")
 
