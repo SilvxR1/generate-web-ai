@@ -16,6 +16,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.creative import CreativeBrief
+from app.domain.creative.website_direction import WebsiteCreativeDirection
 from app.domain.enums import AssetKind, CreativeGenerationStatus, CreativeGenerationType, CreativeProviderName
 
 
@@ -50,6 +51,13 @@ class CreativeGenerationResult(BaseModel):
     credits_used: float | None = None
     estimated_cost: float | None = None
     raw_metadata: dict = Field(default_factory=dict)
+    # A8.2.2: the typed, normalized presentation direction a provider
+    # produced for a website generation (the canonical v1 contract, never
+    # a raw_metadata blob). Only InternalCreativeProvider fills it today;
+    # every other provider leaves it None until its own adapter maps into
+    # the same contract. In-memory only for now — persisted and exposed in
+    # A8.2.4, consumed by website-generator in A8.2.3.
+    website_direction: WebsiteCreativeDirection | None = None
 
 
 class CreativeProvider(ABC):
