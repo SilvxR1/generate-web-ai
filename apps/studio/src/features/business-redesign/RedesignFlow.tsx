@@ -1,4 +1,4 @@
-import { validateWebsiteCreativeDirection } from "@generate-web-ai/site-config";
+import { validateWebsiteCreativeDirection, type WebsiteCreativeDirection } from "@generate-web-ai/site-config";
 import { generateSiteConfig } from "@generate-web-ai/website-generator";
 import { useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
@@ -14,6 +14,7 @@ import {
   type WebsiteState,
 } from "../../lib/api";
 import { SiteConfigPreview } from "../business-preview/SiteConfigPreview";
+import { MODE_LABELS, proposalMode, summarizeDirection } from "./directionSummary";
 
 type Direction = "evolve" | "new_direction";
 type Step = "intent" | "confirm" | "generating" | "proposal" | "error";
@@ -21,6 +22,8 @@ type Step = "intent" | "confirm" | "generating" | "proposal" | "error";
 const BUILD_FAILED_MESSAGE = "We couldn't build this proposal. Your live website has not changed.";
 const DIRECTION_MISSING_MESSAGE =
   "We couldn't create a design direction for this proposal. Please try again. Your live website has not changed.";
+const DIRECTION_MISMATCH_MESSAGE =
+  "We couldn't confirm this proposal matches the redesign you chose. Please try again. Your live website has not changed.";
 
 interface RedesignFlowProps {
   business: CreatedBusiness;
@@ -68,6 +71,9 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
   const [step, setStep] = useState<Step>("intent");
   const [direction, setDirection] = useState<Direction | null>(null);
   const [draft, setDraft] = useState<WebsiteDraft | null>(null);
+  // A8.2.5: the exact stored direction that produced `draft` — the only
+  // source for the proposal's label and its "What changed" panel.
+  const [proposalDirection, setProposalDirection] = useState<WebsiteCreativeDirection | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -115,9 +121,23 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
         return;
       }
 
+      // The stored direction is authoritative. If it doesn't match the
+      // requested redesign, nothing is built rather than showing a
+      // mislabeled proposal.
+      if (checked.value.strategy !== direction) {
+        setErrorMessage(DIRECTION_MISMATCH_MESSAGE);
+        setErrorDetail(
+          `Requested brand_strategy=${direction} but creative generation ${generation.id} stored ` +
+            `strategy=${checked.value.strategy}.`,
+        );
+        setStep("error");
+        return;
+      }
+
       const siteConfig = generateSiteConfig(business.config, assets, checked.value);
       const newDraft = await createWebsiteDraft(business.id, siteConfig, generation.id, tenantId);
       setDraft(newDraft);
+      setProposalDirection(checked.value);
       setStep("proposal");
     } catch (caught) {
       // A backend rejection's own message is implementation detail (e.g.
@@ -179,7 +199,7 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
               onClick={() => setDirection("evolve")}
             >
               <strong>Refresh the current design</strong>
-              <span>Keep the existing brand identity and content while improving the visual presentation.</span>
+              <span>Keep your recognizable brand and content, with improved layout, spacing and presentation.</span>
             </button>
             <button
               type="button"
@@ -189,7 +209,7 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
               onClick={() => setDirection("new_direction")}
             >
               <strong>Create a new design direction</strong>
-              <span>Explore a substantially different visual direction while preserving factual business information and real customer assets.</span>
+              <span>Keep your real business information, logo and photos, but explore a noticeably different look.</span>
             </button>
           </div>
           <div className="redesign-flow__actions">
@@ -268,7 +288,33 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
       {step === "proposal" && draft && (
         <div className="redesign-flow__proposal">
           <h3>Proposal preview</h3>
-          <p className="field-hint">This is a preview only — your live website has not changed.</p>
+          {proposalDirection && (
+            <p className="redesign-flow__mode">
+              Redesign type: <strong>{MODE_LABELS[proposalMode(proposalDirection)]}</strong>
+            </p>
+          )}
+          <p className="banner banner--warning redesign-flow__preview-state" role="status">
+            <strong>This is a preview.</strong> Your live website has not changed.
+          </p>
+
+          {proposalDirection && (
+            <section className="redesign-flow__changes" aria-labelledby="redesign-what-changed">
+              <h4 id="redesign-what-changed">What changed</h4>
+              <p className="redesign-flow__rationale">{proposalDirection.rationale}</p>
+              <dl className="redesign-flow__change-list">
+                {summarizeDirection(proposalDirection).map((item) => (
+                  <div key={item.label}>
+                    <dt>{item.label}</dt>
+                    <dd>{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="redesign-flow__preserved">
+                Your business information and logo are unchanged, and only your real photos are used. The homepage
+                shows a selection of them; none are deleted.
+              </p>
+            </section>
+          )}
 
           {draft.site_config ? (
             <SiteConfigPreview siteConfig={draft.site_config} />
