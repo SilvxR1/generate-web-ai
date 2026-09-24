@@ -26,12 +26,13 @@ same kind of lightweight HTML scanning in this codebase.
 
 import json
 import re
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource, PlatformContractSeverity
-from app.publishing.public_origin import public_origin_problem
+from app.publishing.public_origin import canonical_public_origin, public_origin_problem
 
 PLATFORM_CONTRACT_VERSION = "1.0.0"
 
@@ -61,6 +62,13 @@ _RUNTIME_CONFIG = re.compile(
 # Analytics.astro's `define:vars` renders the origin as a JS string literal.
 _ANALYTICS_API_BASE = re.compile(r'\bapiBaseUrl\s*=\s*"([^"]*)"')
 _DIRECT_FORM_ACTION = re.compile(r'<form[^>]*\baction="https?://', re.IGNORECASE)
+# A8.3.4-P0.2: the policies the browser actually enforces — Cloudflare Pages'
+# `_headers` lines and any `<meta http-equiv>` CSP the markup declares.
+_HEADERS_CSP_LINE = re.compile(r"^\s*Content-Security-Policy\s*:(.*)$", re.IGNORECASE | re.MULTILINE)
+_META_CSP = re.compile(
+    r'<meta[^>]*\bhttp-equiv\s*=\s*"Content-Security-Policy"[^>]*\bcontent\s*=\s*"([^"]*)"', re.IGNORECASE
+)
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 class PlatformContractFinding(BaseModel):
@@ -243,6 +251,98 @@ def _check_analytics_endpoint(
     ]
 
 
+def _effective_policies(files: dict[str, bytes], html_files: dict[str, str]) -> list[str]:
+    policies = [m.strip() for m in _HEADERS_CSP_LINE.findall(files.get("_headers", b"").decode("utf-8", "ignore"))]
+    for html in html_files.values():
+        policies += [m.strip() for m in _META_CSP.findall(html)]
+    return [p for p in policies if p]
+
+
+def _connect_sources(policy: str) -> list[str] | None:
+    """The source list governing fetch() under one policy: `connect-src`,
+    else `default-src`, else None (unrestricted). Per CSP3, directive
+    names are case-insensitive and only a directive's first occurrence
+    counts."""
+    directives: dict[str, list[str]] = {}
+    for part in policy.split(";"):
+        tokens = part.split()
+        if tokens:
+            directives.setdefault(tokens[0].lower(), tokens[1:])
+    return directives.get("connect-src", directives.get("default-src"))
+
+
+def _source_allows(source: str, origin: str) -> bool:
+    """CSP3 source-expression matching for a bare `scheme://host[:port]`
+    target. `'self'` never matches: the site is served from its own
+    domain, never from the API's. Hosts compare exactly (a `*.` prefix
+    matches strict subdomains only), so `https://api.example.com.evil.test`
+    never matches `https://api.example.com`. No DNS resolution."""
+    target = urlsplit(origin)
+    target_port = target.port or _DEFAULT_PORTS[target.scheme]
+    source = source.lower()
+    if source == "*":
+        return target.scheme in _DEFAULT_PORTS
+    if source.startswith("'"):
+        return False
+    if re.fullmatch(r"[a-z][a-z0-9+.-]*:", source):  # scheme-source, e.g. `https:`
+        return source[:-1] == target.scheme or (source == "http:" and target.scheme == "https")
+    match = re.fullmatch(r"(?:([a-z][a-z0-9+.-]*)://)?(\*|\*\.[^/:]+|[^/:*]+)(?::(\d+|\*))?(/.*)?", source)
+    if not match:
+        return False
+    scheme, host, port, path = match.groups()
+    if scheme and not (scheme == target.scheme or (scheme == "http" and target.scheme == "https")):
+        return False
+    if host == "*":
+        pass
+    elif host.startswith("*."):
+        if not (target.hostname or "").endswith(host[1:]):
+            return False
+    elif host != target.hostname:
+        return False
+    if port != "*":
+        allowed_port = int(port) if port else _DEFAULT_PORTS.get(scheme or target.scheme)
+        if allowed_port != target_port and not (port is None and scheme == "http" and target_port == 443):
+            return False
+    # A path-restricted source can't be proven to cover every endpoint the
+    # scripts call; treat anything narrower than the whole origin as a miss.
+    return path in (None, "/")
+
+
+def _check_public_api_csp(
+    files: dict[str, bytes], html_files: dict[str, str], all_text: str
+) -> list[PlatformContractFinding]:
+    """A8.3.4-P0.2: every valid public API origin the rendered runtime
+    config tells the browser scripts to call (lead form, analytics beacon)
+    must be allowed by EVERY effective CSP's connect-src — the browser
+    enforces all of them, and a single miss makes fetch() fail before any
+    request leaves the page. Unusable origins are reported by
+    lead_endpoint_unconfigured / analytics_endpoint_unconfigured instead;
+    a build with no API origin or no CSP produces no finding here."""
+    rendered = _ANALYTICS_API_BASE.findall(all_text) + [
+        str(config.get("apiBaseUrl") or "") for config in _runtime_configs(html_files)
+    ]
+    origins = sorted({o for o in map(canonical_public_origin, rendered) if o})
+    findings = []
+    for origin in origins:
+        for policy in _effective_policies(files, html_files):
+            sources = _connect_sources(policy)
+            if sources is None or any(_source_allows(source, origin) for source in sources):
+                continue
+            findings.append(
+                PlatformContractFinding(
+                    rule="public_api_csp_disconnected",
+                    severity=PlatformContractSeverity.BLOCKING,
+                    message=(
+                        f"The site's scripts call {origin}, but its Content-Security-Policy connect-src "
+                        f"({' '.join(sources) or 'empty'}) does not allow it, so the browser would block "
+                        "every lead submission and analytics event."
+                    ),
+                )
+            )
+            break
+    return findings
+
+
 def _check_legal_pages(files: dict[str, bytes]) -> list[PlatformContractFinding]:
     findings = []
     for slug in _LEGAL_SLUGS:
@@ -357,6 +457,7 @@ def validate_platform_contract(files: dict[str, bytes], *, business_config: Busi
     findings += _check_lead_capture(html_files, script_text, business_config=business_config)
     findings += _check_lead_endpoint(html_files, business_config=business_config)
     findings += _check_analytics_endpoint(html_files, all_text, script_text)
+    findings += _check_public_api_csp(files, html_files, all_text)
     findings += _check_legal_pages(files)
     findings += _check_consent_and_analytics(all_text, script_text)
     findings += _check_whatsapp(all_text, business_config=business_config)

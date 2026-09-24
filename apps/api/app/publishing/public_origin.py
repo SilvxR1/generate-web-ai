@@ -64,3 +64,15 @@ def resolve_public_api_base_url() -> str:
     explicit = os.environ.get("PUBLIC_API_BASE_URL")
     value = explicit if explicit is not None else settings.internal_api_base_url
     return value.strip().rstrip("/")
+
+
+def canonical_public_origin(value: str | None) -> str | None:
+    """The CSP source expression for `value` (A8.3.4-P0.2): the bare
+    `scheme://host[:port]`, lower-cased, or None when `value` is not a
+    usable public API origin (`public_origin_problem`). Both build paths
+    pass the exact value they render into the page's runtime config
+    through this, so `connect-src` and the browser scripts can't disagree."""
+    if value is None or public_origin_problem(value) is not None:
+        return None
+    parts = urlsplit(value.strip())
+    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"

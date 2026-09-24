@@ -346,3 +346,119 @@ def test_the_generative_platform_config_counts_as_a_runtime_config():
 )
 def test_public_origin_validation(origin, ok):
     assert (public_origin_problem(origin) is None) is ok
+
+
+# --- A8.3.4-P0.2: the effective CSP must let the scripts reach the API ------
+
+_API = "https://api.example.com"
+
+
+def _files_with_csp(api_base_url: str | None, csp: str | None, *, meta_csp: str | None = None) -> dict[str, bytes]:
+    index = _index_with_runtime(api_base_url)
+    if meta_csp is not None:
+        index = index.replace(
+            b"</head>", f'<meta http-equiv="Content-Security-Policy" content="{meta_csp}"></head>'.encode()
+        )
+    files = _files(index)
+    if csp is not None:
+        files["_headers"] = f"/*\n  Content-Security-Policy: {csp}\n  X-Frame-Options: DENY\n".encode()
+    return files
+
+
+def _csp_blocked(files) -> bool:
+    return "public_api_csp_disconnected" in _rules(
+        validate_platform_contract(files, business_config=_config()), PlatformContractSeverity.BLOCKING
+    )
+
+
+def test_csp_A_runtime_origin_with_connect_src_self_only_is_blocking():
+    assert _csp_blocked(_files_with_csp(_API, "default-src 'self'; connect-src 'self'"))
+
+
+def test_csp_B_runtime_origin_allowed_by_connect_src_passes():
+    result = validate_platform_contract(
+        _files_with_csp(_API, f"default-src 'self'; connect-src 'self' {_API}"), business_config=_config()
+    )
+
+    assert result.passed, [f.message for f in result.blocking_violations]
+    assert "public_api_csp_disconnected" not in _rules(result)
+
+
+def test_csp_the_real_generator_output_passes():
+    from app.publishing.security_headers import generate_headers_file
+
+    files = _files(_index_with_runtime(_API))
+    files["_headers"] = generate_headers_file(public_api_origin=_API)
+    assert not _csp_blocked(files)
+    files["_headers"] = generate_headers_file()  # the pre-P0.2 output
+    assert _csp_blocked(files)
+
+
+@pytest.mark.parametrize(
+    "allowed",
+    [
+        "https://other.example.com",
+        "https://api.example.com.evil.test",
+        "https://evil-api.example.com",
+        "http://api.example.com:8080",
+        "https://api.example.com:8443",
+        "wss://api.example.com",
+        "https://api.example.com/public/",
+        "'self'",
+    ],
+)
+def test_csp_D_a_different_or_lookalike_origin_is_blocking(allowed):
+    assert _csp_blocked(_files_with_csp(_API, f"connect-src 'self' {allowed}"))
+
+
+def test_csp_E_a_malformed_origin_is_blocked_by_the_origin_rules_not_invented_here():
+    result = validate_platform_contract(
+        _files_with_csp("http://api.example.com", "connect-src 'self'"), business_config=_config()
+    )
+
+    assert "lead_endpoint_unconfigured" in _rules(result, PlatformContractSeverity.BLOCKING)
+    assert "public_api_csp_disconnected" not in _rules(result)
+
+
+@pytest.mark.parametrize("origin", ["", None])
+def test_csp_F_no_external_api_requirement_is_not_a_csp_finding(origin):
+    result = validate_platform_contract(_files_with_csp(origin, "connect-src 'self'"), business_config=_config())
+
+    assert "public_api_csp_disconnected" not in _rules(result)
+
+
+def test_csp_F_no_csp_at_all_restricts_nothing():
+    assert not _csp_blocked(_files_with_csp(_API, None))
+
+
+@pytest.mark.parametrize(
+    "csp",
+    [
+        f"CONNECT-SRC   'self'\t{_API.upper()} ;default-src 'none'",  # case, whitespace, ordering
+        f"default-src 'self' {_API}",  # connect-src falls back to default-src
+        f"connect-src {_API}:443",  # explicit default port
+        "connect-src https://*.example.com",  # subdomain wildcard
+        f"connect-src {_API}/",  # whole-origin path
+    ],
+)
+def test_csp_parsing_accepts_every_equivalent_allowing_form(csp):
+    assert not _csp_blocked(_files_with_csp(_API, csp))
+
+
+def test_csp_only_the_first_connect_src_directive_counts():
+    assert _csp_blocked(_files_with_csp(_API, f"connect-src 'self'; connect-src {_API}"))
+
+
+def test_csp_every_enforced_policy_must_allow_the_origin():
+    allowing = f"connect-src 'self' {_API}"
+    assert _csp_blocked(_files_with_csp(_API, allowing, meta_csp="connect-src 'self'"))
+    assert not _csp_blocked(_files_with_csp(_API, allowing, meta_csp=allowing))
+
+
+def test_csp_analytics_only_origin_is_also_covered():
+    """The analytics beacon's literal counts even without a lead form."""
+    index = _index_with_runtime(_API, form=False)
+    files = _files(index)
+    files["_headers"] = b"/*\n  Content-Security-Policy: connect-src 'self'\n"
+
+    assert _csp_blocked(files)

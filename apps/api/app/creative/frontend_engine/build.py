@@ -155,7 +155,11 @@ def build_generative_workspace(
     if "index.html" not in files:
         raise GenerativeBuildError("astro build produced no index.html")
 
-    files["_headers"] = generate_headers_file(script_hashes=_inline_script_hashes(html_texts))
+    # The same api_base_url injected into every page's platform-config
+    # above, so connect-src allows exactly what the SDK calls (A8.3.4-P0.2).
+    files["_headers"] = generate_headers_file(
+        script_hashes=_inline_script_hashes(html_texts), public_api_origin=api_base_url
+    )
 
     return WebsiteArtifact(files=files, entry_point="index.html")
 
