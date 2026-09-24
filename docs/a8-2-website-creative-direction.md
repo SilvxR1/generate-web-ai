@@ -89,3 +89,27 @@ receives a direction once it is persisted and exposed (A8.2.4), so the
 generator (A8.2.3) can't be driven end-to-end before that. A8.2.3's
 generator side can still be built and unit-tested against the
 conformance fixtures in parallel.
+
+## Persistence and exposure (A8.2.4)
+
+- **Storage:** `creative_generations.website_direction`, a nullable JSON column added by migration
+  `c4d7e2a9f1b3`. It holds the canonical v1 JSON exactly, `version` included. It is separate from
+  `generation_metadata`, which is free-form provider bookkeeping.
+- **Written by:** `app.creative.orchestrator.orchestrate_generation`, once.
+  - The provider's `CreativeGenerationResult.website_direction` is re-validated through
+    `parse_website_direction`, the single version-dispatch point.
+  - A malformed direction marks the generation **FAILED** with a contract-violation error. Nothing
+    malformed is stored, and credits and cost are still recorded.
+  - A provider that produces no direction (every non-internal provider today) stores NULL.
+- **Old rows:** NULL. They are never backfilled or reconstructed.
+- **Immutability:** a `@validates` guard lets the direction be set once (None to a direction) and
+  never overwritten or cleared. Regenerating creates a new CreativeGeneration.
+- **Read:** `CreativeGenerationRead.website_direction: WebsiteCreativeDirection | null` is typed and
+  validated through the same versioned parser, so an unknown future version fails loudly instead of
+  being read as v1. Two endpoints serve it:
+  - `POST /businesses/{id}/creative-generations`
+  - `GET /businesses/{id}/creative-generations`
+
+  Both keep their existing tenant scoping.
+- **Traceability:** `WebsiteDraft.creative_generation_id` links a draft to its CreativeGeneration,
+  which holds the direction. There is no second copy on the draft.

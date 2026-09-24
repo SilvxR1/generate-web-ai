@@ -14,6 +14,7 @@ destroy the currently published website" both hold by construction here,
 not because of extra logic in this module.
 """
 
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
@@ -26,6 +27,7 @@ from app.db.models.creative_generation import CreativeGeneration
 from app.domain.business_config import BusinessConfig
 from app.domain.creative import AssetInput, ReviewInput, build_creative_brief
 from app.domain.creative.brief import CreativeBrief
+from app.domain.creative.website_direction import parse_website_direction
 from app.domain.enums import (
     BrandStrategy,
     CreativeGenerationStatus,
@@ -34,6 +36,12 @@ from app.domain.enums import (
     CreativeProviderName,
 )
 from app.repositories.creative_generation import CreativeGenerationRepository
+
+logger = logging.getLogger(__name__)
+
+INVALID_WEBSITE_DIRECTION_ERROR = (
+    "The creative provider returned an invalid website direction (WebsiteCreativeDirection contract violation)."
+)
 
 
 class NoSuitableProviderError(CreativeProviderError):
@@ -187,10 +195,35 @@ def orchestrate_generation(
         generation.completed_at = datetime.now(UTC)
         return generation
 
-    generation.status = result.status
+    # Whatever the provider reports about its own run is always recorded —
+    # including credits/cost, even for a result rejected below: a
+    # contract violation never hides what was actually spent.
     generation.external_reference = result.external_reference
     generation.credits_used = result.credits_used
     generation.estimated_cost = result.estimated_cost
     generation.generation_metadata = result.raw_metadata
     generation.completed_at = datetime.now(UTC)
+
+    # A8.2.4: a provider-supplied WebsiteCreativeDirection is re-validated
+    # against the canonical versioned contract before it is persisted. A
+    # malformed one is a provider contract violation: the generation is
+    # FAILED (never reported as a valid result with the direction silently
+    # dropped) and nothing malformed is stored or exposed. No direction at
+    # all (every non-internal provider today) is valid and stays NULL.
+    if result.website_direction is not None:
+        try:
+            direction = parse_website_direction(result.website_direction)
+        except ValueError as exc:  # pydantic.ValidationError is a ValueError
+            logger.warning(
+                "Rejected invalid website direction from provider=%s business=%s: %s",
+                provider.name.value,
+                business_id,
+                exc,
+            )
+            generation.status = CreativeGenerationStatus.FAILED
+            generation.error = INVALID_WEBSITE_DIRECTION_ERROR
+            return generation
+        generation.website_direction = direction.model_dump(mode="json")
+
+    generation.status = result.status
     return generation
