@@ -68,12 +68,18 @@ export function buildWhatsAppConfig(whatsappConfig: BusinessWhatsAppConfig | und
  * (LR-08). `heroImage` is a real BusinessAsset chosen by the caller
  * (assets.ts's `selectHeroAsset`) — never a generated/stock substitute
  * while a real photo exists (LR-05).
+ *
+ * `hasContactSection` is whether the page will actually contain the
+ * `contact` block — the "#contact" action is only emitted when it will,
+ * so every in-page anchor always resolves to a rendered id (the same
+ * invariant app.qa.platform_contract's broken_anchor_target enforces).
  */
 export function buildHeroBlock(
   profile: BusinessProfile,
   preset: WebsiteGeneratorPreset,
   customerFacingDescription: string | undefined,
   heroImage?: BusinessAssetInput,
+  hasContactSection = true,
 ): HeroBlockConfig {
   const services = profile.services ?? [];
 
@@ -84,7 +90,7 @@ export function buildHeroBlock(
       ...(profile.location?.city ? { eyebrow: profile.location.city } : {}),
       heading: profile.name,
       subheading: customerFacingDescription || preset.heroSubheadingFallback || undefined,
-      primaryAction: { label: "Contactar", href: "#contact" },
+      ...(hasContactSection ? { primaryAction: { label: "Contactar", href: "#contact" } } : {}),
       ...(services.length > 0 ? { secondaryAction: { label: "Ver servicios", href: "#services" } } : {}),
       ...(heroImage ? { image: assetToImageConfig(heroImage, `Foto de ${profile.name}`) } : {}),
     },
@@ -184,9 +190,11 @@ export function buildGalleryBlock(
   };
 }
 
-/** Always generated — every business has *something* worth a
- * call-to-action, and both fields here are generic template copy plus a
- * real in-page anchor, never a claim about the business. */
+/** Generated whenever the page has a `contact` block to point at (the
+ * caller decides — its primary action is always the in-page "#contact"
+ * anchor, so without that section it would be a dead link). Both fields
+ * here are generic template copy plus that real in-page anchor, never a
+ * claim about the business. */
 export function buildCtaBlock(
   profile: BusinessProfile,
   preset: WebsiteGeneratorPreset,

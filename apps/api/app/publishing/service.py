@@ -30,10 +30,12 @@ from app.creative.frontend_engine.build import rebuild_from_archive
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website import Website
 from app.db.models.website_version import WebsiteVersion
+from app.domain.business_config import BusinessConfig
 from app.domain.enums import DeployTarget, WebsiteStatus
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsitePublisher
+from app.qa.platform_contract import validate_platform_contract
 from app.repositories.website import WebsiteRepository
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import StorageProvider
@@ -88,6 +90,19 @@ def _to_state_result(website: Website) -> WebsiteStateResult:
     )
 
 
+def _enforce_platform_contract(files: dict[str, bytes], business_config: BusinessConfig) -> None:
+    result = validate_platform_contract(files, business_config=business_config)
+    if not result.passed:
+        # WebsitePublishError, not WebsitePublisherError: deliberately
+        # outside publish_website's pipeline-failure handler below, which
+        # would otherwise mark the (still live) Website row FAILED.
+        raise WebsitePublishError(
+            "PlatformContract violation(s): " + "; ".join(f.message for f in result.blocking_violations),
+            code="platform_contract_violation",
+            status_code=422,
+        )
+
+
 def publish_website(
     *,
     session: Session,
@@ -95,11 +110,26 @@ def publish_website(
     business_id: UUID,
     site_config: SiteConfigPayload,
     publisher: WebsitePublisher,
+    business_config: BusinessConfig | None = None,
 ) -> WebsiteStateResult:
     """`publisher` is already-validated-as-configured (see
     app.dependencies.get_website_publisher) and injected rather than
     built here, so tests can pass one wired to a mocked transport
     without needing real hosting-provider credentials.
+
+    A8.1.2: when `business_config` is given (the direct
+    POST .../website/publish route), the freshly built artifact is held
+    to the same app.qa.platform_contract gate create_website_draft
+    applies, *before* the hosting provider is called — a BLOCKING
+    violation raises WebsitePublishError(code="platform_contract_violation")
+    and leaves the Website row (and whatever is live) completely
+    untouched: nothing was deployed, so nothing is marked FAILED.
+    Optional (not required) because the other two callers don't need a
+    second gate: publish_website_draft only ever publishes a draft that
+    already passed it to reach READY, and versions.rollback_to_version
+    republishes a previously-live snapshot — an emergency restore that
+    must stay possible even for a snapshot published before this gate
+    existed.
 
     Every publish attempt is a fresh deploy — there's no "already
     published, no-op" short-circuit like activation's (a republish is
@@ -120,6 +150,8 @@ def publish_website(
 
     try:
         artifact = build_site(site_config)
+        if business_config is not None:
+            _enforce_platform_contract(artifact.files, business_config)
         published = publisher.publish(site_id=site_id, artifact=artifact)
     except WebsitePublisherError as exc:
         # One choke point for every publish-pipeline failure (A6.1):

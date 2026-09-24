@@ -338,4 +338,48 @@ describe("RedesignFlow", () => {
     // Never a raw backend error code/status leaked into the primary UX.
     expect(screen.queryByText(/500|internal build error|traceback/i)).not.toBeInTheDocument();
   });
+
+  it("a PlatformContract-rejected draft shows only the plain message; the raw violation stays under collapsed Technical details", async () => {
+    const user = userEvent.setup();
+    renderFlow();
+    const buildError =
+      'PlatformContract violation(s): An anchor targets "#contact", which has no matching id="contact" anywhere in the build.';
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, websiteDraft({ status: "build_failed", build_error: buildError })));
+
+    await goToConfirmStep(user, "Create a new design direction");
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+
+    const alert = await screen.findByRole("alert");
+    const primary = alert.querySelector(":scope > p");
+    expect(primary?.textContent).toBe("We couldn't build this proposal. Your live website has not changed.");
+    expect(primary?.textContent).not.toMatch(/PlatformContract|id=/);
+
+    // Not deleted — operators can still read it, but only by expanding.
+    const detail = screen.getByText(buildError);
+    const disclosure = detail.closest("details");
+    expect(disclosure).not.toBeNull();
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.querySelector("summary")?.textContent).toBe("Technical details");
+    expect(screen.getByRole("button", { name: "Use this design" })).toBeDisabled();
+  });
+
+  it("a backend rejection while creating the draft keeps its raw message out of the primary UX", async () => {
+    const user = userEvent.setup();
+    renderFlow();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(422, { error: { code: "validation_error", message: "pages.0.blocks.1.background: invalid" } }),
+    );
+
+    await goToConfirmStep(user);
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector(":scope > p")?.textContent).toBe(
+      "We couldn't build this proposal. Your live website has not changed.",
+    );
+    const detail = screen.getByText(/pages\.0\.blocks\.1\.background/);
+    expect(detail.closest("details")?.open).toBe(false);
+  });
 });

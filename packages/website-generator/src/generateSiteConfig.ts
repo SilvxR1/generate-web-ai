@@ -67,7 +67,13 @@ export function generateSiteConfig(businessConfig: BusinessConfig, assets: reado
 
   const customerFacingDescription = sanitizeCustomerCopy(profile.description);
 
-  const blocks: BlockConfig[] = [buildHeroBlock(profile, preset, customerFacingDescription, heroAsset)];
+  // Built first so the hero/CTA only link to "#contact" when that
+  // section will actually be rendered — never a dangling in-page anchor.
+  const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig);
+
+  const blocks: BlockConfig[] = [
+    buildHeroBlock(profile, preset, customerFacingDescription, heroAsset, contactBlock !== null),
+  ];
 
   const servicesBlock = buildServicesBlock(profile, preset);
   if (servicesBlock) blocks.push(servicesBlock);
@@ -80,10 +86,10 @@ export function generateSiteConfig(businessConfig: BusinessConfig, assets: reado
 
   if (galleryBlock && tokens.galleryPlacement === "after_about") blocks.push(galleryBlock);
 
-  blocks.push(buildCtaBlock(profile, preset, tokens.ctaVariant));
-
-  const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig);
-  if (contactBlock) blocks.push(contactBlock);
+  if (contactBlock) {
+    blocks.push(buildCtaBlock(profile, preset, tokens.ctaVariant));
+    blocks.push(contactBlock);
+  }
 
   if (galleryBlock && tokens.galleryPlacement === "after_hero") {
     blocks.splice(1, 0, galleryBlock);

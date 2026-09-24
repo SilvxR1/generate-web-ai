@@ -2,6 +2,7 @@ import { generateSiteConfig } from "@generate-web-ai/website-generator";
 import { useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
 import {
+  ApiError,
   approveWebsiteDraft,
   createCreativeGeneration,
   createWebsiteDraft,
@@ -15,6 +16,8 @@ import { SiteConfigPreview } from "../business-preview/SiteConfigPreview";
 
 type Direction = "evolve" | "new_direction";
 type Step = "intent" | "confirm" | "generating" | "proposal" | "error";
+
+const BUILD_FAILED_MESSAGE = "We couldn't build this proposal. Your live website has not changed.";
 
 interface RedesignFlowProps {
   business: CreatedBusiness;
@@ -63,6 +66,7 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
   const [direction, setDirection] = useState<Direction | null>(null);
   const [draft, setDraft] = useState<WebsiteDraft | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
@@ -78,13 +82,14 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
     }
     setIsGenerating(true);
     setErrorMessage(null);
+    setErrorDetail(null);
     try {
       const generation = await createCreativeGeneration(business.id, "website", tenantId, {
         brandStrategy: direction,
         creativeLevel: "basic",
       });
       if (generation.status !== "completed") {
-        setErrorMessage("We couldn't build this proposal. Your live website has not changed.");
+        setErrorMessage(BUILD_FAILED_MESSAGE);
         setStep("error");
         return;
       }
@@ -94,9 +99,17 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
       setDraft(newDraft);
       setStep("proposal");
     } catch (caught) {
-      setErrorMessage(
-        friendlyErrorMessage(caught, "Something went wrong generating this proposal. Your live website has not changed."),
-      );
+      // A backend rejection's own message is implementation detail (e.g.
+      // a validation error) — kept for operators under Technical
+      // details, never the owner's primary message.
+      if (caught instanceof ApiError) {
+        setErrorMessage(BUILD_FAILED_MESSAGE);
+        setErrorDetail(`${caught.code}: ${caught.message}`);
+      } else {
+        setErrorMessage(
+          friendlyErrorMessage(caught, "Something went wrong generating this proposal. Your live website has not changed."),
+        );
+      }
       setStep("error");
     } finally {
       setIsGenerating(false);
@@ -211,7 +224,15 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
 
       {step === "error" && (
         <div className="redesign-flow__error">
-          <p className="banner banner--error">{errorMessage}</p>
+          <div className="banner banner--error" role="alert">
+            <p>{errorMessage}</p>
+            {errorDetail && (
+              <details className="banner__detail">
+                <summary>Technical details</summary>
+                <code>{errorDetail}</code>
+              </details>
+            )}
+          </div>
           <div className="redesign-flow__actions">
             <button type="button" onClick={onClose}>
               Close
@@ -231,14 +252,21 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
           {draft.site_config ? (
             <SiteConfigPreview siteConfig={draft.site_config} />
           ) : (
-            <p className="banner banner--error">We couldn't build this proposal. Your live website has not changed.</p>
+            <p className="banner banner--error">{BUILD_FAILED_MESSAGE}</p>
           )}
 
           {draft.status === "build_failed" && (
-            <p className="banner banner--error">
-              We couldn't build this proposal. Your live website has not changed.
-              {draft.build_error ? ` (${draft.build_error})` : ""}
-            </p>
+            <div className="banner banner--error" role="alert">
+              <p>{BUILD_FAILED_MESSAGE}</p>
+              {/* The raw build/PlatformContract error stays available for
+               * operators, but never as the owner's primary message. */}
+              {draft.build_error && (
+                <details className="banner__detail">
+                  <summary>Technical details</summary>
+                  <code>{draft.build_error}</code>
+                </details>
+              )}
+            </div>
           )}
 
           {approveError && <p className="banner banner--error">{approveError}</p>}

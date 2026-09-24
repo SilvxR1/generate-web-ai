@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, NetworkError } from "../../lib/api";
-import { friendlyErrorMessage } from "./errors";
+import { categorizePublishError, friendlyErrorMessage } from "./errors";
 
 // hotfix P2/creative-directions-500: proves Studio's shared error-message
 // helper correctly distinguishes a real network failure (backend
@@ -51,5 +51,21 @@ describe("friendlyErrorMessage", () => {
     });
 
     expect(friendlyErrorMessage(error, "fallback")).not.toContain("didn't respond");
+  });
+});
+
+// A8.1.2: the direct publish route now refuses a build that fails
+// PlatformContract (code "platform_contract_violation") — the raw
+// violation list belongs under the banner's technical detail only.
+describe("categorizePublishError — platform_contract_violation", () => {
+  it("shows a plain message and keeps the raw violation as technical detail", () => {
+    const raw = 'PlatformContract violation(s): An anchor targets "#contact", which has no matching id="contact".';
+    const categorized = categorizePublishError(
+      new ApiError(raw, { code: "platform_contract_violation", status: 422 }),
+    );
+
+    expect(categorized.message).toBe("Nothing was published. Your live website has not changed.");
+    expect(categorized.title).not.toMatch(/PlatformContract/);
+    expect(categorized.technicalDetail).toBe(raw);
   });
 });

@@ -454,6 +454,9 @@ describe("generateSiteConfig — creative diversity across business families", (
       slug: "reformas-valencia",
       description: "Reformas integrales de cocinas y baños.",
       location: { city: "Valencia", country: "ES" },
+      // A real contact detail, so the page has a contact section for its
+      // CTA to point at (the CTA is only emitted when one exists).
+      contact: { phone: "+34 600 000 001" },
     },
   };
 
@@ -463,6 +466,7 @@ describe("generateSiteConfig — creative diversity across business families", (
       name: "Asesoría Martín",
       slug: "asesoria-martin",
       description: "Asesoría fiscal y contable para pequeñas empresas.",
+      contact: { phone: "+34 600 000 002" },
     },
   };
 
