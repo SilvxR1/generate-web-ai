@@ -26,6 +26,9 @@ export interface HeroContent {
   image?: BlockImage;
   /** Optional highlighted figure overlaid on the image (e.g. "+10 años" / "de experiencia"). */
   stat?: HeroStat;
+  /** Presentation variant (A8.2.3). Omitted keeps today's layout exactly
+   * (split when an image exists, centered otherwise). */
+  layout?: "split" | "centered";
 }
 
 export interface Props {
@@ -45,12 +48,12 @@ export interface Props {
 }
 
 const { content, id, background = "base", reveal = false, class: className } = Astro.props;
-const { eyebrow, heading, subheading, primaryAction, secondaryAction, image, stat } = content;
+const { eyebrow, heading, subheading, primaryAction, secondaryAction, image, stat, layout } = content;
 ---
 
 <section id={id} data-surface={background} class:list={["block-hero", { "block-reveal": reveal }, className]}>
   <Container size="xl">
-    <div class="block-hero__layout" data-has-image={image ? "true" : "false"}>
+    <div class="block-hero__layout" data-has-image={image ? "true" : "false"} data-layout={layout}>
       <div class="block-hero__copy">
         {eyebrow && (
           <p class="block-hero__eyebrow">
@@ -200,6 +203,34 @@ const { eyebrow, heading, subheading, primaryAction, secondaryAction, image, sta
     color: var(--ui-color-muted-fg, #6b7280);
   }
 
+  /* A8.2.3 "centered" variant: centered copy with the real photo below it.
+     Only applies when content.layout is set; without it (and for "split")
+     every rule above and below renders exactly as before. */
+  .block-hero__layout[data-layout="centered"] {
+    justify-items: center;
+    text-align: center;
+  }
+
+  .block-hero__layout[data-layout="centered"] .block-hero__copy {
+    align-items: center;
+    margin-inline: auto;
+    max-width: 40rem;
+  }
+
+  .block-hero__layout[data-layout="centered"] .block-hero__eyebrow,
+  .block-hero__layout[data-layout="centered"] .block-hero__actions {
+    justify-content: center;
+  }
+
+  .block-hero__layout[data-layout="centered"] .block-hero__subheading {
+    margin-inline: auto;
+  }
+
+  .block-hero__layout[data-layout="centered"] .block-hero__media {
+    width: 100%;
+    max-width: 28rem;
+  }
+
   @media (min-width: 640px) {
     .block-hero__frame {
       max-width: 26rem;
@@ -211,6 +242,14 @@ const { eyebrow, heading, subheading, primaryAction, secondaryAction, image, sta
     .block-hero__layout[data-has-image="true"] {
       grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
       gap: 3.5rem;
+    }
+
+    .block-hero__layout[data-layout="centered"][data-has-image="true"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .block-hero__layout[data-layout="centered"] .block-hero__copy {
+      max-width: 40rem;
     }
 
     .block-hero__copy {

@@ -23,8 +23,18 @@ export interface ThemeRadiusConfig {
   lg: string;
 }
 
+/** Vertical section rhythm (A8.2.3): CSS lengths for the
+ * `--ui-space-section-sm/md/lg` tokens every block's padding already reads.
+ * Omitted means each block's own built-in spacing, which is today's rhythm. */
+export interface ThemeSpacingConfig {
+  sectionSm: string;
+  sectionMd: string;
+  sectionLg: string;
+}
+
 export interface ThemeConfig {
   colors: ThemeColorConfig;
   fonts: ThemeFontConfig;
   radius: ThemeRadiusConfig;
+  spacing?: ThemeSpacingConfig;
 }

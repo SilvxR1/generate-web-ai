@@ -30,6 +30,11 @@ export interface HeroBlockContent {
   image?: AssetConfig;
   /** Optional highlighted figure overlaid on the hero image (e.g. "+10 años" / "de experiencia"). */
   stat?: HeroStatConfig;
+  /** A8.2.3 presentation variant. "split": copy beside the photo (the
+   * with-image layout). "centered": centered copy with the photo below.
+   * Omitted keeps today's layout, which is split when there is an image
+   * and centered otherwise. */
+  layout?: "split" | "centered";
 }
 
 export interface ServiceItemConfig {
@@ -86,6 +91,10 @@ export interface GalleryBlockContent {
   heading?: string;
   subheading?: string;
   items: GalleryItemConfig[];
+  /** A8.2.3 presentation variant. "grid": uniform cells, no item enlarged.
+   * "featured_grid": the explicitly featured item (or the first) is
+   * enlarged. Omitted keeps today's behaviour, which is featured_grid. */
+  layout?: "grid" | "featured_grid";
 }
 
 export interface FeatureItemConfig {

@@ -40,6 +40,10 @@ export interface GalleryContent {
   heading?: string;
   subheading?: string;
   items: GalleryItem[];
+  /** Presentation variant (A8.2.3): "grid" renders uniform cells (no item
+   * enlarged); "featured_grid" or omitted keeps today's featured-item
+   * behaviour exactly. */
+  layout?: "grid" | "featured_grid";
 }
 
 export interface Props {
@@ -54,7 +58,8 @@ export interface Props {
 }
 
 const { content, id, background = "base", reveal = true, class: className } = Astro.props;
-const { heading, subheading, items } = content;
+const { heading, subheading, items, layout } = content;
+const uniform = layout === "grid";
 const hasExplicitFeatured = items.some((item) => item.featured);
 ---
 
@@ -72,7 +77,7 @@ const hasExplicitFeatured = items.some((item) => item.featured);
   )}
   <ul class="block-gallery__grid">
     {items.map((item, index) => {
-      const isFeatured = hasExplicitFeatured ? Boolean(item.featured) : index === 0;
+      const isFeatured = uniform ? false : hasExplicitFeatured ? Boolean(item.featured) : index === 0;
       return (
         <li
           class="block-gallery__item"

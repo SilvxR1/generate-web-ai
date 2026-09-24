@@ -1,3 +1,4 @@
+import { validateWebsiteCreativeDirection } from "@generate-web-ai/site-config";
 import { generateSiteConfig } from "@generate-web-ai/website-generator";
 import { useState } from "react";
 import { friendlyErrorMessage } from "../business-analysis/errors";
@@ -18,6 +19,8 @@ type Direction = "evolve" | "new_direction";
 type Step = "intent" | "confirm" | "generating" | "proposal" | "error";
 
 const BUILD_FAILED_MESSAGE = "We couldn't build this proposal. Your live website has not changed.";
+const DIRECTION_MISSING_MESSAGE =
+  "We couldn't create a design direction for this proposal. Please try again. Your live website has not changed.";
 
 interface RedesignFlowProps {
   business: CreatedBusiness;
@@ -94,7 +97,25 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
         return;
       }
 
-      const siteConfig = generateSiteConfig(business.config, assets);
+      // A8.2.3: the proposal is built from the exact normalized direction
+      // this generation recorded (one generation = one stored direction =
+      // one proposal), never re-derived here. A missing/invalid one is an
+      // explicit error: falling back to the undirected build would show the
+      // same site for every choice again.
+      const storedDirection = generation.website_direction ?? null;
+      const checked = storedDirection ? validateWebsiteCreativeDirection(storedDirection) : null;
+      if (!checked?.ok) {
+        setErrorMessage(DIRECTION_MISSING_MESSAGE);
+        setErrorDetail(
+          checked
+            ? `Creative generation ${generation.id} returned an invalid website_direction: ${checked.errors.join("; ")}`
+            : `Creative generation ${generation.id} returned no website_direction.`,
+        );
+        setStep("error");
+        return;
+      }
+
+      const siteConfig = generateSiteConfig(business.config, assets, checked.value);
       const newDraft = await createWebsiteDraft(business.id, siteConfig, generation.id, tenantId);
       setDraft(newDraft);
       setStep("proposal");
