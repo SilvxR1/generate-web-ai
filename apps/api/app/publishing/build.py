@@ -23,6 +23,7 @@ import uuid
 from pathlib import Path
 
 from app.publishing.errors import WebsitePublisherError
+from app.publishing.public_origin import resolve_public_api_base_url
 from app.publishing.publisher import WebsiteArtifact
 from app.publishing.security_headers import generate_headers_file
 from app.schemas.site_config import SiteConfigPayload
@@ -50,6 +51,7 @@ def _inline_script_hashes(html_files: list[bytes]) -> frozenset[str]:
             digest = hashlib.sha256(body.encode("utf-8")).digest()
             hashes.add(base64.b64encode(digest).decode("ascii"))
     return frozenset(hashes)
+
 
 def _find_repo_root(start: Path) -> Path:
     """Walks up from `start` looking for pnpm-workspace.yaml — the one
@@ -111,7 +113,16 @@ def build_site(site_config: SiteConfigPayload) -> WebsiteArtifact:
         result = subprocess.run(
             ["pnpm", "exec", "astro", "build", "--outDir", str(out_dir)],
             cwd=SITE_BUILDER_DIR,
-            env={**_subprocess_env(), "SITE_CONFIG_PATH": str(config_path)},
+            env={
+                **_subprocess_env(),
+                "SITE_CONFIG_PATH": str(config_path),
+                # A8.3.4-P0: the origin the built site's lead form and
+                # analytics beacon call (an Astro build-time PUBLIC_ var).
+                # Without it every deterministic site rendered
+                # `apiBaseUrl = ""` and silently dropped leads/events.
+                # PlatformContract validates the rendered value.
+                "PUBLIC_API_BASE_URL": resolve_public_api_base_url(),
+            },
             capture_output=True,
             text=True,
             timeout=_BUILD_TIMEOUT_SECONDS,

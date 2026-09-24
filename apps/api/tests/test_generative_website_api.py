@@ -7,6 +7,7 @@ here (no real network/credit spend) — real-provider coverage lives in
 tests/test_frontend_engine_real.py and test_higgsfield_cli_director.py.
 """
 
+import json
 import uuid
 
 import pytest
@@ -66,6 +67,16 @@ class _FakeDirector(CreativeDirectorProvider):
         return developed
 
 
+@pytest.fixture(autouse=True)
+def _public_api_origin(monkeypatch: pytest.MonkeyPatch):
+    # A8.3.4-P0: generated sites must render a usable https API origin (the
+    # TestClient's own http://testserver isn't one); production sets this
+    # via INTERNAL_API_BASE_URL.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "internal_api_base_url", "https://api.example.com")
+
+
 class _FakeFrontendEngineer(FrontendEngineer):
     name = "fake"
 
@@ -82,7 +93,10 @@ class _FakeFrontendEngineer(FrontendEngineer):
         html = (
             '<html><head><title>T</title><meta name="description" content="d">'
             '<meta name="viewport" content="width=device-width">'
-            f'<script type="application/json" id="platform-config">{{"businessId": "{business_id}"}}</script>'
+            # Same shape the real engine injects (frontend_engine.build._inject_platform_config).
+            '<script type="application/json" id="platform-config">'
+            + json.dumps({"businessId": business_id, "apiBaseUrl": api_base_url})
+            + "</script>"
             "</head><body><form data-gwa-lead-form></form>"
             "<script>submitLead();window.gwaConsent={};window.gwaAnalytics={};</script>"
             "</body></html>"
@@ -237,9 +251,7 @@ def test_full_generative_lifecycle_create_approve_publish(client: TestClient, te
     assert published.json()["status"] == "live"
 
 
-def test_generative_frontend_engineer_unavailable_returns_503(
-    client: TestClient, tenant: Tenant, business_with_config
-):
+def test_generative_frontend_engineer_unavailable_returns_503(client: TestClient, tenant: Tenant, business_with_config):
     """P2.14: a genuinely unconfigured engine fails loudly — never a
     silent deterministic substitution."""
     from app.dependencies import get_frontend_engineer as real_dep
@@ -270,7 +282,7 @@ def test_visual_qa_endpoint_runs_a_real_browser_pass_and_persists_results(
     returns non-real archive bytes) and GET .../generative-artifact then
     reports it, never a fabricated pass."""
     real_html = (
-        "<html><head><title>T</title><meta name=\"description\" content=\"d\">"
+        '<html><head><title>T</title><meta name="description" content="d">'
         '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
         "<body><h1>Visual QA Co</h1><p>Real content.</p></body></html>"
     )

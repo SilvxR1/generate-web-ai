@@ -24,12 +24,14 @@ app.publishing.build's own `_INLINE_SCRIPT_PATTERN` precedent for the
 same kind of lightweight HTML scanning in this codebase.
 """
 
+import json
 import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource, PlatformContractSeverity
+from app.publishing.public_origin import public_origin_problem
 
 PLATFORM_CONTRACT_VERSION = "1.0.0"
 
@@ -48,6 +50,17 @@ _ANIMATION_RULE = re.compile(r"@keyframes|animation\s*:")
 _REDUCED_MOTION_QUERY = re.compile(r"prefers-reduced-motion")
 
 _LEGAL_SLUGS = ("privacy", "terms", "cookies")
+
+# A8.3.4-P0: the runtime config the built site's browser scripts read their
+# API origin from. Deterministic builds render `lead-submission-config`
+# (apps/site-builder LeadSubmission.astro); generative builds get an
+# injected `platform-config` (app.creative.frontend_engine.build).
+_RUNTIME_CONFIG = re.compile(
+    r'<script[^>]*\bid="(?:lead-submission-config|platform-config)"[^>]*>(.*?)</script>', re.DOTALL
+)
+# Analytics.astro's `define:vars` renders the origin as a JS string literal.
+_ANALYTICS_API_BASE = re.compile(r'\bapiBaseUrl\s*=\s*"([^"]*)"')
+_DIRECT_FORM_ACTION = re.compile(r'<form[^>]*\baction="https?://', re.IGNORECASE)
 
 
 class PlatformContractFinding(BaseModel):
@@ -109,8 +122,7 @@ def _check_dead_ctas(html_files: dict[str, str], all_text: str) -> list[Platform
                         rule="broken_anchor_target",
                         severity=PlatformContractSeverity.BLOCKING,
                         message=(
-                            f'An anchor targets "#{target}", which has no matching id="{target}" '
-                            "anywhere in the build."
+                            f'An anchor targets "#{target}", which has no matching id="{target}" anywhere in the build.'
                         ),
                         location=path,
                     )
@@ -121,10 +133,7 @@ def _check_dead_ctas(html_files: dict[str, str], all_text: str) -> list[Platform
 def _check_lead_capture(
     html_files: dict[str, str], script_text: str, *, business_config: BusinessConfig
 ) -> list[PlatformContractFinding]:
-    lead_capture_expected = business_config.automation.lead_capture or (
-        LeadSource.WEBSITE_FORM in business_config.lead_management.sources
-    )
-    if not lead_capture_expected:
+    if not _lead_capture_expected(business_config):
         return []
 
     has_form = any(_LEAD_FORM_MARKER.search(html) for html in html_files.values())
@@ -138,7 +147,7 @@ def _check_lead_capture(
             )
         ]
 
-    has_action = any('form' in html and 'action="http' in html for html in html_files.values())
+    has_action = any("form" in html and 'action="http' in html for html in html_files.values())
     # Astro inlines a small enough client <script> directly into the
     # HTML rather than always externalizing it to a .js chunk (verified
     # against a real generative build) — the wiring evidence can live in
@@ -157,6 +166,81 @@ def _check_lead_capture(
             )
         ]
     return []
+
+
+def _runtime_configs(html_files: dict[str, str]) -> list[dict]:
+    configs = []
+    for html in html_files.values():
+        for raw in _RUNTIME_CONFIG.findall(html):
+            try:
+                parsed = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict):
+                configs.append(parsed)
+    return configs
+
+
+def _lead_capture_expected(business_config: BusinessConfig) -> bool:
+    return business_config.automation.lead_capture or (
+        LeadSource.WEBSITE_FORM in business_config.lead_management.sources
+    )
+
+
+def _check_lead_endpoint(
+    html_files: dict[str, str], *, business_config: BusinessConfig
+) -> list[PlatformContractFinding]:
+    """A8.3.4-P0: `disconnected_lead_form` only proves a submit script
+    exists; this proves the rendered form has somewhere real to submit to.
+    With lead capture expected and a lead form in the build, at least one
+    rendered runtime config must carry the business id and a valid public
+    API origin — otherwise the form silently drops every lead. A form wired
+    directly to an n8n webhook (`action="http..."`) needs no API origin."""
+    if not _lead_capture_expected(business_config):
+        return []
+    if not any(_LEAD_FORM_MARKER.search(html) for html in html_files.values()):
+        return []  # missing_lead_form already reports this case
+    if any(_DIRECT_FORM_ACTION.search(html) for html in html_files.values()):
+        return []
+
+    problems = []
+    for config in _runtime_configs(html_files):
+        problem = public_origin_problem(config.get("apiBaseUrl"))
+        if problem is None and config.get("businessId"):
+            return []
+        problems.append(problem or "the business id is missing")
+    reason = problems[0] if problems else "no runtime lead-submission config was rendered"
+    return [
+        PlatformContractFinding(
+            rule="lead_endpoint_unconfigured",
+            severity=PlatformContractSeverity.BLOCKING,
+            message=f"The lead form has no usable submission endpoint ({reason}), so every lead would be lost.",
+        )
+    ]
+
+
+def _check_analytics_endpoint(
+    html_files: dict[str, str], all_text: str, script_text: str
+) -> list[PlatformContractFinding]:
+    """ADVISORY (A8.3.4-P0 decision): the analytics beacon has no
+    per-business on/off switch — it is always part of the build — so a
+    missing origin can't be a blocking "enabled feature doesn't work"
+    finding without also blocking sites that simply don't capture leads.
+    Lead capture, which is configurable, is the blocking check above."""
+    if not (_ANALYTICS_MARKER.search(all_text) or _ANALYTICS_MARKER.search(script_text)):
+        return []
+    origins = _ANALYTICS_API_BASE.findall(all_text) + [
+        str(config.get("apiBaseUrl") or "") for config in _runtime_configs(html_files)
+    ]
+    if any(public_origin_problem(origin) is None for origin in origins):
+        return []
+    return [
+        PlatformContractFinding(
+            rule="analytics_endpoint_unconfigured",
+            severity=PlatformContractSeverity.ADVISORY,
+            message="The analytics beacon has no usable public API origin, so no analytics events would be sent.",
+        )
+    ]
 
 
 def _check_legal_pages(files: dict[str, bytes]) -> list[PlatformContractFinding]:
@@ -228,7 +312,7 @@ def _check_seo(html_files: dict[str, str]) -> list[PlatformContractFinding]:
                 PlatformContractFinding(
                     rule="missing_seo_description",
                     severity=PlatformContractSeverity.BLOCKING,
-                    message="Page has no non-empty <meta name=\"description\">.",
+                    message='Page has no non-empty <meta name="description">.',
                     location=path,
                 )
             )
@@ -237,7 +321,7 @@ def _check_seo(html_files: dict[str, str]) -> list[PlatformContractFinding]:
                 PlatformContractFinding(
                     rule="missing_viewport_meta",
                     severity=PlatformContractSeverity.ADVISORY,
-                    message="Page has no <meta name=\"viewport\"> tag.",
+                    message='Page has no <meta name="viewport"> tag.',
                     location=path,
                 )
             )
@@ -271,6 +355,8 @@ def validate_platform_contract(files: dict[str, bytes], *, business_config: Busi
     findings: list[PlatformContractFinding] = []
     findings += _check_dead_ctas(html_files, all_text)
     findings += _check_lead_capture(html_files, script_text, business_config=business_config)
+    findings += _check_lead_endpoint(html_files, business_config=business_config)
+    findings += _check_analytics_endpoint(html_files, all_text, script_text)
     findings += _check_legal_pages(files)
     findings += _check_consent_and_analytics(all_text, script_text)
     findings += _check_whatsapp(all_text, business_config=business_config)

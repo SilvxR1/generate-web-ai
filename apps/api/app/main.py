@@ -17,6 +17,7 @@ from app.routers.internal_automation import router as internal_automation_router
 from app.routers.public import router as public_router
 from app.routers.website_health import router as website_health_router
 from app.security import SecurityHeadersMiddleware
+from app.security.public_cors import PublicEndpointCORSMiddleware
 
 
 def create_app() -> FastAPI:
@@ -38,6 +39,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Added last = outermost: the two anonymous endpoints customer sites call
+    # get non-credentialed CORS before the strict Studio policy above sees
+    # them. Every other route is unaffected (app.security.public_cors).
+    app.add_middleware(PublicEndpointCORSMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(auth_router)

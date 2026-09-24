@@ -529,7 +529,9 @@ def _contract_compliant_artifact(index_html: bytes) -> WebsiteArtifact:
 _INDEX_WITH_ANCHOR = (
     b'<html><head><title>Reforma</title><meta name="description" content="Reformas">'
     b'<meta name="viewport" content="width=device-width"></head><body><script>window.gwaConsent={}</script>'
-    b'<a href="#contact">Contactar</a>%s<form data-gwa-lead-form></form><script>submitLead()</script></body></html>'
+    b'<a href="#contact">Contactar</a>%s<form data-gwa-lead-form></form><script>submitLead()</script>'
+    b'<script type="application/json" id="lead-submission-config">'
+    b'{"businessId":"biz-1","apiBaseUrl":"https://api.example.com"}</script></body></html>'
 )
 
 

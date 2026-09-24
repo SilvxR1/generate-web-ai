@@ -35,7 +35,16 @@ CASES = {
 
 @pytest.fixture(scope="module")
 def builds() -> dict:
-    return {name: build_module.build_site(SiteConfigPayload.model_validate(site)) for name, site in CASES.items()}
+    return {name: build_module.build_site(_payload(site)) for name, site in CASES.items()}
+
+
+def _payload(site: dict) -> SiteConfigPayload:
+    # The real draft/publish pipeline always sets businessId server-side
+    # before building (app.publishing.drafts / service); mirror it so the
+    # built site has a usable lead endpoint (A8.3.4-P0 contract rule).
+    payload = SiteConfigPayload.model_validate(site)
+    payload.businessId = "00000000-0000-4000-8000-000000000001"
+    return payload
 
 
 def _html(builds, name) -> str:
@@ -108,7 +117,7 @@ def test_a_hand_built_link_to_a_missing_section_is_still_blocked_by_platform_con
     broken = copy.deepcopy(CASES["no_logo_missing_sections_long_name"])
     broken["navigation"].append({"label": "Galería", "href": "#gallery"})  # no gallery section renders
 
-    files = build_module.build_site(SiteConfigPayload.model_validate(broken)).files
+    files = build_module.build_site(_payload(broken)).files
     result = validate_platform_contract(files, business_config=CONTRACT_CONFIG)
 
     assert any(f.rule == "broken_anchor_target" and '"#gallery"' in f.message for f in result.blocking_violations)
