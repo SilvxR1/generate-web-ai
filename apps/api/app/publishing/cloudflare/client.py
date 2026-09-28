@@ -87,6 +87,24 @@ class CloudflarePagesClient:
             return
         self._request("DELETE", f"/accounts/{self._account_id}/pages/projects/{project_name}")
 
+    def list_deployments(self, project_name: str) -> list[dict[str, Any]]:
+        """Most recent first (Cloudflare's own ordering). A8.3.4.2a uses
+        it to resolve the exact deployment (id + immutable hash URL) a
+        preview `wrangler pages deploy` just created on its branch."""
+        result = self._request("GET", f"/accounts/{self._account_id}/pages/projects/{project_name}/deployments")
+        return list(result) if isinstance(result, list) else []
+
+    def delete_deployment(self, project_name: str, deployment_id: str) -> None:
+        """Deletes ONE deployment. Cloudflare refuses to delete the latest
+        deployment of a branch (or the live production one) — callers
+        retire a preview by first superseding it (see
+        CloudflarePagesPreviewPublisher.retire_preview)."""
+        self._request(
+            "DELETE",
+            f"/accounts/{self._account_id}/pages/projects/{project_name}/deployments/{deployment_id}",
+            params={"force": "true"},
+        )
+
     def _project_exists(self, project_name: str) -> bool:
         response = self._client.get(
             f"/accounts/{self._account_id}/pages/projects/{project_name}", headers=self._auth_headers

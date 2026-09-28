@@ -101,6 +101,12 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     # SHA-256 of the validated artifact. Null on legacy/failed drafts.
     artifact_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # A8.3.4.2a real preview: the current preview deployment of the stored
+    # artifact (lazy, owner-requested). Expiry is derived:
+    # preview_created_at + app.publishing.drafts.PREVIEW_TTL.
+    preview_deployment_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    preview_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    preview_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     business: Mapped["Business"] = relationship(back_populates="website_drafts")
     creative_generation: Mapped["CreativeGeneration | None"] = relationship()

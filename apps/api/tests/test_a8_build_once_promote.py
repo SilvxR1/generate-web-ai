@@ -777,11 +777,14 @@ def test_migration_is_additive_nullable_and_reversible(tmp_path: Path):
     assert "artifact_sha256" in _columns(db_url, "website_drafts")
 
 
-def test_new_migration_is_the_single_head():
+def test_migration_history_still_has_a_single_head():
+    # Not pinned to NEW_REVISION: later additive migrations (A8.3.4.2a+)
+    # legitimately move the head; the invariant is "one head".
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"], cwd=API_ROOT, capture_output=True, text=True, timeout=60
     )
-    assert completed.stdout.split() == [NEW_REVISION, "(head)"]
+    tokens = completed.stdout.split()
+    assert len(tokens) == 2 and tokens[1] == "(head)", completed.stdout
 
 
 # --- A8.3.4.1b: PRIVATE artifact storage ---------------------------------------

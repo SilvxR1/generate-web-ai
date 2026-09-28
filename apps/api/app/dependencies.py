@@ -37,9 +37,14 @@ from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.notifications.resend import ResendNotificationSender
 from app.notifications.sender import NotificationSender
 from app.notifications.smtp import SmtpNotificationSender
-from app.publishing.cloudflare import CloudflarePagesClient, CloudflarePagesDomainProvider, CloudflarePagesPublisher
+from app.publishing.cloudflare import (
+    CloudflarePagesClient,
+    CloudflarePagesDomainProvider,
+    CloudflarePagesPreviewPublisher,
+    CloudflarePagesPublisher,
+)
 from app.publishing.domain_provider import DomainProvider
-from app.publishing.publisher import WebsitePublisher
+from app.publishing.publisher import PreviewPublisher, WebsitePublisher
 from app.repositories.tenant import TenantRepository
 from app.repositories.tenant_access import TenantAccessRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
@@ -300,6 +305,30 @@ def get_website_publisher() -> WebsitePublisher:
     return CloudflarePagesPublisher(
         client, account_id=settings.cloudflare_account_id, api_token=settings.cloudflare_api_token
     )
+
+
+def get_optional_preview_publisher() -> PreviewPublisher | None:
+    """A8.3.4.2a — the dedicated-preview-project publisher, or None when
+    Cloudflare isn't configured. Used where preview work is best-effort
+    (retiring a preview after a successful production publish)."""
+    if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
+        return None
+    client = CloudflarePagesClient(settings.cloudflare_account_id, settings.cloudflare_api_token)
+    return CloudflarePagesPreviewPublisher(
+        client, account_id=settings.cloudflare_account_id, api_token=settings.cloudflare_api_token
+    )
+
+
+def get_preview_publisher() -> PreviewPublisher:
+    """Same shape as get_website_publisher: a clean 503 when unconfigured."""
+    publisher = get_optional_preview_publisher()
+    if publisher is None:
+        raise AppError(
+            "Website previews are not configured on this server.",
+            code="preview_publisher_not_configured",
+            status_code=503,
+        )
+    return publisher
 
 
 def get_domain_provider() -> DomainProvider:
