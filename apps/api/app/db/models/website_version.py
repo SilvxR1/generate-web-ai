@@ -53,6 +53,16 @@ class WebsiteVersion(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Bas
     deploy_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     provider_deployment_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # A8.3.4.1 traceability: which WebsiteDraft (if any) this version was
+    # promoted from, and the canonical SHA-256 of the exact artifact that
+    # was deployed. Null for direct publishes, rollbacks and pre-A8.3.4.1
+    # rows — those still rebuild from `site_config` (see
+    # app.publishing.versions). SET NULL: deleting a draft never deletes
+    # history, and the hash alone still identifies the deployed bytes.
+    source_website_draft_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("website_drafts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     business: Mapped["Business"] = relationship()
     website: Mapped["Website | None"] = relationship()

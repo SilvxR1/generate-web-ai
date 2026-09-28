@@ -19,6 +19,7 @@ from app.db.models.tenant import Tenant
 from app.dependencies import (
     get_creative_director,
     get_frontend_engineer,
+    get_private_artifact_storage,
     get_session,
     get_storage_provider,
     get_website_publisher,
@@ -34,6 +35,7 @@ from app.domain.creative.direction import (
 from app.domain.enums import CreativeProviderName
 from app.main import app
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
+from app.storage.private import PrivateArtifactStorage
 from app.storage.provider import StorageProvider, StoredFile
 
 
@@ -97,8 +99,11 @@ class _FakeFrontendEngineer(FrontendEngineer):
             '<script type="application/json" id="platform-config">'
             + json.dumps({"businessId": business_id, "apiBaseUrl": api_base_url})
             + "</script>"
-            "</head><body><form data-gwa-lead-form></form>"
-            "<script>submitLead();window.gwaConsent={};window.gwaAnalytics={};</script>"
+            "</head><body><h1>Generative Co</h1><p>Real content.</p><form data-gwa-lead-form></form>"
+            # Defines (never calls an undefined) submitLead, so a real
+            # browser Visual QA pass over this exact stored artifact
+            # sees no page errors.
+            "<script>function submitLead(){}window.gwaConsent={};window.gwaAnalytics={};</script>"
             "</body></html>"
         )
         legal = '<html><head><title>L</title><meta name="description" content="d"></head><body>l</body></html>'
@@ -122,16 +127,23 @@ class _FakeFrontendEngineer(FrontendEngineer):
 
 
 class _FakeStorage(StorageProvider):
+    """In-memory: A8.3.4.1 stores each draft's validated artifact and
+    publish loads it back, so saved bytes must really round-trip."""
+
     provider_name = "fake"
 
+    def __init__(self) -> None:
+        self.objects: dict[str, bytes] = {}
+
     def save(self, *, storage_key, content, content_type=None):
+        self.objects[storage_key] = content
         return StoredFile(storage_key=storage_key)
 
     def delete(self, storage_key):
-        pass
+        self.objects.pop(storage_key, None)
 
     def exists(self, storage_key):
-        return True
+        return storage_key in self.objects
 
     def presigned_url(self, storage_key, *, expires_in_seconds):
         return None
@@ -140,11 +152,14 @@ class _FakeStorage(StorageProvider):
         return f"/uploads/{storage_key}"
 
     def load(self, storage_key):
-        return b"fake-archive-bytes"
+        return self.objects[storage_key]
 
 
 class _FakePublisher(WebsitePublisher):
+    published_artifacts: list[WebsiteArtifact] = []
+
     def publish(self, *, site_id, artifact):
+        self.published_artifacts.append(artifact)
         return PublishedSite(deployment_id="dep-gen-1", url="https://example.pages.dev", live=True)
 
     def get_status(self, deployment_id):
@@ -159,25 +174,38 @@ def client(session, monkeypatch: pytest.MonkeyPatch):
     def _override_get_session():
         yield session
 
-    # The generative publish path rebuilds from the archive for real
-    # (app.creative.frontend_engine.build.rebuild_from_archive) — faked
-    # here since _FakeStorage.load returns non-real archive bytes; this
-    # test is about the HTTP/lifecycle wiring, not the build itself
-    # (covered for real elsewhere).
-    monkeypatch.setattr(
-        "app.publishing.service.rebuild_from_archive",
-        lambda archive, **kwargs: WebsiteArtifact(files={"index.html": b"<html></html>"}),
-    )
+    # A8.3.4.1: neither publish nor Visual QA may rebuild an
+    # artifact-backed draft — any call here fails the test loudly.
+    def _no_rebuild(*args, **kwargs):
+        raise AssertionError("an artifact-backed generative draft must never be rebuilt")
 
+    monkeypatch.setattr("app.publishing.drafts.rebuild_from_archive", _no_rebuild)
+
+    # A8.3.4.1b: two DIFFERENT stores — public assets/screenshots vs the
+    # private draft-artifact bucket — so tests can prove which one got what.
+    storage = _FakeStorage()
+    private = _FakeStorage()
+    _FakePublisher.published_artifacts = []
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_website_publisher] = lambda: _FakePublisher()
-    app.dependency_overrides[get_storage_provider] = lambda: _FakeStorage()
+    app.dependency_overrides[get_storage_provider] = lambda: storage
+    app.dependency_overrides[get_private_artifact_storage] = lambda: PrivateArtifactStorage(private)
     app.dependency_overrides[get_creative_director] = lambda: _FakeDirector()
     app.dependency_overrides[get_frontend_engineer] = lambda: _FakeFrontendEngineer()
+    test_client = TestClient(app)
+    test_client.public_storage = storage  # type: ignore[attr-defined]
+    test_client.private_storage = private  # type: ignore[attr-defined]
     try:
-        yield TestClient(app)
+        yield test_client
     finally:
-        deps = (get_session, get_website_publisher, get_storage_provider, get_creative_director, get_frontend_engineer)
+        deps = (
+            get_session,
+            get_website_publisher,
+            get_storage_provider,
+            get_private_artifact_storage,
+            get_creative_director,
+            get_frontend_engineer,
+        )
         for dep in deps:
             app.dependency_overrides.pop(dep, None)
 
@@ -250,6 +278,23 @@ def test_full_generative_lifecycle_create_approve_publish(client: TestClient, te
     assert published.status_code == 200, published.text
     assert published.json()["status"] == "live"
 
+    # A8.3.4.1: the published bytes are exactly the engine's validated
+    # build output (platform config included) — not a rebuild.
+    expected = _FakeFrontendEngineer().generate(
+        business_config=None,
+        creative_direction=None,
+        assets=(),
+        platform_contract_version="",
+        business_id=str(business_with_config.id),
+        api_base_url="https://api.example.com",  # settings.internal_api_base_url, set above
+    ).artifact
+    [deployed] = _FakePublisher.published_artifacts
+    assert deployed.files == expected.files
+
+    # A8.3.4.1b: the artifact lives ONLY in private storage.
+    assert [k for k in client.private_storage.objects if k.startswith("website-drafts/")]
+    assert not [k for k in client.public_storage.objects if k.startswith("website-drafts/")]
+
 
 def test_generative_frontend_engineer_unavailable_returns_503(client: TestClient, tenant: Tenant, business_with_config):
     """P2.14: a genuinely unconfigured engine fails loudly — never a
@@ -278,18 +323,9 @@ def test_visual_qa_endpoint_runs_a_real_browser_pass_and_persists_results(
 ):
     """P2 continuation Part 4/5: POST .../visual-qa runs a real headless
     browser against the draft's real build output (Chromium is real
-    here — only the archive rebuild is faked, since _FakeStorage.load
-    returns non-real archive bytes) and GET .../generative-artifact then
-    reports it, never a fabricated pass."""
-    real_html = (
-        '<html><head><title>T</title><meta name="description" content="d">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1"></head>'
-        "<body><h1>Visual QA Co</h1><p>Real content.</p></body></html>"
-    )
-    monkeypatch.setattr(
-        "app.publishing.drafts.rebuild_from_archive",
-        lambda archive, **kwargs: WebsiteArtifact(files={"index.html": real_html.encode()}),
-    )
+    here; A8.3.4.1: the output is the draft's stored, validated artifact
+    — never a rebuild) and GET .../generative-artifact then reports it,
+    never a fabricated pass."""
 
     [direction] = client.post(
         f"/businesses/{business_with_config.id}/creative-directions", json={}, headers=_headers(tenant.id)

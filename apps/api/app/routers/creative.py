@@ -42,6 +42,7 @@ from app.dependencies import (
     get_internal_creative_provider,
     get_manual_review_provider,
     get_optional_higgsfield_provider,
+    get_private_artifact_storage,
     get_session,
     get_storage_provider,
     get_website_publisher,
@@ -107,6 +108,7 @@ from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
 from app.storage.image_validation import InvalidImageError, validate_raster_image
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -817,6 +819,7 @@ def create_website_draft_route(
     payload: WebsiteDraftCreateRequest,
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> object:
     """Persists a generated SiteConfig as a safe draft and immediately
     builds + validates it (app.publishing.drafts.create_website_draft) —
@@ -833,6 +836,7 @@ def create_website_draft_route(
         business_id=business_id,
         business_config=business_config,
         site_config=payload.site_config,
+        artifact_storage=artifact_storage,
         creative_generation_id=payload.creative_generation_id,
     )
 
@@ -909,6 +913,7 @@ def run_visual_qa_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     storage: StorageProvider = Depends(get_storage_provider),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> object:
     """Studio's explicit QA_RUNNING trigger (P2 continuation Part 4/5):
     runs a real headless-browser pass against the draft's already-built
@@ -925,6 +930,7 @@ def run_visual_qa_route(
             business_id=business_id,
             draft_id=draft_id,
             storage=storage,
+            artifact_storage=artifact_storage,
             api_base_url=api_base_url,
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
@@ -956,7 +962,7 @@ def publish_website_draft_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
-    storage: StorageProvider = Depends(get_storage_provider),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
     (Phase 10: generation/build/validation alone never publish). One
@@ -981,7 +987,7 @@ def publish_website_draft_route(
                 business_id=business_id,
                 draft_id=draft_id,
                 publisher=publisher,
-                storage=storage,
+                artifact_storage=artifact_storage,
             )
         return publish_website_draft(
             session=session,
@@ -989,6 +995,7 @@ def publish_website_draft_route(
             business_id=business_id,
             draft_id=draft_id,
             publisher=publisher,
+            artifact_storage=artifact_storage,
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc
@@ -1319,6 +1326,7 @@ def create_generative_website_draft_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     frontend_engineer: FrontendEngineer = Depends(get_frontend_engineer),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> object:
     """The GENERATIVE counterpart to POST .../website-drafts (P2 Part
     A/C): turns one already-selected CreativeDirection into a real,
@@ -1342,6 +1350,7 @@ def create_generative_website_draft_route(
             business_config=config,
             creative_direction_id=payload.creative_direction_id,
             frontend_engineer=frontend_engineer,
+            artifact_storage=artifact_storage,
             assets=brief.available_assets,
             api_base_url=api_base_url,
         )

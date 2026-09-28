@@ -47,6 +47,8 @@ from app.main import app
 from app.publishing.drafts import create_website_draft
 from app.schemas.creative import CreativeGenerationRead
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 API_ROOT = Path(__file__).resolve().parents[1]
 CONFORMANCE = json.loads(
@@ -162,11 +164,14 @@ def test_migration_adds_a_nullable_column_leaves_old_rows_null_and_downgrades_cl
     engine.dispose()
 
 
-def test_migration_is_the_single_head():
+def test_migration_history_has_a_single_head():
+    # Pinning *this* revision as the head broke as soon as a later additive
+    # migration landed (A8.3.4.1); the invariant worth keeping is "one head".
     completed = subprocess.run(
         [sys.executable, "-m", "alembic", "heads"], cwd=API_ROOT, capture_output=True, text=True, timeout=60
     )
-    assert completed.stdout.split() == [MIGRATION_REVISION, "(head)"]
+    tokens = completed.stdout.split()
+    assert len(tokens) == 2 and tokens[1] == "(head)", completed.stdout
 
 
 # --- D / E / F: internal provider -> persisted -> typed read ------------------
@@ -301,7 +306,7 @@ def test_a_provider_without_a_direction_persists_null(session: Session, tenant: 
 
 
 def test_a_draft_reaches_its_direction_through_creative_generation_id(
-    session: Session, tenant: Tenant, business: Business, monkeypatch: pytest.MonkeyPatch
+    session: Session, tenant: Tenant, business: Business, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     from app.publishing.publisher import WebsiteArtifact
 
@@ -334,6 +339,7 @@ def test_a_draft_reaches_its_direction_through_creative_generation_id(
         tenant_id=tenant.id,
         business_id=business.id,
         site_config=site_config,
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
         creative_generation_id=generation.id,
     )
     session.flush()

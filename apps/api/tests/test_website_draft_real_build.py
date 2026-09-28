@@ -11,7 +11,7 @@ module does, with the same deterministic reforma fixture
 test_site_builder_integration.py uses — local only, no external provider.
 
 `build_site` is wrapped (never replaced) so the real artifact can also be
-inspected: create_website_draft itself deliberately discards it."""
+inspected and compared against what A8.3.4.1 stores for publishing."""
 
 import copy
 import json
@@ -26,8 +26,11 @@ from app.db.models.tenant import Tenant
 from app.domain.business_config import EXAMPLE_REFORMA_VALENCIA_CONFIG
 from app.domain.enums import WebsiteDraftStatus
 from app.publishing import build as build_module
+from app.publishing.artifact_store import artifact_sha256, load_draft_artifact
 from app.publishing.drafts import create_website_draft
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reforma_site_config.json"
 _SECTION = re.compile(r"<section\b[^>]*>")
@@ -55,7 +58,7 @@ def built_artifacts(monkeypatch: pytest.MonkeyPatch) -> list:
 
 
 def test_a_valid_generator_config_builds_ready_with_every_anchor_resolved(
-    session: Session, tenant: Tenant, business: Business, built_artifacts: list
+    session: Session, tenant: Tenant, business: Business, built_artifacts: list, tmp_path
 ):
     raw = _fixture()
     blocks = {block["id"]: block for block in raw["pages"][0]["blocks"]}
@@ -71,11 +74,25 @@ def test_a_valid_generator_config_builds_ready_with_every_anchor_resolved(
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(raw),
         business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
     )
 
     assert draft.build_error is None
     assert draft.status is WebsiteDraftStatus.READY
     assert not any("PlatformContract:broken_anchor_target" in issue for issue in draft.validation_issues or [])
+
+    # A8.3.4.1 on a REAL astro build: the stored artifact is byte-for-byte
+    # the one build that ran (security headers included), hash-verified.
+    assert len(built_artifacts) == 1
+    stored = load_draft_artifact(
+        PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
+        storage_key=draft.artifact_key,
+        expected_sha256=draft.artifact_sha256,
+        draft_id=draft.id,
+    )
+    assert stored.files == built_artifacts[0].files
+    assert "_headers" in stored.files
+    assert artifact_sha256(stored) == artifact_sha256(built_artifacts[0]) == draft.artifact_sha256
 
     html = built_artifacts[0].files["index.html"].decode("utf-8")
     anchors = set(re.findall(r'href="#([\w-]+)"', html))
@@ -100,7 +117,7 @@ def test_a_valid_generator_config_builds_ready_with_every_anchor_resolved(
 
 
 def test_platform_contract_still_blocks_a_genuinely_broken_anchor(
-    session: Session, tenant: Tenant, business: Business, built_artifacts: list
+    session: Session, tenant: Tenant, business: Business, built_artifacts: list, tmp_path
 ):
     raw = copy.deepcopy(_fixture())
     contact = next(block for block in raw["pages"][0]["blocks"] if block["type"] == "contact")
@@ -112,8 +129,11 @@ def test_platform_contract_still_blocks_a_genuinely_broken_anchor(
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(raw),
         business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
     )
 
     assert draft.status is WebsiteDraftStatus.BUILD_FAILED
+    assert draft.artifact_key is None and draft.artifact_sha256 is None  # never stored as publishable
+    assert not (tmp_path / "storage").exists() or not any((tmp_path / "storage").rglob("*.gz"))
     assert 'An anchor targets "#contact"' in draft.build_error
     assert '"#services"' not in draft.build_error

@@ -46,6 +46,7 @@ from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import CloudflareR2StorageProvider, LocalStorageProvider, StorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -435,6 +436,55 @@ def get_storage_provider() -> StorageProvider:
             public_base_url=settings.r2_public_base_url or "",
         )
     return LocalStorageProvider(root_dir=Path(settings.local_storage_dir))
+
+
+def _private_artifact_storage_unavailable(reason: str) -> AppError:
+    logger.error("private_artifact_storage_unavailable reason=%s", reason)
+    return AppError(
+        "Website proposals can't be created or published right now: secure storage is not configured.",
+        code="private_artifact_storage_unavailable",
+        status_code=503,
+    )
+
+
+def get_private_artifact_storage() -> PrivateArtifactStorage:
+    """A8.3.4.1b — where WebsiteDraft deployable artifacts live
+    (app.storage.private). FAILS CLOSED, and never returns the public
+    asset bucket:
+
+    - R2_PRIVATE_BUCKET_NAME set -> a CloudflareR2StorageProvider on that
+      bucket with NO public base URL (private credentials if given, else
+      the shared R2 pair). Refused if it names the public bucket or any
+      credential is missing.
+    - not set, but production or the public R2 bucket is configured ->
+      503. Never "use the public bucket instead".
+    - otherwise (local dev/test, no R2 at all) -> a local directory that
+      app.main never serves over HTTP.
+    """
+    private_bucket = settings.r2_private_bucket_name
+    if private_bucket:
+        account_id = settings.r2_account_id
+        access_key_id = settings.r2_private_access_key_id or settings.r2_access_key_id
+        secret_access_key = settings.r2_private_secret_access_key or settings.r2_secret_access_key
+        if not (account_id and access_key_id and secret_access_key):
+            raise _private_artifact_storage_unavailable("incomplete_credentials")
+        if private_bucket == settings.r2_bucket_name:
+            raise _private_artifact_storage_unavailable("private_bucket_is_public_bucket")
+        return PrivateArtifactStorage(
+            CloudflareR2StorageProvider(
+                account_id=account_id,
+                access_key_id=access_key_id,
+                secret_access_key=secret_access_key,
+                bucket_name=private_bucket,
+                public_base_url=None,
+            )
+        )
+    if settings.environment == "production" or settings.r2_bucket_name:
+        raise _private_artifact_storage_unavailable("not_configured")
+    return PrivateArtifactStorage(
+        LocalStorageProvider(root_dir=Path(settings.local_private_storage_dir)),
+        public_upload_dir=Path(settings.local_storage_dir),
+    )
 
 
 def get_analytics_provider(session: Session = Depends(get_session)) -> AnalyticsProvider:
