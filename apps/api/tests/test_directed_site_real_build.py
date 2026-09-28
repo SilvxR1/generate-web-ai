@@ -26,6 +26,7 @@ from app.publishing import build as build_module
 from app.publishing.drafts import create_website_draft
 from app.qa.platform_contract import validate_platform_contract
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import LocalStorageProvider
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SITE_CONFIGS = json.loads((FIXTURES / "a8_directed_site_configs.json").read_text("utf-8"))
@@ -124,18 +125,20 @@ def test_the_same_directed_config_renders_identical_html(builds):
 
 @pytest.mark.parametrize(("name", "strategy"), [("handmade_shop", "new_direction"), ("renovation", "evolve")])
 def test_a_directed_draft_reaches_ready_through_the_real_draft_pipeline(
-    session: Session, tenant: Tenant, business: Business, name, strategy
+    session: Session, tenant: Tenant, business: Business, name, strategy, tmp_path
 ):
     draft = create_website_draft(
         session=session,
         tenant_id=tenant.id,
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(SITE_CONFIGS[name][strategy]),
+        storage=LocalStorageProvider(root_dir=tmp_path / "storage"),
         business_config=_business_config(name),
     )
 
     assert draft.build_error is None
     assert draft.status is WebsiteDraftStatus.READY
+    assert draft.artifact_key is not None and draft.artifact_sha256 is not None
 
 
 # --- A8.3.2: content distribution in the real build ---------------------------

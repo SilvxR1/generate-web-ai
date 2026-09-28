@@ -1,18 +1,50 @@
 """WebsiteDraft lifecycle (Phase 6/7/9/10 of the Creative Orchestrator
 continuation): create -> build -> validate -> (preview, read-only) ->
-approve -> publish. Reuses app.publishing.build.build_site and
-app.publishing.service.publish_website UNCHANGED — this module contains
-no parallel deployment system, only the orchestration that requires a
-draft to be READY before APPROVED, and APPROVED before PUBLISHED.
+approve -> publish. This module contains no parallel deployment system,
+only the orchestration that requires a draft to be READY before
+APPROVED, and APPROVED before PUBLISHED.
+
+A8.3.4.1 — BUILD ONCE / PROMOTE. A draft is built exactly once:
+
+    SiteConfig (or generative source) -> build -> PlatformContract
+    -> canonical SHA-256 -> immutable archive (StorageProvider)
+    -> artifact_key + artifact_sha256 persisted -> READY
+    -> APPROVED -> load archive -> re-verify SHA-256 -> deploy those bytes
+
+Publish never calls build_site (nor the generative rebuild): it deploys
+the stored artifact through app.publishing.service.publish_prebuilt_artifact
+— the same WebsitePublisher and Website/WebsiteVersion bookkeeping as
+every other publish. Consistency choices:
+
+- A draft only becomes READY after its archive is saved; a storage
+  failure leaves it BUILD_FAILED (never publishable). The archive is
+  written before the request's DB transaction commits, so a later commit
+  failure can only leave an *unreferenced* private archive behind
+  (harmless; no API ever lists or serves it) — never a READY row
+  pointing at nothing.
+- A missing, unreadable, corrupt or hash-mismatched archive refuses
+  publication before the hosting provider is called: no deployment, no
+  WebsiteVersion, the live site untouched. Nothing is ever rebuilt or
+  "repaired".
+- Legacy drafts (no artifact, created before A8.3.4.1) are refused with
+  an owner-facing "create a new proposal" message — silently rebuilding
+  them would break the invariant.
+- PlatformContract is NOT re-run at publish: the creation-time result is
+  authoritative, and the verified hash proves the deployed bytes are
+  exactly the ones that passed it. Re-running against the *current*
+  BusinessConfig could only ever disagree about a different question
+  (has the business changed since?), and no contract implementation is
+  ever allowed to mutate a stored artifact either way.
 
 Every function here takes an already-open Session and touches no other
 Business/Website state than what it's explicitly documented to — a
-failure at any step (build, validation persistence) leaves the currently
-published Website row (if any) completely untouched, since none of these
-functions call publish_website until publish_website_draft, and that only
-after the APPROVED check below.
+failure at any step (build, validation, artifact storage/verification)
+leaves the currently published Website row (if any) completely untouched,
+since nothing here deploys until publish_*website_draft, and that only
+after the APPROVED check and a successful artifact integrity check.
 """
 
+import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
@@ -32,10 +64,16 @@ from app.domain.business_config import BusinessConfig
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.image_qa import direction_is_approval_eligible
 from app.domain.enums import GenerationEngine, WebsiteDraftStatus
+from app.publishing.artifact_store import (
+    ArtifactError,
+    ArtifactUnavailableError,
+    load_draft_artifact,
+    store_draft_artifact,
+)
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
-from app.publishing.publisher import WebsitePublisher
-from app.publishing.service import WebsiteStateResult, publish_generative_website, publish_website
+from app.publishing.publisher import WebsiteArtifact, WebsitePublisher
+from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.validate import validate_site_config
 from app.repositories.creative_direction import CreativeDirectionRepository
@@ -44,6 +82,26 @@ from app.repositories.website import WebsiteRepository
 from app.repositories.website_draft import WebsiteDraftRepository
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import StorageProvider
+from app.storage.errors import StorageProviderError
+
+logger = logging.getLogger(__name__)
+
+_ARTIFACT_STORE_FAILED_MESSAGE = (
+    "The validated website could not be saved, so this proposal can't be published. "
+    "Please try creating it again."
+)
+_LEGACY_DRAFT_MESSAGE = (
+    "This proposal was created before validated websites were stored, so it can't be published as-is. "
+    "Please create a new proposal and publish that one. Your current website is unchanged."
+)
+_ARTIFACT_UNAVAILABLE_MESSAGE = (
+    "This proposal's validated website could not be loaded, so nothing was published. "
+    "Your current website is unchanged. Please try again; if it keeps failing, create a new proposal."
+)
+_ARTIFACT_UNVERIFIED_MESSAGE = (
+    "This proposal's validated website failed its integrity check, so nothing was published. "
+    "Your current website is unchanged. Please create a new proposal."
+)
 
 
 class GenerativeDraftError(Exception):
@@ -70,12 +128,92 @@ class WebsiteDraftError(Exception):
         self.status_code = status_code
 
 
+def _promote_with_stored_artifact(
+    *, draft: WebsiteDraft, storage: StorageProvider, artifact: WebsiteArtifact, issues: list[str]
+) -> None:
+    """The last step of every successful draft creation (either engine):
+    persist the exact artifact that just passed PlatformContract, and
+    only then mark the draft READY. Any storage failure leaves the draft
+    BUILD_FAILED — never a READY draft without an artifact behind it."""
+    draft.validation_issues = issues or None
+    try:
+        stored = store_draft_artifact(
+            storage,
+            tenant_id=draft.tenant_id,
+            business_id=draft.business_id,
+            draft_id=draft.id,
+            artifact=artifact,
+        )
+    except (ArtifactError, StorageProviderError, OSError, ValueError) as exc:
+        logger.error(
+            "website_artifact_store_failed draft=%s business=%s error=%s: %s",
+            draft.id,
+            draft.business_id,
+            type(exc).__name__,
+            exc,
+        )
+        draft.status = WebsiteDraftStatus.BUILD_FAILED
+        draft.build_error = _ARTIFACT_STORE_FAILED_MESSAGE
+        return
+    draft.artifact_key = stored.storage_key
+    draft.artifact_sha256 = stored.sha256
+    draft.status = WebsiteDraftStatus.READY
+
+
+def _load_verified_artifact(draft: WebsiteDraft, storage: StorageProvider) -> WebsiteArtifact:
+    """The only way a draft's artifact reaches a publisher (or, in
+    A8.3.4.2, a preview): the stored archive, integrity-verified against
+    the hash recorded at creation. Never rebuilds."""
+    if draft.artifact_key is None or draft.artifact_sha256 is None:
+        logger.warning("website_artifact_missing draft=%s business=%s reason=legacy_draft", draft.id, draft.business_id)
+        raise WebsiteDraftError(_LEGACY_DRAFT_MESSAGE, code="website_draft_artifact_missing", status_code=409)
+    try:
+        return load_draft_artifact(
+            storage, storage_key=draft.artifact_key, expected_sha256=draft.artifact_sha256, draft_id=draft.id
+        )
+    except ArtifactUnavailableError as exc:
+        raise WebsiteDraftError(
+            _ARTIFACT_UNAVAILABLE_MESSAGE, code="website_draft_artifact_unavailable", status_code=503
+        ) from exc
+    except ArtifactError as exc:
+        raise WebsiteDraftError(
+            _ARTIFACT_UNVERIFIED_MESSAGE, code="website_draft_artifact_integrity_failed", status_code=409
+        ) from exc
+
+
+def _require_approved(
+    session: Session, tenant_id: UUID, business_id: UUID, draft_id: UUID, *, generative: bool = False
+) -> WebsiteDraft:
+    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
+    if draft is None:
+        raise WebsiteDraftError("Website draft not found.", code="website_draft_not_found", status_code=404)
+    if generative and draft.engine is not GenerationEngine.GENERATIVE:
+        raise GenerativeDraftError(
+            "This draft was not produced by the generative engine.", code="not_a_generative_draft", status_code=409
+        )
+    if draft.status is not WebsiteDraftStatus.APPROVED:
+        raise WebsiteDraftError(
+            f"Only an APPROVED draft can be published (current status: {draft.status.value!r}).",
+            code="website_draft_not_approved",
+            status_code=409,
+        )
+    return draft
+
+
+def _mark_published(session: Session, draft: WebsiteDraft) -> None:
+    website = WebsiteRepository(session).get_by_business(draft.tenant_id, draft.business_id)
+    draft.status = WebsiteDraftStatus.PUBLISHED
+    draft.published_at = datetime.now(UTC)
+    draft.published_website_id = website.id if website else None
+
+
 def create_website_draft(
     *,
     session: Session,
     tenant_id: UUID,
     business_id: UUID,
     site_config: SiteConfigPayload,
+    storage: StorageProvider,
     creative_generation_id: UUID | None = None,
     business_config: BusinessConfig | None = None,
 ) -> WebsiteDraft:
@@ -86,14 +224,15 @@ def create_website_draft(
     A build failure is recorded on the draft, never raised — this
     function always returns a WebsiteDraft, whether BUILD_FAILED or
     READY, so the caller (a router) always has something to show/persist.
-    The build's own artifact (HTML/CSS bytes) is intentionally discarded —
-    see WebsiteDraft's own docstring for why.
+    A8.3.4.1: this is the draft's ONE build — the artifact that passes is
+    archived through `storage` and becomes exactly what Publish deploys
+    (see this module's docstring); READY is only reached once it's saved.
 
     P2: when `business_config` is provided (the real call path — see
     app.routers.creative.create_website_draft_route), the same build's
-    transient file output is also scanned by
+    file output is also scanned by
     app.qa.platform_contract.validate_platform_contract *before* being
-    discarded — the identical, engine-agnostic contract GENERATIVE drafts
+    stored — the identical, engine-agnostic contract GENERATIVE drafts
     are held to (app.creative.frontend_engine). A BLOCKING violation
     (P2.8: a dead CTA, a disconnected lead form, ...) demotes this draft
     to BUILD_FAILED exactly like a real build failure — never READY, so
@@ -137,8 +276,7 @@ def create_website_draft(
             draft.validation_issues = issues or None
             return draft
 
-    draft.status = WebsiteDraftStatus.READY
-    draft.validation_issues = issues or None
+    _promote_with_stored_artifact(draft=draft, storage=storage, artifact=artifact, issues=issues)
     return draft
 
 
@@ -173,39 +311,32 @@ def publish_website_draft(
     business_id: UUID,
     draft_id: UUID,
     publisher: WebsitePublisher,
+    storage: StorageProvider,
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
-    (Phase 10: generation/build/validation alone never publish). Reuses
-    app.publishing.service.publish_website verbatim: same real `astro
-    build` + hosting-provider deploy, same 'a failed attempt never
-    touches the previously live deploy_url' guarantee. If that call
-    fails, WebsitePublishError propagates unchanged and this draft is
-    left APPROVED (never silently marked PUBLISHED) — the caller can
-    retry the exact same approved draft without re-approving.
+    (Phase 10: generation/build/validation alone never publish). A8.3.4.1:
+    deploys the draft's stored, integrity-verified artifact — the exact
+    bytes built and validated at creation — and never calls build_site.
+    Same 'a failed attempt never touches the previously live deploy_url'
+    guarantee as every other publish (publish_prebuilt_artifact). If
+    anything fails, the error propagates and this draft is left APPROVED
+    (never silently marked PUBLISHED) — the caller can retry the exact
+    same approved draft without re-approving.
     """
-    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
-    if draft is None:
-        raise WebsiteDraftError("Website draft not found.", code="website_draft_not_found", status_code=404)
-    if draft.status is not WebsiteDraftStatus.APPROVED:
-        raise WebsiteDraftError(
-            f"Only an APPROVED draft can be published (current status: {draft.status.value!r}).",
-            code="website_draft_not_approved",
-            status_code=409,
-        )
-
-    site_config = SiteConfigPayload.model_validate(draft.site_config)
-    result = publish_website(
+    draft = _require_approved(session, tenant_id, business_id, draft_id)
+    artifact = _load_verified_artifact(draft, storage)
+    assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
+    result = publish_prebuilt_artifact(
         session=session,
         tenant_id=tenant_id,
         business_id=business_id,
-        site_config=site_config,
+        artifact=artifact,
+        config=dict(draft.site_config or {}),
         publisher=publisher,
+        source_website_draft_id=draft.id,
+        artifact_sha256=draft.artifact_sha256,
     )
-
-    website = WebsiteRepository(session).get_by_business(tenant_id, business_id)
-    draft.status = WebsiteDraftStatus.PUBLISHED
-    draft.published_at = datetime.now(UTC)
-    draft.published_website_id = website.id if website else None
+    _mark_published(session, draft)
     return result
 
 
@@ -221,6 +352,7 @@ def create_generative_website_draft(
     business_config: BusinessConfig,
     creative_direction_id: UUID,
     frontend_engineer: FrontendEngineer,
+    storage: StorageProvider,
     assets: Sequence[CreativeBriefAsset] = (),
     api_base_url: str | None = None,
 ) -> WebsiteDraft:
@@ -320,8 +452,9 @@ def create_generative_website_draft(
         draft.validation_issues = issues or None
         return draft
 
-    draft.status = WebsiteDraftStatus.READY
-    draft.validation_issues = issues or None
+    # A8.3.4.1: the built output (platform config already injected) is
+    # what gets stored and later promoted — never rebuilt from source.
+    _promote_with_stored_artifact(draft=draft, storage=storage, artifact=result.artifact, issues=issues)
     return draft
 
 
@@ -366,8 +499,14 @@ def run_visual_qa_for_draft(
             "This draft has no generative artifact record.", code="generative_artifact_missing", status_code=500
         )
 
-    archive = storage.load(artifact_row.workspace_key)
-    artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
+    if draft.artifact_key is not None:
+        # A8.3.4.1: QA the exact artifact Publish will deploy.
+        artifact = _load_verified_artifact(draft, storage)
+    else:
+        # Legacy draft (pre-A8.3.4.1): no stored build output, only source.
+        # Publish refuses these anyway; QA still inspects a rebuild.
+        archive = storage.load(artifact_row.workspace_key)
+        artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
     try:
         visual_result = run_visual_qa(artifact.files, business_id=str(business_id), storage=storage)
     except BrowserQAUnavailableError as exc:
@@ -398,29 +537,14 @@ def publish_generative_website_draft(
     draft_id: UUID,
     publisher: WebsitePublisher,
     storage: StorageProvider,
-    api_base_url: str | None = None,
 ) -> WebsiteStateResult:
-    """The GENERATIVE counterpart to publish_website_draft above —
-    requires an APPROVED draft, rebuilds from the durably-archived
-    generative source (never re-invokes the LLM — see
-    app.creative.frontend_engine.build.rebuild_from_archive's own
-    docstring for why), and reuses
-    app.publishing.service.publish_generative_website, which itself
-    reuses the same WebsitePublisher.publish/Website/WebsiteVersion
-    persistence the deterministic path already uses."""
-    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id)
-    if draft is None:
-        raise WebsiteDraftError("Website draft not found.", code="website_draft_not_found", status_code=404)
-    if draft.engine is not GenerationEngine.GENERATIVE:
-        raise GenerativeDraftError(
-            "This draft was not produced by the generative engine.", code="not_a_generative_draft", status_code=409
-        )
-    if draft.status is not WebsiteDraftStatus.APPROVED:
-        raise WebsiteDraftError(
-            f"Only an APPROVED draft can be published (current status: {draft.status.value!r}).",
-            code="website_draft_not_approved",
-            status_code=409,
-        )
+    """The GENERATIVE counterpart to publish_website_draft above — same
+    APPROVED requirement, same A8.3.4.1 promotion of the stored,
+    integrity-verified build output (never re-invokes the LLM, never
+    re-runs npm/astro). Website/WebsiteVersion `config` stores a small
+    generative marker (never a fabricated SiteConfig) since there is no
+    SiteConfig for a generative build."""
+    draft = _require_approved(session, tenant_id, business_id, draft_id, generative=True)
 
     artifact_row = GenerativeWebsiteArtifactRepository(session).get_for_draft(tenant_id, business_id, draft_id)
     if artifact_row is None:
@@ -428,18 +552,25 @@ def publish_generative_website_draft(
             "This draft has no generative artifact record.", code="generative_artifact_missing", status_code=500
         )
 
-    result = publish_generative_website(
+    artifact = _load_verified_artifact(draft, storage)
+    assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
+    direction_id = artifact_row.creative_direction_id
+    config_snapshot = {
+        "engine": "generative",
+        "creative_direction_id": str(direction_id) if direction_id else None,
+        "generator_provider": artifact_row.generator_provider,
+        "generator_model": artifact_row.generator_model,
+        "workspace_key": artifact_row.workspace_key,
+    }
+    result = publish_prebuilt_artifact(
         session=session,
         tenant_id=tenant_id,
         business_id=business_id,
-        artifact_row=artifact_row,
+        artifact=artifact,
+        config=config_snapshot,
         publisher=publisher,
-        storage=storage,
-        api_base_url=api_base_url,
+        source_website_draft_id=draft.id,
+        artifact_sha256=draft.artifact_sha256,
     )
-
-    website = WebsiteRepository(session).get_by_business(tenant_id, business_id)
-    draft.status = WebsiteDraftStatus.PUBLISHED
-    draft.published_at = datetime.now(UTC)
-    draft.published_website_id = website.id if website else None
+    _mark_published(session, draft)
     return result

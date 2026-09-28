@@ -20,25 +20,24 @@ docstring for the full "why"; this module no longer touches
 """
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from app.creative.frontend_engine.build import rebuild_from_archive
-from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website import Website
 from app.db.models.website_version import WebsiteVersion
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import DeployTarget, WebsiteStatus
+from app.publishing.artifact_store import short_hash
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
-from app.publishing.publisher import WebsitePublisher
+from app.publishing.publisher import WebsiteArtifact, WebsitePublisher
 from app.qa.platform_contract import validate_platform_contract
 from app.repositories.website import WebsiteRepository
 from app.schemas.site_config import SiteConfigPayload
-from app.storage import StorageProvider
 
 logger = logging.getLogger(__name__)
 
@@ -124,12 +123,16 @@ def publish_website(
     violation raises WebsitePublishError(code="platform_contract_violation")
     and leaves the Website row (and whatever is live) completely
     untouched: nothing was deployed, so nothing is marked FAILED.
-    Optional (not required) because the other two callers don't need a
-    second gate: publish_website_draft only ever publishes a draft that
-    already passed it to reach READY, and versions.rollback_to_version
-    republishes a previously-live snapshot — an emergency restore that
-    must stay possible even for a snapshot published before this gate
-    existed.
+    Optional (not required) because the other caller doesn't need a
+    second gate: versions.rollback_to_version republishes a
+    previously-live snapshot — an emergency restore that must stay
+    possible even for a snapshot published before this gate existed.
+
+    A8.3.4.1: WebsiteDraft publishing no longer comes through here — it
+    promotes the draft's stored, already-validated artifact via
+    publish_prebuilt_artifact below and never rebuilds. This function
+    (a fresh build from a SiteConfig) remains only for the direct
+    publish route and version rollback.
 
     Every publish attempt is a fresh deploy — there's no "already
     published, no-op" short-circuit like activation's (a republish is
@@ -138,20 +141,83 @@ def publish_website(
     `deploy_url`/`provider_deployment_id`/`deployed_at`, so a site that
     was live before a failed republish attempt is still reported live.
     """
-    repo = WebsiteRepository(session)
-    website = repo.get_by_business(tenant_id, business_id)
     # Same "the generated static site needs to know its own business id"
     # reasoning as app.publishing.drafts.create_website_draft — set again
     # here (idempotent if already set) so a direct publish that never
     # went through the draft flow still gets it. Never trusted from the
     # payload itself.
     site_config.businessId = str(business_id)
-    site_id = website_project_name(business_id)
 
-    try:
+    def _build() -> WebsiteArtifact:
         artifact = build_site(site_config)
         if business_config is not None:
             _enforce_platform_contract(artifact.files, business_config)
+        return artifact
+
+    return _deploy_and_record(
+        session=session,
+        tenant_id=tenant_id,
+        business_id=business_id,
+        publisher=publisher,
+        config=site_config.model_dump(mode="json"),
+        produce_artifact=_build,
+    )
+
+
+def publish_prebuilt_artifact(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    artifact: WebsiteArtifact,
+    config: dict,
+    publisher: WebsitePublisher,
+    source_website_draft_id: UUID,
+    artifact_sha256: str,
+) -> WebsiteStateResult:
+    """A8.3.4.1 build once / promote: deploys an already-built,
+    already-validated and already-integrity-verified WebsiteArtifact
+    (app.publishing.drafts loads it via app.publishing.artifact_store)
+    through the exact same WebsitePublisher and Website/WebsiteVersion
+    bookkeeping publish_website uses — never calls build_site. The
+    resulting WebsiteVersion records which draft and which artifact hash
+    it came from. `config` is what Website.config/WebsiteVersion.site_config
+    store: the draft's SiteConfig (deterministic) or the generative marker."""
+    logger.info(
+        "website_publish_from_artifact draft=%s business=%s sha256=%s",
+        source_website_draft_id,
+        business_id,
+        short_hash(artifact_sha256),
+    )
+    return _deploy_and_record(
+        session=session,
+        tenant_id=tenant_id,
+        business_id=business_id,
+        publisher=publisher,
+        config=config,
+        produce_artifact=lambda: artifact,
+        source_website_draft_id=source_website_draft_id,
+        artifact_sha256=artifact_sha256,
+    )
+
+
+def _deploy_and_record(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    publisher: WebsitePublisher,
+    config: dict,
+    produce_artifact: Callable[[], WebsiteArtifact],
+    source_website_draft_id: UUID | None = None,
+    artifact_sha256: str | None = None,
+) -> WebsiteStateResult:
+    repo = WebsiteRepository(session)
+    website = repo.get_by_business(tenant_id, business_id)
+    site_id = website_project_name(business_id)
+
+    try:
+        artifact = produce_artifact()
         published = publisher.publish(site_id=site_id, artifact=artifact)
     except WebsitePublisherError as exc:
         # One choke point for every publish-pipeline failure (A6.1):
@@ -173,12 +239,12 @@ def publish_website(
                 business_id=business_id,
                 deploy_target=DeployTarget.CLOUDFLARE,
                 status=WebsiteStatus.FAILED,
-                config=site_config.model_dump(mode="json"),
+                config=config,
             )
             repo.add(website)
         else:
             website.status = WebsiteStatus.FAILED
-            website.config = site_config.model_dump(mode="json")
+            website.config = config
         raise WebsitePublishError(
             f"Publishing this website failed: {exc}",
             code="website_publish_failed",
@@ -194,13 +260,13 @@ def publish_website(
     website.deploy_url = str(published.url)
     website.provider_deployment_id = published.deployment_id
     website.deployed_at = datetime.now(UTC)
-    website.config = site_config.model_dump(mode="json")
+    website.config = config
 
     # One immutable, append-only snapshot per successful publish (P0
     # Phase 20-22) — including a republish a rollback itself performs
-    # (app.publishing.versions.rollback_to_version calls this same
-    # function), so version history accumulates through the one publish
-    # path rather than a second, parallel bookkeeping mechanism.
+    # (app.publishing.versions.rollback_to_version calls publish_website),
+    # so version history accumulates through the one publish path rather
+    # than a second, parallel bookkeeping mechanism.
     #
     # Flushed as its own isolated unit (`flush([version])`, not a plain
     # `flush()`) so this new row is immediately queryable by a caller in
@@ -216,10 +282,12 @@ def publish_website(
         tenant_id=tenant_id,
         business_id=business_id,
         website_id=website.id,
-        site_config=site_config.model_dump(mode="json"),
+        site_config=config,
         deploy_url=str(published.url),
         provider_deployment_id=published.deployment_id,
         published_at=website.deployed_at,
+        source_website_draft_id=source_website_draft_id,
+        artifact_sha256=artifact_sha256,
     )
     session.add(version)
     session.flush([version])
@@ -268,87 +336,6 @@ def unpublish_website(
     website.status = WebsiteStatus.INACTIVE
     website.deploy_url = None
     website.provider_deployment_id = None
-
-    return _to_state_result(website)
-
-
-def publish_generative_website(
-    *,
-    session: Session,
-    tenant_id: UUID,
-    business_id: UUID,
-    artifact_row: GenerativeWebsiteArtifact,
-    publisher: WebsitePublisher,
-    storage: StorageProvider,
-    api_base_url: str | None = None,
-) -> WebsiteStateResult:
-    """The GENERATIVE counterpart to publish_website above. Rebuilds
-    from the durably-archived generative source
-    (app.creative.frontend_engine.build.rebuild_from_archive) rather than
-    re-invoking the AI Frontend Engineer — "what was approved is what
-    gets published" holds here the same way it does for the
-    deterministic path's re-run of build_site, just against a fixed
-    source tree instead of a fixed SiteConfig. Persists the identical
-    Website/WebsiteVersion rows the deterministic path does; `config`
-    stores a small generative marker (never a fabricated SiteConfig)
-    since there is no SiteConfig for a generative build."""
-    repo = WebsiteRepository(session)
-    website = repo.get_by_business(tenant_id, business_id)
-    site_id = website_project_name(business_id)
-    direction_id = artifact_row.creative_direction_id
-    config_snapshot = {
-        "engine": "generative",
-        "creative_direction_id": str(direction_id) if direction_id else None,
-        "generator_provider": artifact_row.generator_provider,
-        "generator_model": artifact_row.generator_model,
-        "workspace_key": artifact_row.workspace_key,
-    }
-
-    try:
-        archive = storage.load(artifact_row.workspace_key)
-        artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
-        published = publisher.publish(site_id=site_id, artifact=artifact)
-    except WebsitePublisherError as exc:
-        if website is None:
-            website = Website(
-                tenant_id=tenant_id,
-                business_id=business_id,
-                deploy_target=DeployTarget.CLOUDFLARE,
-                status=WebsiteStatus.FAILED,
-                config=config_snapshot,
-            )
-            repo.add(website)
-        else:
-            website.status = WebsiteStatus.FAILED
-            website.config = config_snapshot
-        raise WebsitePublishError(
-            f"Publishing this generative website failed: {exc}",
-            code="website_publish_failed",
-            status_code=502,
-        ) from exc
-
-    if website is None:
-        website = Website(tenant_id=tenant_id, business_id=business_id)
-        repo.add(website)
-
-    website.deploy_target = DeployTarget.CLOUDFLARE
-    website.status = WebsiteStatus.LIVE
-    website.deploy_url = str(published.url)
-    website.provider_deployment_id = published.deployment_id
-    website.deployed_at = datetime.now(UTC)
-    website.config = config_snapshot
-
-    version = WebsiteVersion(
-        tenant_id=tenant_id,
-        business_id=business_id,
-        website_id=website.id,
-        site_config=config_snapshot,
-        deploy_url=str(published.url),
-        provider_deployment_id=published.deployment_id,
-        published_at=website.deployed_at,
-    )
-    session.add(version)
-    session.flush([version])
 
     return _to_state_result(website)
 

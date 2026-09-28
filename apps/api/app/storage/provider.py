@@ -77,12 +77,12 @@ class StorageProvider(ABC):
 
     @abstractmethod
     def load(self, storage_key: str) -> bytes:
-        """Reads a previously-saved file back server-side (P2: needed to
-        republish a GenerativeWebsiteArtifact's archived source without
-        re-invoking the AI Frontend Engineer — see
-        app.publishing.service.publish_generative_website). Every real
-        business asset was already reachable via `url_path` over HTTP;
-        this is the one case this codebase needs the bytes back
+        """Reads a previously-saved file back server-side — a draft's
+        stored, validated build artifact (A8.3.4.1, see
+        app.publishing.artifact_store) and, for legacy generative drafts,
+        its archived source (Visual QA rebuild). Every real business
+        asset was already reachable via `url_path` over HTTP; these are
+        the cases this codebase needs the bytes back
         in-process instead."""
 
 

@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
 from app.db.models.columns import str_enum
@@ -33,13 +33,15 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     app.schemas.site_config.SiteConfigPayload's own docstring already
     describes for the live-publish path.
 
-    Deliberately does NOT persist the built WebsiteArtifact's HTML/CSS
-    bytes — Studio's existing SiteConfigPreview component already renders
-    a structural preview directly from `site_config` (no built output
-    needed to preview), and publishing re-runs the real `astro build`
-    anyway (app.publishing.build.build_site, called again by
-    publish_website) — storing a stale copy of transient build output
-    would be exactly the kind of over-engineering Phase 6 warns against.
+    A8.3.4.1 (build once / promote): the validated build output IS
+    persisted now — `artifact_key` names the immutable archive (see
+    app.publishing.artifact_store) of the exact WebsiteArtifact that
+    passed PlatformContract, and `artifact_sha256` its canonical identity.
+    Publish deploys that archive after re-verifying the hash; it never
+    rebuilds. Both are null only on legacy drafts created before this
+    existed (and on BUILD_FAILED drafts), which Publish refuses. Once set,
+    they — and `site_config` — are write-once (see the validators below):
+    a draft's source, artifact and identity can never drift apart.
 
     P2 extension: `engine` (GenerationEngine) decides which of
     `site_config`/`generative_artifact` is populated for this draft —
@@ -95,6 +97,10 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     published_website_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("websites.id", ondelete="SET NULL"), nullable=True
     )
+    # A8.3.4.1: internal StorageProvider key (never a URL) + canonical
+    # SHA-256 of the validated artifact. Null on legacy/failed drafts.
+    artifact_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     business: Mapped["Business"] = relationship(back_populates="website_drafts")
     creative_generation: Mapped["CreativeGeneration | None"] = relationship()
@@ -102,3 +108,16 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     generative_artifact: Mapped["GenerativeWebsiteArtifact | None"] = relationship(
         back_populates="website_draft", uselist=False, cascade="all, delete-orphan"
     )
+
+    @validates("artifact_key", "artifact_sha256")
+    def _artifact_write_once(self, key: str, value: str | None) -> str | None:
+        current = getattr(self, key)
+        if current is not None and value != current:
+            raise ValueError(f"WebsiteDraft.{key} is write-once and already set")
+        return value
+
+    @validates("site_config")
+    def _site_config_frozen_once_artifact_exists(self, key: str, value: dict | None) -> dict | None:
+        if self.artifact_sha256 is not None and value != self.site_config:
+            raise ValueError("WebsiteDraft.site_config cannot change once its artifact has been stored")
+        return value

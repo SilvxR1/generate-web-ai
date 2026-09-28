@@ -817,6 +817,7 @@ def create_website_draft_route(
     payload: WebsiteDraftCreateRequest,
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> object:
     """Persists a generated SiteConfig as a safe draft and immediately
     builds + validates it (app.publishing.drafts.create_website_draft) —
@@ -833,6 +834,7 @@ def create_website_draft_route(
         business_id=business_id,
         business_config=business_config,
         site_config=payload.site_config,
+        storage=storage,
         creative_generation_id=payload.creative_generation_id,
     )
 
@@ -989,6 +991,7 @@ def publish_website_draft_route(
             business_id=business_id,
             draft_id=draft_id,
             publisher=publisher,
+            storage=storage,
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc
@@ -1319,6 +1322,7 @@ def create_generative_website_draft_route(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     frontend_engineer: FrontendEngineer = Depends(get_frontend_engineer),
+    storage: StorageProvider = Depends(get_storage_provider),
 ) -> object:
     """The GENERATIVE counterpart to POST .../website-drafts (P2 Part
     A/C): turns one already-selected CreativeDirection into a real,
@@ -1342,6 +1346,7 @@ def create_generative_website_draft_route(
             business_config=config,
             creative_direction_id=payload.creative_direction_id,
             frontend_engineer=frontend_engineer,
+            storage=storage,
             assets=brief.available_assets,
             api_base_url=api_base_url,
         )

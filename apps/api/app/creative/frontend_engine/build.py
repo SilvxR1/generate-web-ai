@@ -100,10 +100,10 @@ def rebuild_from_archive(archive: bytes, *, business_id: str, api_base_url: str 
     """Re-runs a real `npm install` + `astro build` from a previously
     archived generative source tar.gz (see
     app.creative.frontend_engine.anthropic_engine._archive_source) —
-    never re-invokes the LLM. This is how a GENERATIVE draft is
-    published (app.publishing.service.publish_generative_website): the
-    same real source that was approved, rebuilt fresh, not a second AI
-    generation that could produce different content."""
+    never re-invokes the LLM. A8.3.4.1: no longer used to publish (a
+    GENERATIVE draft now promotes its stored build output, see
+    app.publishing.drafts) — only Visual QA of legacy drafts that
+    predate stored artifacts still rebuilds from source here."""
     import tarfile
     from io import BytesIO
 

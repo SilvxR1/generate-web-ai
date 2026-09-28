@@ -27,6 +27,7 @@ from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePubl
 from app.publishing.service import get_website_state
 from app.repositories.website_draft import WebsiteDraftRepository
 from app.schemas.site_config import SiteConfigPayload
+from app.storage import LocalStorageProvider
 
 _SITE_CONFIG = {
     "brand": {"name": "Reforma Casa Valencia", "tagline": "Reformas integrales"},
@@ -75,14 +76,22 @@ class FakePublisher(WebsitePublisher):
         pass
 
 
+@pytest.fixture()
+def storage(tmp_path) -> LocalStorageProvider:
+    # A8.3.4.1: every created draft archives its validated artifact here.
+    return LocalStorageProvider(root_dir=tmp_path / "storage")
+
+
 @pytest.fixture(autouse=True)
 def _fake_build(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.publishing.drafts.build_site", lambda site_config: _FAKE_ARTIFACT)
 
 
-def test_create_website_draft_builds_and_marks_ready(session: Session, tenant: Tenant, business: Business):
+def test_create_website_draft_builds_and_marks_ready(
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
+):
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
 
     assert draft.status is WebsiteDraftStatus.READY
@@ -91,7 +100,7 @@ def test_create_website_draft_builds_and_marks_ready(session: Session, tenant: T
 
 
 def test_create_website_draft_never_touches_production_when_build_fails(
-    session: Session, tenant: Tenant, business: Business, monkeypatch: pytest.MonkeyPatch
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
         "app.publishing.drafts.build_site",
@@ -99,7 +108,7 @@ def test_create_website_draft_never_touches_production_when_build_fails(
     )
 
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
 
     assert draft.status is WebsiteDraftStatus.BUILD_FAILED
@@ -108,13 +117,13 @@ def test_create_website_draft_never_touches_production_when_build_fails(
 
 
 def test_website_draft_persists_validation_issues_without_blocking_ready_status(
-    session: Session, tenant: Tenant, business: Business
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
 ):
     incomplete = _site_config()
     incomplete.seo.title = ""
 
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=incomplete
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=incomplete, storage=storage
     )
 
     # Validation issues are non-blocking (Phase 17: a human weighs them),
@@ -126,14 +135,14 @@ def test_website_draft_persists_validation_issues_without_blocking_ready_status(
 
 
 def test_approve_requires_a_ready_draft(
-    session: Session, tenant: Tenant, business: Business, monkeypatch: pytest.MonkeyPatch
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, monkeypatch: pytest.MonkeyPatch
 ):
     monkeypatch.setattr(
         "app.publishing.drafts.build_site",
         lambda site_config: (_ for _ in ()).throw(WebsitePublisherError("boom")),
     )
     failed_draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
     session.flush()
 
@@ -143,9 +152,11 @@ def test_approve_requires_a_ready_draft(
     assert exc_info.value.status_code == 409
 
 
-def test_publish_requires_an_approved_draft(session: Session, tenant: Tenant, business: Business):
+def test_publish_requires_an_approved_draft(
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
+):
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
     session.flush()
 
@@ -156,6 +167,7 @@ def test_publish_requires_an_approved_draft(session: Session, tenant: Tenant, bu
             business_id=business.id,
             draft_id=draft.id,
             publisher=FakePublisher(),
+            storage=storage,
         )
     assert exc_info.value.code == "website_draft_not_approved"
     assert exc_info.value.status_code == 409
@@ -164,9 +176,11 @@ def test_publish_requires_an_approved_draft(session: Session, tenant: Tenant, bu
     assert get_website_state(session=session, tenant_id=tenant.id, business_id=business.id) is None
 
 
-def test_full_lifecycle_generate_build_approve_publish(session: Session, tenant: Tenant, business: Business):
+def test_full_lifecycle_generate_build_approve_publish(
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
+):
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
     session.flush()
     assert draft.status is WebsiteDraftStatus.READY
@@ -178,7 +192,12 @@ def test_full_lifecycle_generate_build_approve_publish(session: Session, tenant:
 
     publisher = FakePublisher()
     result = publish_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, draft_id=draft.id, publisher=publisher
+        session=session,
+        tenant_id=tenant.id,
+        business_id=business.id,
+        draft_id=draft.id,
+        publisher=publisher,
+        storage=storage,
     )
 
     assert result.status.value == "live"
@@ -189,10 +208,10 @@ def test_full_lifecycle_generate_build_approve_publish(session: Session, tenant:
 
 
 def test_publish_failure_leaves_the_draft_approved_not_published(
-    session: Session, tenant: Tenant, business: Business
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
 ):
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
     approve_website_draft(session=session, tenant_id=tenant.id, business_id=business.id, draft_id=draft.id)
     session.flush()
@@ -206,6 +225,7 @@ def test_publish_failure_leaves_the_draft_approved_not_published(
             business_id=business.id,
             draft_id=draft.id,
             publisher=FakePublisher(fail=True),
+            storage=storage,
         )
 
     assert draft.status is WebsiteDraftStatus.APPROVED
@@ -226,10 +246,10 @@ def test_publish_failure_leaves_the_draft_approved_not_published(
 
 
 def test_regeneration_creates_a_new_draft_without_touching_a_previous_one(
-    session: Session, tenant: Tenant, business: Business
+    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
 ):
     first = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config()
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
     )
     session.flush()
     approve_website_draft(session=session, tenant_id=tenant.id, business_id=business.id, draft_id=first.id)
@@ -238,7 +258,7 @@ def test_regeneration_creates_a_new_draft_without_touching_a_previous_one(
     second_config = _site_config()
     second_config.brand.tagline = "Nueva direccion creativa"
     second = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=second_config
+        session=session, tenant_id=tenant.id, business_id=business.id, site_config=second_config, storage=storage
     )
 
     assert second.id != first.id

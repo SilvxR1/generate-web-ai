@@ -9,9 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.models.tenant import Tenant
-from app.dependencies import get_session, get_website_publisher
+from app.dependencies import get_session, get_storage_provider, get_website_publisher
 from app.main import app
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
+from app.storage import LocalStorageProvider
 
 
 class _DefaultFakePublisher(WebsitePublisher):
@@ -36,7 +37,7 @@ class _DefaultFakePublisher(WebsitePublisher):
 
 
 @pytest.fixture()
-def client(session, monkeypatch: pytest.MonkeyPatch):
+def client(session, monkeypatch: pytest.MonkeyPatch, tmp_path):
     def _override_get_session():
         yield session
 
@@ -49,11 +50,15 @@ def client(session, monkeypatch: pytest.MonkeyPatch):
 
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_website_publisher] = _DefaultFakePublisher
+    # A8.3.4.1: drafts archive their validated artifact — keep it in tmp.
+    storage = LocalStorageProvider(root_dir=tmp_path / "storage")
+    app.dependency_overrides[get_storage_provider] = lambda: storage
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_session, None)
         app.dependency_overrides.pop(get_website_publisher, None)
+        app.dependency_overrides.pop(get_storage_provider, None)
 
 
 def _headers(tenant_id: uuid.UUID) -> dict:
