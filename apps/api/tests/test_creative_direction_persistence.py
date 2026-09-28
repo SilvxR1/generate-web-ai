@@ -48,6 +48,7 @@ from app.publishing.drafts import create_website_draft
 from app.schemas.creative import CreativeGenerationRead
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 API_ROOT = Path(__file__).resolve().parents[1]
 CONFORMANCE = json.loads(
@@ -338,7 +339,7 @@ def test_a_draft_reaches_its_direction_through_creative_generation_id(
         tenant_id=tenant.id,
         business_id=business.id,
         site_config=site_config,
-        storage=LocalStorageProvider(root_dir=tmp_path / "storage"),
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
         creative_generation_id=generation.id,
     )
     session.flush()

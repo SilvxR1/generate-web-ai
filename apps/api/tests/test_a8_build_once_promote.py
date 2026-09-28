@@ -30,7 +30,7 @@ from app.db.models.tenant import Tenant
 from app.db.models.website import Website
 from app.db.models.website_draft import WebsiteDraft
 from app.db.models.website_version import WebsiteVersion
-from app.dependencies import get_session, get_storage_provider, get_website_publisher
+from app.dependencies import get_private_artifact_storage, get_session, get_storage_provider, get_website_publisher
 from app.domain.enums import DeployTarget, WebsiteDraftStatus, WebsiteStatus
 from app.main import app
 from app.publishing.artifact_store import (
@@ -58,8 +58,9 @@ from app.publishing.service import WebsitePublishError
 from app.publishing.versions import rollback_to_version
 from app.repositories.website_version import WebsiteVersionRepository
 from app.schemas.site_config import SiteConfigPayload
-from app.storage import LocalStorageProvider
+from app.storage import LocalStorageProvider, StorageProvider
 from app.storage.errors import StorageProviderError
+from app.storage.private import PrivateArtifactStorage
 
 API_ROOT = Path(__file__).resolve().parents[1]
 NEW_REVISION = "d5e8f3a1b2c4"
@@ -143,8 +144,15 @@ class BuildCounter:
 
 
 @pytest.fixture()
-def storage(tmp_path: Path) -> LocalStorageProvider:
-    return LocalStorageProvider(root_dir=tmp_path / "storage")
+def backend(tmp_path: Path) -> LocalStorageProvider:
+    """The raw provider under the private wrapper — tests use it only to
+    tamper with / inspect stored archives."""
+    return LocalStorageProvider(root_dir=tmp_path / "private-storage")
+
+
+@pytest.fixture()
+def storage(backend: LocalStorageProvider) -> PrivateArtifactStorage:
+    return PrivateArtifactStorage(backend)
 
 
 @pytest.fixture()
@@ -155,13 +163,17 @@ def builds(monkeypatch: pytest.MonkeyPatch) -> BuildCounter:
     return counter
 
 
-def _stored_archives(storage: LocalStorageProvider) -> list[Path]:
-    return list(storage._root_dir.rglob("*.gz"))
+def _stored_archives(storage: PrivateArtifactStorage) -> list[Path]:
+    return list(storage._backend.root_dir.rglob("*.gz"))
 
 
 def _create(session, tenant, business, storage) -> WebsiteDraft:
     draft = create_website_draft(
-        session=session, tenant_id=tenant.id, business_id=business.id, site_config=_site_config(), storage=storage
+        session=session,
+        tenant_id=tenant.id,
+        business_id=business.id,
+        site_config=_site_config(),
+        artifact_storage=storage,
     )
     session.flush()
     return draft
@@ -181,7 +193,7 @@ def _publish(session, tenant, business, draft, publisher, storage):
         business_id=business.id,
         draft_id=draft.id,
         publisher=publisher,
-        storage=storage,
+        artifact_storage=storage,
     )
 
 
@@ -339,7 +351,7 @@ def test_storage_key_is_tenant_business_and_draft_scoped(tenant: Tenant, busines
     assert key == f"website-drafts/{tenant.id.hex}/{business.id.hex}/{draft_id.hex}/artifact.tar.gz"
 
 
-def test_stored_artifact_is_write_once(storage: LocalStorageProvider, tenant: Tenant, business: Business):
+def test_stored_artifact_is_write_once(storage: PrivateArtifactStorage, tenant: Tenant, business: Business):
     kwargs = {"tenant_id": tenant.id, "business_id": business.id, "draft_id": uuid.uuid4()}
     stored = store_draft_artifact(storage, artifact=_site_artifact(), **kwargs)
     first_bytes = storage.load(stored.storage_key)
@@ -353,7 +365,7 @@ def test_stored_artifact_is_write_once(storage: LocalStorageProvider, tenant: Te
 
 
 def test_draft_is_built_exactly_once_and_publish_deploys_the_identical_bytes(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
     assert builds.calls == 1
@@ -376,7 +388,7 @@ def test_draft_is_built_exactly_once_and_publish_deploys_the_identical_bytes(
 
 
 def test_a_published_version_is_traceable_to_its_draft_and_artifact(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
     _publish(session, tenant, business, draft, RecordingPublisher(), storage)
@@ -395,7 +407,7 @@ def test_a_published_version_is_traceable_to_its_draft_and_artifact(
 
 
 def test_retrying_a_failed_publish_still_never_rebuilds(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
     with pytest.raises(WebsitePublishError):
@@ -410,7 +422,7 @@ def test_retrying_a_failed_publish_still_never_rebuilds(
 
 
 def test_A_success_produces_a_ready_artifact_backed_draft(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create(session, tenant, business, storage)
     assert draft.status is WebsiteDraftStatus.READY
@@ -422,7 +434,7 @@ def test_A_success_produces_a_ready_artifact_backed_draft(
 
 
 def test_B_build_failure_stores_nothing_and_is_not_publishable(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, monkeypatch
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, monkeypatch
 ):
     def _fail(site_config):
         raise WebsitePublisherError("astro build failed")
@@ -437,7 +449,7 @@ def test_B_build_failure_stores_nothing_and_is_not_publishable(
 
 
 def test_C_platform_contract_block_stores_nothing(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds, monkeypatch
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds, monkeypatch
 ):
     blocked = SimpleNamespace(passed=False, findings=[], blocking_violations=[SimpleNamespace(message="dead CTA")])
     monkeypatch.setattr("app.publishing.drafts.validate_platform_contract", lambda files, business_config: blocked)
@@ -446,7 +458,7 @@ def test_C_platform_contract_block_stores_nothing(
         tenant_id=tenant.id,
         business_id=business.id,
         site_config=_site_config(),
-        storage=storage,
+        artifact_storage=storage,
         business_config=SimpleNamespace(),
     )
     assert draft.status is WebsiteDraftStatus.BUILD_FAILED
@@ -456,7 +468,7 @@ def test_C_platform_contract_block_stores_nothing(
 
 
 def test_D_storage_failure_never_produces_a_ready_draft(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds, monkeypatch
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds, monkeypatch
 ):
     def _broken_save(**kwargs):
         raise StorageProviderError("R2 upload failed")
@@ -492,7 +504,7 @@ def _assert_refused_and_untouched(session, tenant, business, draft, storage, *, 
 
 
 def test_E_missing_archive_refuses_safely(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
     storage.delete(draft.artifact_key)
@@ -502,7 +514,7 @@ def test_E_missing_archive_refuses_safely(
 
 
 def test_E_storage_outage_on_load_refuses_safely(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds, monkeypatch
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds, monkeypatch
 ):
     draft = _create_and_approve(session, tenant, business, storage)
 
@@ -516,10 +528,10 @@ def test_E_storage_outage_on_load_refuses_safely(
 
 
 def test_F_corrupted_archive_refuses_safely(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
-    path = storage._resolve(draft.artifact_key)
+    path = storage._backend._resolve(draft.artifact_key)
     path.write_bytes(path.read_bytes()[:40] + b"\x00corrupt\x00")
     _assert_refused_and_untouched(
         session, tenant, business, draft, storage, code="website_draft_artifact_integrity_failed", builds=builds
@@ -527,18 +539,18 @@ def test_F_corrupted_archive_refuses_safely(
 
 
 def test_G_hash_mismatch_refuses_safely(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create_and_approve(session, tenant, business, storage)
     tampered = _site_artifact()
     tampered.files["_headers"] = b"/*\n  Content-Security-Policy: default-src *\n"  # a *valid* archive, wrong bytes
-    storage._resolve(draft.artifact_key).write_bytes(pack_artifact(tampered))
+    storage._backend._resolve(draft.artifact_key).write_bytes(pack_artifact(tampered))
     _assert_refused_and_untouched(
         session, tenant, business, draft, storage, code="website_draft_artifact_integrity_failed", builds=builds
     )
 
 
-def test_G_load_draft_artifact_distinguishes_its_failure_modes(storage: LocalStorageProvider):
+def test_G_load_draft_artifact_distinguishes_its_failure_modes(storage: PrivateArtifactStorage):
     key = "website-drafts/a/b/c/artifact.tar.gz"
     draft_id = uuid.uuid4()
     with pytest.raises(ArtifactUnavailableError):
@@ -552,7 +564,7 @@ def test_G_load_draft_artifact_distinguishes_its_failure_modes(storage: LocalSto
 
 
 def test_H_publisher_failure_leaves_existing_production_unchanged(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     live = _live_website(session, tenant, business)
     draft = _create_and_approve(session, tenant, business, storage)
@@ -573,7 +585,7 @@ def test_H_publisher_failure_leaves_existing_production_unchanged(
 
 
 def test_legacy_draft_without_artifact_is_refused_never_rebuilt(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     legacy = WebsiteDraft(
         tenant_id=tenant.id,
@@ -594,7 +606,7 @@ def test_legacy_draft_without_artifact_is_refused_never_rebuilt(
 
 
 def test_site_config_and_artifact_identity_are_write_once(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     draft = _create(session, tenant, business, storage)
     original_config = dict(draft.site_config)
@@ -618,17 +630,23 @@ def test_site_config_and_artifact_identity_are_write_once(
 
 
 @pytest.fixture()
-def client(session, storage: LocalStorageProvider, builds: BuildCounter):
+def public_storage(tmp_path: Path) -> "SpyStorage":
+    return SpyStorage(LocalStorageProvider(root_dir=tmp_path / "public-uploads"))
+
+
+@pytest.fixture()
+def client(session, storage: PrivateArtifactStorage, public_storage: "SpyStorage", builds: BuildCounter):
     def _override_get_session():
         yield session
 
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_website_publisher] = lambda: RecordingPublisher()
-    app.dependency_overrides[get_storage_provider] = lambda: storage
+    app.dependency_overrides[get_storage_provider] = lambda: public_storage
+    app.dependency_overrides[get_private_artifact_storage] = lambda: storage
     try:
         yield TestClient(app)
     finally:
-        for dep in (get_session, get_website_publisher, get_storage_provider):
+        for dep in (get_session, get_website_publisher, get_storage_provider, get_private_artifact_storage):
             app.dependency_overrides.pop(dep, None)
 
 
@@ -672,14 +690,14 @@ def test_api_publish_of_an_artifact_backed_draft_never_rebuilds(
 
 
 def test_api_hash_mismatch_returns_a_safe_owner_facing_error(
-    client: TestClient, session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider
+    client: TestClient, session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage
 ):
     headers = {"X-Tenant-Id": str(tenant.id)}
     draft = _api_create(client, tenant, business)
     base = f"/businesses/{business.id}/website-drafts/{draft['id']}"
     client.post(f"{base}/approve", headers=headers)
     row = session.get(WebsiteDraft, uuid.UUID(draft["id"]))
-    storage._resolve(row.artifact_key).write_bytes(pack_artifact(WebsiteArtifact(files={"index.html": b"x"})))
+    storage._backend._resolve(row.artifact_key).write_bytes(pack_artifact(WebsiteArtifact(files={"index.html": b"x"})))
 
     response = client.post(f"{base}/publish", headers=headers)
     assert response.status_code == 409
@@ -693,7 +711,7 @@ def test_api_hash_mismatch_returns_a_safe_owner_facing_error(
 
 
 def test_rollback_still_republishes_from_site_config(
-    session: Session, tenant: Tenant, business: Business, storage: LocalStorageProvider, builds: BuildCounter
+    session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
     """Documented debt: rollback is operational recovery and still
     rebuilds from WebsiteVersion.site_config via publish_website — it is
@@ -764,3 +782,235 @@ def test_new_migration_is_the_single_head():
         [sys.executable, "-m", "alembic", "heads"], cwd=API_ROOT, capture_output=True, text=True, timeout=60
     )
     assert completed.stdout.split() == [NEW_REVISION, "(head)"]
+
+
+# --- A8.3.4.1b: PRIVATE artifact storage ---------------------------------------
+
+
+class SpyStorage(StorageProvider):
+    """Records every call — wraps the public asset provider so tests can
+    prove WebsiteDraft artifact operations never touch it."""
+
+    provider_name = "spy"
+
+    def __init__(self, inner: StorageProvider) -> None:
+        self.inner = inner
+        self.calls: list[tuple[str, str]] = []
+
+    def save(self, *, storage_key, content, content_type=None):
+        self.calls.append(("save", storage_key))
+        return self.inner.save(storage_key=storage_key, content=content, content_type=content_type)
+
+    def load(self, storage_key):
+        self.calls.append(("load", storage_key))
+        return self.inner.load(storage_key)
+
+    def exists(self, storage_key):
+        self.calls.append(("exists", storage_key))
+        return self.inner.exists(storage_key)
+
+    def delete(self, storage_key):
+        self.calls.append(("delete", storage_key))
+        self.inner.delete(storage_key)
+
+    def presigned_url(self, storage_key, *, expires_in_seconds):
+        self.calls.append(("presigned_url", storage_key))
+        return None
+
+    def url_path(self, storage_key):
+        self.calls.append(("url_path", storage_key))
+        return f"/uploads/{storage_key}"
+
+
+def _api_lifecycle(client: TestClient, tenant: Tenant, business: Business) -> dict:
+    headers = {"X-Tenant-Id": str(tenant.id)}
+    draft = _api_create(client, tenant, business)
+    base = f"/businesses/{business.id}/website-drafts/{draft['id']}"
+    assert client.post(f"{base}/approve", headers=headers).status_code == 200
+    published = client.post(f"{base}/publish", headers=headers)
+    assert published.status_code == 200, published.text
+    return draft
+
+
+def test_b_A_B_C_G_artifact_lives_only_in_private_storage_and_the_key_is_not_a_url(
+    client: TestClient,
+    session: Session,
+    tenant: Tenant,
+    business: Business,
+    storage: PrivateArtifactStorage,
+    public_storage: SpyStorage,
+    builds: BuildCounter,
+    monkeypatch,
+):
+    private_loads: list[str] = []
+    real_load = storage.load
+
+    def _spy_load(key):
+        private_loads.append(key)
+        return real_load(key)
+
+    monkeypatch.setattr(storage, "load", _spy_load)
+    draft = _api_lifecycle(client, tenant, business)
+    row = session.get(WebsiteDraft, uuid.UUID(draft["id"]))
+
+    assert storage.exists(row.artifact_key)  # A: saved to the PRIVATE provider
+    assert public_storage.calls == []  # B/F: public provider untouched — no write, read, or URL
+    assert private_loads == [row.artifact_key]  # C: publish loaded it from PRIVATE storage
+    assert "://" not in row.artifact_key and row.artifact_key.startswith("website-drafts/")  # G
+    assert "r2.dev" not in row.artifact_key
+    assert builds.calls == 1  # I: build once still holds
+
+
+def test_b_D_private_storage_outage_fails_closed_without_public_fallback(
+    client: TestClient, tenant: Tenant, business: Business, storage, public_storage: SpyStorage, monkeypatch
+):
+    def _unauthorized(**kwargs):
+        raise StorageProviderError("R2 upload failed: AccessDenied")
+
+    monkeypatch.setattr(storage, "save", _unauthorized)
+    draft = _api_create(client, tenant, business)
+    assert draft["status"] == "build_failed"
+    assert "could not be saved" in draft["build_error"]
+    assert public_storage.calls == []  # never "use the public bucket instead"
+
+
+@pytest.fixture()
+def unconfigured_private_storage_client(session, public_storage: SpyStorage, builds: BuildCounter):
+    """The REAL get_private_artifact_storage (not overridden), in a
+    production-like configuration with only the public bucket set."""
+
+    def _override_get_session():
+        yield session
+
+    app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_website_publisher] = lambda: RecordingPublisher()
+    app.dependency_overrides[get_storage_provider] = lambda: public_storage
+    try:
+        yield TestClient(app)
+    finally:
+        for dep in (get_session, get_website_publisher, get_storage_provider):
+            app.dependency_overrides.pop(dep, None)
+
+
+def test_b_E_F_missing_private_configuration_fails_closed_over_http(
+    unconfigured_private_storage_client: TestClient,
+    tenant: Tenant,
+    business: Business,
+    public_storage: SpyStorage,
+    builds: BuildCounter,
+    monkeypatch,
+):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "r2_bucket_name", "generate-web-ai-assets")
+    monkeypatch.setattr(settings, "r2_private_bucket_name", None)
+    response = unconfigured_private_storage_client.post(
+        f"/businesses/{business.id}/website-drafts",
+        json={"site_config": _SITE_CONFIG},
+        headers={"X-Tenant-Id": str(tenant.id)},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "private_artifact_storage_unavailable"
+    assert public_storage.calls == []
+    assert builds.calls == 0  # refused before anything was built
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"environment": "production"},  # production, nothing configured
+        {"r2_bucket_name": "generate-web-ai-assets"},  # public bucket only
+        {"r2_bucket_name": "b", "r2_private_bucket_name": "b", "r2_account_id": "a",
+         "r2_access_key_id": "k", "r2_secret_access_key": "s"},  # private == public
+        {"r2_private_bucket_name": "private", "r2_account_id": "a"},  # no credentials
+    ],
+    ids=["production-unconfigured", "public-only", "same-bucket", "no-credentials"],
+)
+def test_b_E_F_factory_fails_closed_and_never_returns_the_public_bucket(overrides, monkeypatch):
+    from app.config import settings
+    from app.dependencies import get_private_artifact_storage as factory
+    from app.errors import AppError
+
+    for name in ("r2_bucket_name", "r2_private_bucket_name", "r2_account_id", "r2_access_key_id",
+                 "r2_secret_access_key", "r2_private_access_key_id", "r2_private_secret_access_key"):
+        monkeypatch.setattr(settings, name, None)
+    monkeypatch.setattr(settings, "environment", "development")
+    for name, value in overrides.items():
+        monkeypatch.setattr(settings, name, value)
+
+    with pytest.raises(AppError) as exc:
+        factory()
+    assert exc.value.code == "private_artifact_storage_unavailable"
+    assert exc.value.status_code == 503
+
+
+def test_b_private_r2_provider_is_the_private_bucket_and_has_no_url_capability(monkeypatch):
+    from app.config import settings
+    from app.dependencies import get_private_artifact_storage as factory
+    from app.storage import CloudflareR2StorageProvider
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "r2_account_id", "acct")
+    monkeypatch.setattr(settings, "r2_access_key_id", "shared-key")
+    monkeypatch.setattr(settings, "r2_secret_access_key", "shared-secret")
+    monkeypatch.setattr(settings, "r2_bucket_name", "generate-web-ai-assets")
+    monkeypatch.setattr(settings, "r2_public_base_url", "https://pub-example.r2.dev")
+    monkeypatch.setattr(settings, "r2_private_bucket_name", "generate-web-ai-private")
+
+    private = factory()
+    backend = private._backend
+    assert isinstance(backend, CloudflareR2StorageProvider)
+    assert backend.bucket_name == "generate-web-ai-private"
+    assert backend.is_public is False
+    with pytest.raises(ValueError):
+        backend.url_path("website-drafts/a/b/c/artifact.tar.gz")
+    # The capability wrapper itself exposes no URL methods at all.
+    assert not hasattr(private, "url_path") and not hasattr(private, "presigned_url")
+
+
+def test_b_private_wrapper_rejects_public_backends(tmp_path: Path):
+    from app.storage import CloudflareR2StorageProvider
+
+    public_r2 = CloudflareR2StorageProvider(
+        account_id="a", access_key_id="k", secret_access_key="s", bucket_name="pub",
+        public_base_url="https://pub-example.r2.dev", client=object(),
+    )
+    with pytest.raises(ValueError):
+        PrivateArtifactStorage(public_r2)
+    uploads = tmp_path / "uploads"
+    with pytest.raises(ValueError):
+        PrivateArtifactStorage(LocalStorageProvider(root_dir=uploads / "private"), public_upload_dir=uploads)
+    with pytest.raises(ValueError):
+        PrivateArtifactStorage(LocalStorageProvider(root_dir=uploads), public_upload_dir=uploads)
+
+
+def test_b_dev_default_is_a_local_directory_outside_public_uploads(monkeypatch, tmp_path: Path):
+    from app.config import settings
+    from app.dependencies import get_private_artifact_storage as factory
+
+    for name in ("r2_bucket_name", "r2_private_bucket_name"):
+        monkeypatch.setattr(settings, name, None)
+    monkeypatch.setattr(settings, "environment", "development")
+    monkeypatch.setattr(settings, "local_storage_dir", str(tmp_path / "var" / "uploads"))
+    monkeypatch.setattr(settings, "local_private_storage_dir", str(tmp_path / "var" / "private-artifacts"))
+
+    private = factory()
+    assert private._backend.root_dir == tmp_path / "var" / "private-artifacts"
+
+
+def test_b_H_public_asset_storage_is_unchanged(monkeypatch):
+    from app.config import settings
+    from app.dependencies import get_storage_provider
+    from app.storage import CloudflareR2StorageProvider
+
+    monkeypatch.setattr(settings, "r2_account_id", "acct")
+    monkeypatch.setattr(settings, "r2_access_key_id", "k")
+    monkeypatch.setattr(settings, "r2_secret_access_key", "s")
+    monkeypatch.setattr(settings, "r2_bucket_name", "generate-web-ai-assets")
+    monkeypatch.setattr(settings, "r2_public_base_url", "https://pub-example.r2.dev")
+    monkeypatch.setattr(settings, "r2_private_bucket_name", "generate-web-ai-private")
+
+    public = get_storage_provider()
+    assert isinstance(public, CloudflareR2StorageProvider)
+    assert public.bucket_name == "generate-web-ai-assets"  # never the private bucket
+    assert public.url_path("biz/logo.png") == "https://pub-example.r2.dev/biz/logo.png"

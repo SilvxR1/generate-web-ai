@@ -200,6 +200,23 @@ class Settings(BaseSettings):
     r2_bucket_name: str | None = None
     r2_public_base_url: str | None = None
 
+    # A8.3.4.1b — PRIVATE artifact storage (app.storage.private). A second,
+    # never-public R2 bucket for unpublished internal objects (WebsiteDraft
+    # deployable artifacts): no r2.dev/custom domain, backend credentials
+    # only, and deliberately no public-base-URL setting at all. Must differ
+    # from `r2_bucket_name`. The private credential pair is optional and
+    # defaults to the shared r2_access_key_id/secret — set it when the
+    # public token is bucket-scoped. Fail closed: whenever the public R2
+    # bucket (or production) is configured but this isn't,
+    # get_private_artifact_storage refuses — it never falls back to the
+    # public bucket.
+    r2_private_bucket_name: str | None = None
+    r2_private_access_key_id: str | None = None
+    r2_private_secret_access_key: str | None = None
+    # Dev/test private artifact directory — never under local_storage_dir,
+    # which app.main serves publicly at /uploads.
+    local_private_storage_dir: str = "var/private-artifacts"
+
     # InMemoryRateLimiter (app.security.rate_limit) budgets for the two
     # abuse-sensitive endpoints identified in the P0 security pass:
     # anonymous public lead submission and asset upload. Real defaults —

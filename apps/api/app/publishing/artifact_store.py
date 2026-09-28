@@ -16,11 +16,14 @@ Three separate concerns, deliberately kept apart:
    and oversized archives before a single byte reaches a WebsiteArtifact.
 
 3. Persistence — `store_draft_artifact`/`load_draft_artifact`: through
-   the existing StorageProvider (R2 in production, local disk in
-   dev/test), write-once, under a tenant/business/draft-scoped key. The
-   key is internal only: no public or presigned URL is ever derived from
-   it here. Loading always recomputes the semantic hash and refuses on
-   any mismatch — there is no "repair" or silent rebuild path.
+   PrivateArtifactStorage only (A8.3.4.1b, app.storage.private — a
+   separate, never-public R2 bucket in production; an unserved local
+   directory in dev/test), write-once, under a tenant/business/draft-scoped
+   key. The public asset provider can't be passed here (wrong type), and
+   the private wrapper has no URL capability at all: the key is an
+   internal identifier, never a URL. Loading always recomputes the
+   semantic hash and refuses on any mismatch — there is no "repair" or
+   silent rebuild path.
 """
 
 import gzip
@@ -32,8 +35,8 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from app.publishing.publisher import WebsiteArtifact
-from app.storage import StorageProvider
 from app.storage.errors import StorageProviderError
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -196,7 +199,7 @@ def draft_artifact_storage_key(*, tenant_id: UUID, business_id: UUID, draft_id: 
 
 
 def store_draft_artifact(
-    storage: StorageProvider,
+    storage: PrivateArtifactStorage,
     *,
     tenant_id: UUID,
     business_id: UUID,
@@ -233,7 +236,7 @@ def store_draft_artifact(
 
 
 def load_draft_artifact(
-    storage: StorageProvider, *, storage_key: str, expected_sha256: str, draft_id: UUID
+    storage: PrivateArtifactStorage, *, storage_key: str, expected_sha256: str, draft_id: UUID
 ) -> WebsiteArtifact:
     """Loads, unpacks and integrity-verifies a stored draft artifact.
     Never rebuilds and never repairs: any failure raises."""

@@ -9,10 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.db.models.tenant import Tenant
-from app.dependencies import get_session, get_storage_provider, get_website_publisher
+from app.dependencies import get_private_artifact_storage, get_session, get_website_publisher
 from app.main import app
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
 from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 
 class _DefaultFakePublisher(WebsitePublisher):
@@ -50,15 +51,15 @@ def client(session, monkeypatch: pytest.MonkeyPatch, tmp_path):
 
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_website_publisher] = _DefaultFakePublisher
-    # A8.3.4.1: drafts archive their validated artifact — keep it in tmp.
-    storage = LocalStorageProvider(root_dir=tmp_path / "storage")
-    app.dependency_overrides[get_storage_provider] = lambda: storage
+    # A8.3.4.1(b): drafts archive their validated artifact privately — keep it in tmp.
+    storage = PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage"))
+    app.dependency_overrides[get_private_artifact_storage] = lambda: storage
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_session, None)
         app.dependency_overrides.pop(get_website_publisher, None)
-        app.dependency_overrides.pop(get_storage_provider, None)
+        app.dependency_overrides.pop(get_private_artifact_storage, None)
 
 
 def _headers(tenant_id: uuid.UUID) -> dict:

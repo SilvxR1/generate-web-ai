@@ -30,6 +30,7 @@ from app.publishing.artifact_store import artifact_sha256, load_draft_artifact
 from app.publishing.drafts import create_website_draft
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "reforma_site_config.json"
 _SECTION = re.compile(r"<section\b[^>]*>")
@@ -73,7 +74,7 @@ def test_a_valid_generator_config_builds_ready_with_every_anchor_resolved(
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(raw),
         business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
-        storage=LocalStorageProvider(root_dir=tmp_path / "storage"),
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
     )
 
     assert draft.build_error is None
@@ -84,7 +85,7 @@ def test_a_valid_generator_config_builds_ready_with_every_anchor_resolved(
     # the one build that ran (security headers included), hash-verified.
     assert len(built_artifacts) == 1
     stored = load_draft_artifact(
-        LocalStorageProvider(root_dir=tmp_path / "storage"),
+        PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
         storage_key=draft.artifact_key,
         expected_sha256=draft.artifact_sha256,
         draft_id=draft.id,
@@ -128,7 +129,7 @@ def test_platform_contract_still_blocks_a_genuinely_broken_anchor(
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(raw),
         business_config=EXAMPLE_REFORMA_VALENCIA_CONFIG,
-        storage=LocalStorageProvider(root_dir=tmp_path / "storage"),
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
     )
 
     assert draft.status is WebsiteDraftStatus.BUILD_FAILED

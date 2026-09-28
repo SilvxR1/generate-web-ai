@@ -83,6 +83,7 @@ from app.repositories.website_draft import WebsiteDraftRepository
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import StorageProvider
 from app.storage.errors import StorageProviderError
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ class WebsiteDraftError(Exception):
 
 
 def _promote_with_stored_artifact(
-    *, draft: WebsiteDraft, storage: StorageProvider, artifact: WebsiteArtifact, issues: list[str]
+    *, draft: WebsiteDraft, artifact_storage: PrivateArtifactStorage, artifact: WebsiteArtifact, issues: list[str]
 ) -> None:
     """The last step of every successful draft creation (either engine):
     persist the exact artifact that just passed PlatformContract, and
@@ -138,7 +139,7 @@ def _promote_with_stored_artifact(
     draft.validation_issues = issues or None
     try:
         stored = store_draft_artifact(
-            storage,
+            artifact_storage,
             tenant_id=draft.tenant_id,
             business_id=draft.business_id,
             draft_id=draft.id,
@@ -160,7 +161,7 @@ def _promote_with_stored_artifact(
     draft.status = WebsiteDraftStatus.READY
 
 
-def _load_verified_artifact(draft: WebsiteDraft, storage: StorageProvider) -> WebsiteArtifact:
+def _load_verified_artifact(draft: WebsiteDraft, artifact_storage: PrivateArtifactStorage) -> WebsiteArtifact:
     """The only way a draft's artifact reaches a publisher (or, in
     A8.3.4.2, a preview): the stored archive, integrity-verified against
     the hash recorded at creation. Never rebuilds."""
@@ -169,7 +170,7 @@ def _load_verified_artifact(draft: WebsiteDraft, storage: StorageProvider) -> We
         raise WebsiteDraftError(_LEGACY_DRAFT_MESSAGE, code="website_draft_artifact_missing", status_code=409)
     try:
         return load_draft_artifact(
-            storage, storage_key=draft.artifact_key, expected_sha256=draft.artifact_sha256, draft_id=draft.id
+            artifact_storage, storage_key=draft.artifact_key, expected_sha256=draft.artifact_sha256, draft_id=draft.id
         )
     except ArtifactUnavailableError as exc:
         raise WebsiteDraftError(
@@ -213,7 +214,7 @@ def create_website_draft(
     tenant_id: UUID,
     business_id: UUID,
     site_config: SiteConfigPayload,
-    storage: StorageProvider,
+    artifact_storage: PrivateArtifactStorage,
     creative_generation_id: UUID | None = None,
     business_config: BusinessConfig | None = None,
 ) -> WebsiteDraft:
@@ -225,7 +226,7 @@ def create_website_draft(
     function always returns a WebsiteDraft, whether BUILD_FAILED or
     READY, so the caller (a router) always has something to show/persist.
     A8.3.4.1: this is the draft's ONE build — the artifact that passes is
-    archived through `storage` and becomes exactly what Publish deploys
+    archived through `artifact_storage` (PRIVATE, A8.3.4.1b) and becomes exactly what Publish deploys
     (see this module's docstring); READY is only reached once it's saved.
 
     P2: when `business_config` is provided (the real call path — see
@@ -276,7 +277,7 @@ def create_website_draft(
             draft.validation_issues = issues or None
             return draft
 
-    _promote_with_stored_artifact(draft=draft, storage=storage, artifact=artifact, issues=issues)
+    _promote_with_stored_artifact(draft=draft, artifact_storage=artifact_storage, artifact=artifact, issues=issues)
     return draft
 
 
@@ -311,7 +312,7 @@ def publish_website_draft(
     business_id: UUID,
     draft_id: UUID,
     publisher: WebsitePublisher,
-    storage: StorageProvider,
+    artifact_storage: PrivateArtifactStorage,
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
     (Phase 10: generation/build/validation alone never publish). A8.3.4.1:
@@ -324,7 +325,7 @@ def publish_website_draft(
     same approved draft without re-approving.
     """
     draft = _require_approved(session, tenant_id, business_id, draft_id)
-    artifact = _load_verified_artifact(draft, storage)
+    artifact = _load_verified_artifact(draft, artifact_storage)
     assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
     result = publish_prebuilt_artifact(
         session=session,
@@ -352,7 +353,7 @@ def create_generative_website_draft(
     business_config: BusinessConfig,
     creative_direction_id: UUID,
     frontend_engineer: FrontendEngineer,
-    storage: StorageProvider,
+    artifact_storage: PrivateArtifactStorage,
     assets: Sequence[CreativeBriefAsset] = (),
     api_base_url: str | None = None,
 ) -> WebsiteDraft:
@@ -454,7 +455,9 @@ def create_generative_website_draft(
 
     # A8.3.4.1: the built output (platform config already injected) is
     # what gets stored and later promoted — never rebuilt from source.
-    _promote_with_stored_artifact(draft=draft, storage=storage, artifact=result.artifact, issues=issues)
+    _promote_with_stored_artifact(
+        draft=draft, artifact_storage=artifact_storage, artifact=result.artifact, issues=issues
+    )
     return draft
 
 
@@ -465,6 +468,7 @@ def run_visual_qa_for_draft(
     business_id: UUID,
     draft_id: UUID,
     storage: StorageProvider,
+    artifact_storage: PrivateArtifactStorage,
     api_base_url: str | None = None,
 ) -> GenerativeWebsiteArtifact:
     """P2 continuation Part 4 (Visual QA V1) — Studio's own QA_RUNNING
@@ -501,7 +505,7 @@ def run_visual_qa_for_draft(
 
     if draft.artifact_key is not None:
         # A8.3.4.1: QA the exact artifact Publish will deploy.
-        artifact = _load_verified_artifact(draft, storage)
+        artifact = _load_verified_artifact(draft, artifact_storage)
     else:
         # Legacy draft (pre-A8.3.4.1): no stored build output, only source.
         # Publish refuses these anyway; QA still inspects a rebuild.
@@ -536,7 +540,7 @@ def publish_generative_website_draft(
     business_id: UUID,
     draft_id: UUID,
     publisher: WebsitePublisher,
-    storage: StorageProvider,
+    artifact_storage: PrivateArtifactStorage,
 ) -> WebsiteStateResult:
     """The GENERATIVE counterpart to publish_website_draft above — same
     APPROVED requirement, same A8.3.4.1 promotion of the stored,
@@ -552,7 +556,7 @@ def publish_generative_website_draft(
             "This draft has no generative artifact record.", code="generative_artifact_missing", status_code=500
         )
 
-    artifact = _load_verified_artifact(draft, storage)
+    artifact = _load_verified_artifact(draft, artifact_storage)
     assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
     direction_id = artifact_row.creative_direction_id
     config_snapshot = {

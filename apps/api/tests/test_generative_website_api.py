@@ -19,6 +19,7 @@ from app.db.models.tenant import Tenant
 from app.dependencies import (
     get_creative_director,
     get_frontend_engineer,
+    get_private_artifact_storage,
     get_session,
     get_storage_provider,
     get_website_publisher,
@@ -34,6 +35,7 @@ from app.domain.creative.direction import (
 from app.domain.enums import CreativeProviderName
 from app.main import app
 from app.publishing.publisher import PublishedSite, WebsiteArtifact, WebsitePublisher
+from app.storage.private import PrivateArtifactStorage
 from app.storage.provider import StorageProvider, StoredFile
 
 
@@ -179,17 +181,31 @@ def client(session, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr("app.publishing.drafts.rebuild_from_archive", _no_rebuild)
 
+    # A8.3.4.1b: two DIFFERENT stores — public assets/screenshots vs the
+    # private draft-artifact bucket — so tests can prove which one got what.
     storage = _FakeStorage()
+    private = _FakeStorage()
     _FakePublisher.published_artifacts = []
     app.dependency_overrides[get_session] = _override_get_session
     app.dependency_overrides[get_website_publisher] = lambda: _FakePublisher()
     app.dependency_overrides[get_storage_provider] = lambda: storage
+    app.dependency_overrides[get_private_artifact_storage] = lambda: PrivateArtifactStorage(private)
     app.dependency_overrides[get_creative_director] = lambda: _FakeDirector()
     app.dependency_overrides[get_frontend_engineer] = lambda: _FakeFrontendEngineer()
+    test_client = TestClient(app)
+    test_client.public_storage = storage  # type: ignore[attr-defined]
+    test_client.private_storage = private  # type: ignore[attr-defined]
     try:
-        yield TestClient(app)
+        yield test_client
     finally:
-        deps = (get_session, get_website_publisher, get_storage_provider, get_creative_director, get_frontend_engineer)
+        deps = (
+            get_session,
+            get_website_publisher,
+            get_storage_provider,
+            get_private_artifact_storage,
+            get_creative_director,
+            get_frontend_engineer,
+        )
         for dep in deps:
             app.dependency_overrides.pop(dep, None)
 
@@ -274,6 +290,10 @@ def test_full_generative_lifecycle_create_approve_publish(client: TestClient, te
     ).artifact
     [deployed] = _FakePublisher.published_artifacts
     assert deployed.files == expected.files
+
+    # A8.3.4.1b: the artifact lives ONLY in private storage.
+    assert [k for k in client.private_storage.objects if k.startswith("website-drafts/")]
+    assert not [k for k in client.public_storage.objects if k.startswith("website-drafts/")]
 
 
 def test_generative_frontend_engineer_unavailable_returns_503(client: TestClient, tenant: Tenant, business_with_config):

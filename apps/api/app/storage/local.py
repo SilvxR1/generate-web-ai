@@ -28,6 +28,10 @@ class LocalStorageProvider(StorageProvider):
         self._root_dir = root_dir
         self._root_dir.mkdir(parents=True, exist_ok=True)
 
+    @property
+    def root_dir(self) -> Path:
+        return self._root_dir
+
     def save(self, *, storage_key: str, content: bytes, content_type: str | None = None) -> StoredFile:
         del content_type  # StaticFiles infers content-type from the extension at serve time — see this ABC's docstring.
         path = self._resolve(storage_key)

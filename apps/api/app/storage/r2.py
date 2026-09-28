@@ -61,11 +61,13 @@ class CloudflareR2StorageProvider(StorageProvider):
         access_key_id: str,
         secret_access_key: str,
         bucket_name: str,
-        public_base_url: str,
+        public_base_url: str | None,
         client=None,
     ) -> None:
         self._bucket = bucket_name
-        self._public_base_url = public_base_url.rstrip("/")
+        # None = a private bucket (A8.3.4.1b, app.storage.private): this
+        # instance can never produce a public object URL.
+        self._public_base_url = public_base_url.rstrip("/") if public_base_url is not None else None
         if client is not None:
             self._client = client
         else:
@@ -139,5 +141,15 @@ class CloudflareR2StorageProvider(StorageProvider):
         except (ClientError, BotoCoreError) as exc:
             raise StorageProviderError(f"R2 download failed for key {storage_key!r}: {exc}") from exc
 
+    @property
+    def bucket_name(self) -> str:
+        return self._bucket
+
+    @property
+    def is_public(self) -> bool:
+        return self._public_base_url is not None
+
     def url_path(self, storage_key: str) -> str:
+        if self._public_base_url is None:
+            raise ValueError("this R2 bucket is private — its objects have no public URL")
         return f"{self._public_base_url}/{storage_key}"

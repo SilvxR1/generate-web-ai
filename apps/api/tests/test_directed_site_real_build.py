@@ -27,6 +27,7 @@ from app.publishing.drafts import create_website_draft
 from app.qa.platform_contract import validate_platform_contract
 from app.schemas.site_config import SiteConfigPayload
 from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SITE_CONFIGS = json.loads((FIXTURES / "a8_directed_site_configs.json").read_text("utf-8"))
@@ -132,7 +133,7 @@ def test_a_directed_draft_reaches_ready_through_the_real_draft_pipeline(
         tenant_id=tenant.id,
         business_id=business.id,
         site_config=SiteConfigPayload.model_validate(SITE_CONFIGS[name][strategy]),
-        storage=LocalStorageProvider(root_dir=tmp_path / "storage"),
+        artifact_storage=PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "storage")),
         business_config=_business_config(name),
     )
 
