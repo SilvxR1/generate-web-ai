@@ -19,7 +19,10 @@ import {
   getWebsiteVersions,
   getWorkflowPreview,
   listBusinessAssets,
-  publishWebsite,
+  approveWebsiteDraft,
+  createWebsiteDraft,
+  previewWebsiteDraft,
+  publishWebsiteDraft,
   refreshCustomDomain,
   rollbackToWebsiteVersion,
   updateLeadStatus,
@@ -43,6 +46,7 @@ import { CustomDomainPanel } from "./CustomDomainPanel";
 import { LeadsList } from "./LeadsList";
 import { ProductionReadinessPanel } from "./ProductionReadinessPanel";
 import { RedesignFlow } from "../business-redesign/RedesignFlow";
+import { CONTENT_SUMMARY_HINT } from "./realPreview";
 import { SiteConfigPreview } from "./SiteConfigPreview";
 import { WebsiteHealthPanel } from "./WebsiteHealthPanel";
 import { WebsitePublish } from "./WebsitePublish";
@@ -357,28 +361,38 @@ export function PreviewStep({ business, tenantId, justCreated, onEdit, onCreateA
         />
       </details>
 
-      {/* A8.3.4.2b: the first-site flow publishes straight from SiteConfig
-       * (no WebsiteDraft, so no real preview exists here yet — tracked as
-       * A8_ARTIFACT_PROMOTION_FOLLOWUP). This is a content summary, never
-       * called a preview. */}
-      <h2>Review site content</h2>
+      {/* A8.4: the first website goes live through the same WebsiteDraft
+       * lifecycle as a redesign — Generate website (one build, stored) ->
+       * Open real preview -> Use this design -> Publish (the exact previewed
+       * bytes). The React summary below is only a secondary Content
+       * summary, never the website preview. */}
+      <h2>Website</h2>
       {siteConfig ? (
-        <SiteConfigPreview siteConfig={siteConfig} />
+        <>
+          <WebsitePublish
+            siteConfig={siteConfig}
+            websiteState={website.state}
+            isLoadingWebsiteState={website.isLoading}
+            customDomain={customDomain.state}
+            onCreateDraft={(config) => createWebsiteDraft(business.id, config, null, tenantId)}
+            onPreview={(draftId) => previewWebsiteDraft(business.id, draftId, tenantId)}
+            onApprove={(draftId) => approveWebsiteDraft(business.id, draftId, tenantId)}
+            onPublish={(draftId) =>
+              publishWebsiteDraft(business.id, draftId, tenantId).then((state) => {
+                setWebsite({ state, isLoading: false });
+                return state;
+              })
+            }
+          />
+          <details className="content-summary">
+            <summary>Content summary</summary>
+            <p className="field-hint">{CONTENT_SUMMARY_HINT}</p>
+            <SiteConfigPreview siteConfig={siteConfig} />
+          </details>
+        </>
       ) : (
-        <p className="field-hint">This business has no configuration yet, so there's no website content to review.</p>
+        <p className="field-hint">This business has no configuration yet, so there's no website to generate.</p>
       )}
-      <WebsitePublish
-        siteConfig={siteConfig}
-        websiteState={website.state}
-        isLoadingWebsiteState={website.isLoading}
-        customDomain={customDomain.state}
-        onPublish={(config) =>
-          publishWebsite(business.id, tenantId, config).then((state) => {
-            setWebsite({ state, isLoading: false });
-            return state;
-          })
-        }
-      />
 
       <h2>Version history</h2>
       <WebsiteVersionsPanel

@@ -749,50 +749,94 @@ describe("NewBusiness preview step", () => {
     expect(heroImg).toHaveAttribute("src", realHeroPhoto.storage_url);
   });
 
-  it("publish requires explicit confirmation before calling the API", async () => {
+  // A8.4: the first website goes live only through the WebsiteDraft
+  // lifecycle — Generate website (one build) -> Open real preview -> Use
+  // this design -> Publish (the exact previewed bytes). The legacy direct
+  // POST .../website/publish is never called.
+  function firstSiteDraft(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "draft-first",
+      business_id: "biz-reforma",
+      creative_generation_id: null,
+      engine: "deterministic",
+      site_config: generateSiteConfig(exampleReformaValenciaConfig),
+      status: "ready",
+      build_error: null,
+      validation_issues: null,
+      approved_at: null,
+      published_at: null,
+      published_website_id: null,
+      created_at: "2026-09-29T00:00:00Z",
+      ...overrides,
+    };
+  }
+
+  const LIVE_STATE = {
+    status: "live",
+    live_url: "https://site-biz-reforma.my-team.workers.dev/",
+    deployment_id: "site-biz-reforma",
+    deployed_at: "2026-08-27T00:00:00Z",
+    updated_at: "2026-08-27T00:00:00Z",
+  };
+
+  function calledUrl(pattern: RegExp) {
+    return fetchMock.mock.calls.filter(([url]) => pattern.test(String(url)));
+  }
+
+  async function generateAndApprove(user: ReturnType<typeof userEvent.setup>) {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, firstSiteDraft()));
+    await user.click(await screen.findByRole("button", { name: "Generate website" }));
+    const useThisDesign = await screen.findByRole("button", { name: "Use this design" });
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, firstSiteDraft({ status: "approved", approved_at: "x" })));
+    await user.click(useThisDesign);
+    await screen.findByRole("button", { name: "Publish website" });
+  }
+
+  it("first site: Generate website builds a draft — never a direct publish — and Publish needs explicit approval", async () => {
     const user = userEvent.setup();
     await createReformaBusiness(user, REFORMA_WORKFLOW_PREVIEW);
+
+    // Before generating there is nothing to publish.
+    expect(screen.queryByRole("button", { name: "Publish website" })).not.toBeInTheDocument();
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, firstSiteDraft()));
+    await user.click(await screen.findByRole("button", { name: "Generate website" }));
+
+    const [draftCall] = calledUrl(/\/businesses\/biz-reforma\/website-drafts$/);
+    expect((draftCall![1] as RequestInit).method).toBe("POST");
+    const body = JSON.parse((draftCall![1] as RequestInit).body as string);
+    expect(body.creative_generation_id).toBeNull();
+    expect(body.site_config.brand.name).toBe(generateSiteConfig(exampleReformaValenciaConfig).brand.name);
+
+    // READY: the real preview is offered; Publish is not, until approval.
+    expect(await screen.findByRole("button", { name: /Open real preview/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use this design" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Publish website" })).not.toBeInTheDocument();
+    expect(screen.getByText("Content summary", { selector: "summary" })).toBeInTheDocument();
+    expect(calledUrl(/\/(approve|publish)$/)).toHaveLength(0);
+  });
+
+  it("first site: Publish requires explicit confirmation, then promotes the approved draft — never /website/publish", async () => {
+    const user = userEvent.setup();
+    await createReformaBusiness(user, REFORMA_WORKFLOW_PREVIEW);
+    await generateAndApprove(user);
     const callsBeforePublishing = fetchMock.mock.calls.length;
 
-    await user.click(await screen.findByRole("button", { name: "Publish website" }));
-
-    // Just clicking "Publish website" only opens the confirmation — it
-    // must not have called the API yet.
+    await user.click(screen.getByRole("button", { name: "Publish website" }));
+    // Just clicking "Publish website" only opens the confirmation.
     expect(fetchMock).toHaveBeenCalledTimes(callsBeforePublishing);
     expect(screen.getByText("Confirm publication")).toBeInTheDocument();
     expect(screen.getByText(/publicly reachable/)).toBeInTheDocument();
-
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(fetchMock).toHaveBeenCalledTimes(callsBeforePublishing);
-    expect(screen.queryByText("Confirm publication")).not.toBeInTheDocument();
-  });
 
-  it("publish success shows the Published state with a real Open live website link", async () => {
-    const user = userEvent.setup();
-    await createReformaBusiness(user, REFORMA_WORKFLOW_PREVIEW);
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
-        status: "live",
-        live_url: "https://site-biz-reforma.my-team.workers.dev/",
-        deployment_id: "site-biz-reforma",
-        deployed_at: "2026-08-27T00:00:00Z",
-        updated_at: "2026-08-27T00:00:00Z",
-      }),
-    );
-
-    await user.click(await screen.findByRole("button", { name: "Publish website" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, LIVE_STATE));
+    await user.click(screen.getByRole("button", { name: "Publish website" }));
     await user.click(screen.getByRole("button", { name: "Confirm publish" }));
 
     expect(await screen.findByText(/Published/)).toBeInTheDocument();
-    const link = screen.getByRole("link", { name: "Open live website" });
-    expect(link).toHaveAttribute("href", "https://site-biz-reforma.my-team.workers.dev/");
-
-    const publishCall = fetchMock.mock.calls.find(([url]) => (url as string).includes("/website/publish"));
-    expect(publishCall).toBeDefined();
-    const [, publishInit] = publishCall as [string, RequestInit];
-    expect(publishInit.method).toBe("POST");
-    const sentSiteConfig = JSON.parse(publishInit.body as string) as { brand: { name: string } };
-    expect(sentSiteConfig.brand.name).toBe(generateSiteConfig(exampleReformaValenciaConfig).brand.name);
+    expect(screen.getByRole("link", { name: "Open live website" })).toHaveAttribute("href", LIVE_STATE.live_url);
+    expect(calledUrl(/\/website-drafts\/draft-first\/publish$/)).toHaveLength(1);
+    expect(calledUrl(/\/website\/publish$/)).toHaveLength(0);
   });
 
   it("LR-04: with an active custom domain, the production domain is shown separately from the technical preview URL", async () => {
@@ -812,17 +856,10 @@ describe("NewBusiness preview step", () => {
         verified_at: "2026-08-01T00:00:00Z",
       },
     );
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, {
-        status: "live",
-        live_url: "https://site-biz-reforma.my-team.workers.dev/",
-        deployment_id: "site-biz-reforma",
-        deployed_at: "2026-08-27T00:00:00Z",
-        updated_at: "2026-08-27T00:00:00Z",
-      }),
-    );
+    await generateAndApprove(user);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, LIVE_STATE));
 
-    await user.click(await screen.findByRole("button", { name: "Publish website" }));
+    await user.click(screen.getByRole("button", { name: "Publish website" }));
     await user.click(screen.getByRole("button", { name: "Confirm publish" }));
 
     expect(await screen.findByText(/Published/)).toBeInTheDocument();
@@ -836,22 +873,24 @@ describe("NewBusiness preview step", () => {
     expect(within(publishSection).getByText(/Technical\/preview URL/)).toBeInTheDocument();
   });
 
-  it("publish failure shows a human error, never Published, and offers a retry", async () => {
+  it("publish failure shows a human error, never Published, and offers a retry of the same approved draft", async () => {
     const user = userEvent.setup();
     await createReformaBusiness(user, REFORMA_WORKFLOW_PREVIEW);
+    await generateAndApprove(user);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(503, {
         error: { code: "website_publisher_not_configured", message: "Website publishing is not configured on this server." },
       }),
     );
 
-    await user.click(await screen.findByRole("button", { name: "Publish website" }));
+    await user.click(screen.getByRole("button", { name: "Publish website" }));
     await user.click(screen.getByRole("button", { name: "Confirm publish" }));
 
     expect(await screen.findByText("Publishing isn't set up on this server")).toBeInTheDocument();
     expect(screen.queryByText(/^Published/)).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Open live website" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(calledUrl(/\/website\/publish$/)).toHaveLength(0);
   });
 
   it("reload of the preview step shows the persisted Published state without re-publishing", async () => {
@@ -1414,7 +1453,7 @@ describe("NewBusiness reopening an existing business (Studio dashboard's Open ac
     // Same PreviewStep affordances a freshly-created business gets —
     // publish/activate/leads are all reachable from here, once their
     // own (mocked) persisted-state reads have resolved.
-    expect(await screen.findByRole("button", { name: "Publish website" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Generate website" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Activate automation" })).toBeInTheDocument();
     // Never called POST /businesses or PUT /businesses/{id} just to view it.
     expect(

@@ -322,6 +322,10 @@ export function getWebsiteState(businessId: string, tenantId: string): Promise<W
   return requestJson<WebsiteState | null>(`/businesses/${businessId}/website`, { method: "GET" }, tenantId);
 }
 
+/** LEGACY / INTERNAL (A8.4): builds at publish time with no real preview.
+ * Studio's normal flows never call this — every website goes live through
+ * the WebsiteDraft lifecycle (createWebsiteDraft -> previewWebsiteDraft ->
+ * approveWebsiteDraft -> publishWebsiteDraft). */
 export function publishWebsite(businessId: string, tenantId: string, siteConfig: SiteConfig): Promise<WebsiteState> {
   return requestJson<WebsiteState>(
     `/businesses/${businessId}/website/publish`,
