@@ -1,0 +1,72 @@
+# v0.2 R4.2 — Generate Web AI isolated generation worker.
+#
+# Pulls ONE job at a time from the Railway control plane over HTTPS, builds
+# the generated source and runs Visual QA inside per-job bubblewrap
+# sandboxes, and returns an untrusted candidate. Holds no platform secret:
+# only the claim-only worker token (LoadCredential below).
+#
+# install.sh also writes gwa-worker.service.d/10-user-runtime.conf (the
+# worker user's UID, for the user systemd manager that creates each job's
+# cgroup scope) and a ceiling for that user's slice.
+#
+# Hardening: the options set below were verified compatible with bubblewrap
+# by running scripts/r4_host_acceptance.py under them (77/77, zero skips).
+# Deliberately NOT set:
+#   RestrictNamespaces=      bubblewrap must create user/mount/pid/net namespaces
+#   SystemCallFilter=        bubblewrap needs mount/pivot_root/unshare
+#   ProtectKernelTunables=   an overmounted /proc/sys makes the kernel refuse
+#                            the fresh procfs every sandbox mounts (verified)
+#   MemoryDenyWriteExecute=  V8 (Node, Chromium) JIT needs W+X pages
+#   PrivateUsers=            would nest every sandbox inside a narrow uid map
+#   CapabilityBoundingSet=   not verifiable off-VM; evaluate there with
+#                            gwa-worker-acceptance.service before adding
+# The sandbox, not these options, is the boundary for generated code; these
+# harden the trusted worker process itself.
+
+[Unit]
+Description=Generate Web AI isolated generation worker (v0.2 R4.2)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=gwa-worker
+Group=gwa-worker
+WorkingDirectory=/opt/gwa-worker/current/apps/api
+EnvironmentFile=/etc/gwa-worker/worker.env
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/gwa-worker/ms-playwright
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+LoadCredential=worker-token:/etc/gwa-worker/worker-token
+ExecStart=/opt/gwa-worker/current/apps/api/.venv/bin/python -m app.worker
+
+# Transient failures restart; permanent ones (78: host cannot isolate,
+# credential missing/revoked, bad configuration) do not.
+Restart=on-failure
+RestartSec=30
+RestartPreventExitStatus=78
+# Let an in-flight job (build + Visual QA, bounded well below this) finish;
+# sandboxes die with the worker (bubblewrap --die-with-parent).
+TimeoutStopSec=600
+
+StateDirectory=gwa-worker
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+UMask=0077
+
+# The trusted worker process itself (each job's sandbox has its own, tighter
+# cgroup scope under the user's slice, capped by install.sh's slice drop-in).
+MemoryMax=2G
+TasksMax=512
+
+[Install]
+WantedBy=multi-user.target

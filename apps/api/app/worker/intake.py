@@ -13,7 +13,9 @@ Build Once / Promote is unchanged (what is stored here is what publishes).
 
 import logging
 import uuid
+from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.creative import generation_jobs as jobs
@@ -86,6 +88,28 @@ def enqueue_generative_build(
         source_sha256=sha256_hex(archive),
         api_base_url=api_base_url,
     )
+
+
+def expire_lost(session: Session, *, now: datetime | None = None) -> int:
+    """A worker that stopped (crash, reboot, lost network) never renews
+    anything: once a RUNNING job's lease has passed, the job fails as
+    WORKER_LOST and its draft BUILD_FAILED — never retried automatically
+    (a provider call may already have been paid), never left BUILDING."""
+    now = now or datetime.now(UTC)
+    lost = session.scalars(
+        select(GenerationJob).where(
+            GenerationJob.status == GenerationJobStatus.RUNNING, GenerationJob.lease_expires_at < now
+        )
+    ).all()
+    for job in lost:
+        draft = (
+            WebsiteDraftRepository(session).get_for_business(job.tenant_id, job.business_id, job.draft_id)
+            if job.draft_id is not None
+            else None
+        )
+        _fail(job, draft, GenerationFailureKind.WORKER_LOST, "worker lease expired; not retried automatically")
+        logger.warning("generation job lost job_id=%s attempt=%s", job.id, job.attempts)
+    return len(lost)
 
 
 def claim_next(
@@ -218,24 +242,31 @@ def _record_visual_qa(
 
 
 def load_job_inputs(session: Session, job: GenerationJob) -> tuple[BusinessConfig, BusinessTruth]:
-    """The trusted facts the candidate is judged against, derived exactly
-    like the generative route does (stored config, available assets,
-    visible reviews) — never taken from the execution host."""
+    """The trusted facts the candidate is judged against — never taken
+    from the execution host."""
+    return load_business_inputs(session, tenant_id=job.tenant_id, business_id=job.business_id)
+
+
+def load_business_inputs(
+    session: Session, *, tenant_id: uuid.UUID, business_id: uuid.UUID
+) -> tuple[BusinessConfig, BusinessTruth]:
+    """Derived exactly like the generative route does (stored config,
+    available assets, visible reviews), tenant-scoped."""
     from app.db.models.business import Business
     from app.domain.business_truth import derive_business_truth
     from app.domain.creative import build_creative_brief
     from app.repositories.business_asset import BusinessAssetRepository
     from app.repositories.business_review import BusinessReviewRepository
 
-    business = session.get(Business, job.business_id)
-    if business is None or business.tenant_id != job.tenant_id or business.config is None:
-        raise IntakeError("job's business has no configuration")
+    business = session.get(Business, business_id)
+    if business is None or business.tenant_id != tenant_id or business.config is None:
+        raise IntakeError("business has no configuration")
     config = BusinessConfig.model_validate(business.config)
-    assets = BusinessAssetRepository(session).list_for_business(job.tenant_id, job.business_id)
+    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
     brief = build_creative_brief(business_config=config, assets=assets)
     truth = derive_business_truth(
         business_config=config,
         assets=brief.available_assets,
-        reviews=BusinessReviewRepository(session).list_for_business(job.tenant_id, job.business_id),
+        reviews=BusinessReviewRepository(session).list_for_business(tenant_id, business_id),
     )
     return config, truth

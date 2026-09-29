@@ -196,9 +196,25 @@ real-business pilot.
     - worker executor, entrypoint and self-test;
     - trusted candidate intake (SHA-256, archive shape, re-derived CSP,
       PlatformContract, TruthContract, READY).
-  - Adds the host acceptance contract and `scripts/r4_host_acceptance.sh`.
+  - Adds the host acceptance contract and the first acceptance script.
   - Recommended host: a single hardened KVM VM (not provisioned).
   - The S0 gate stays OFF until a real host passes acceptance.
+
+- **R4.2: Production sandbox worker deployment (Phase A: prepared,
+  awaiting host).**
+  - Everything short of a paid VM is ready: deploy assets, the hardened
+    systemd service and acceptance service, firewall, SSH hardening and
+    the operator runbook.
+  - Trusted read-only prepared dependencies: no per-job install, no
+    registry at job time.
+  - Lost-worker expiry now fails the job and its draft.
+  - Cgroup CPU quota.
+  - Resilient worker process (systemd credential, backoff, exactly-once
+    result reporting).
+  - `scripts/r4_host_acceptance.py`: host probes, self-test, per-dimension
+    verdict, zero skips.
+  - Deterministic operator E2E job (no provider).
+  - No VM, Railway change or gate change yet.
 
 ### Known debts carried into v0.2
 
@@ -222,7 +238,8 @@ Kept visible, not resolved by this release transition:
   bubblewrap build zone (verified locally and in CI). The Railway runtime
   cannot host it (namespaces denied, R4.1 probe). **Still open for
   production** until an external execution host passes the R4.1 acceptance
-  procedure. Visual QA is now inside the zone (R4.1).
+  procedure. R4.2 prepared the worker deployment; the debt closes only when
+  the real VM prints `R4_HOST_ACCEPTANCE=PASS`. Visual QA is inside the zone (R4.1).
 - Rollback of **historical** versions published before artifacts were
   recorded still rebuilds their SiteConfig (legacy compatibility, not
   exact-byte). Every version since S1 is artifact-backed and restored

@@ -13,6 +13,7 @@ nothing more: the control plane decides everything that follows.
 
 import logging
 import time
+from pathlib import Path
 
 from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError
 from app.creative.frontend_engine.build import GenerativeBuildError, build_generative_workspace
@@ -64,7 +65,9 @@ def _build_failure_kind(message: str) -> GenerationFailureKind:
     return GenerationFailureKind.BUILD
 
 
-def execute(request: ExecutionRequest, *, runner: SandboxRunner | None = None) -> ExecutionResult:
+def execute(
+    request: ExecutionRequest, *, runner: SandboxRunner | None = None, prepared_dependencies: Path | None = None
+) -> ExecutionResult:
     try:
         runner = runner or detect_runner()
     except SandboxError as exc:
@@ -99,7 +102,11 @@ def execute(request: ExecutionRequest, *, runner: SandboxRunner | None = None) -
         started = time.monotonic()
         try:
             artifact = build_generative_workspace(
-                workspace, business_id=str(request.business_id), api_base_url=request.api_base_url, runner=runner
+                workspace,
+                business_id=str(request.business_id),
+                api_base_url=request.api_base_url,
+                runner=runner,
+                prepared_dependencies=prepared_dependencies,
             )
         except GenerativeBuildError as exc:
             return _failed(request, _build_failure_kind(str(exc)), str(exc), **metadata)

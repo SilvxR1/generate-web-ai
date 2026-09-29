@@ -32,6 +32,10 @@ ASTRO_CONFIG = """import { defineConfig } from "astro/config";
 
 export default defineConfig({
   output: "static",
+  // v0.2 R4.2: caches live in the build zone's private /tmp, so
+  // node_modules can be mounted read-only (prepared dependencies).
+  cacheDir: "/tmp/gwa-astro-cache",
+  vite: { cacheDir: "/tmp/gwa-vite-cache" },
 });
 """
 
