@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     # default everywhere; production must stay off until the isolated
     # generation worker exists. Development/tests opt in explicitly.
     generative_website_builds_enabled: bool = False
+    # v0.2 R4.1: the isolated execution host's narrow credentials
+    # (app.worker.auth). Only the SHA-256 of the worker's claim token is
+    # stored here; the signing key issues per-job result tokens and never
+    # leaves the API. Both unset (default) = the internal worker endpoints
+    # do not exist (404).
+    generation_worker_token_sha256: str | None = None
+    generation_worker_signing_key: str | None = None
 
     # Shared secret n8n sends back to /internal/leads and
     # /internal/notifications (see app.dependencies.verify_internal_automation_token)

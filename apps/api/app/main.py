@@ -12,6 +12,7 @@ from app.routers.auth import router as auth_router
 from app.routers.businesses import business_summaries_router
 from app.routers.businesses import router as businesses_router
 from app.routers.creative import router as creative_router
+from app.routers.generation_worker import router as generation_worker_router
 from app.routers.health import router as health_router
 from app.routers.internal_automation import router as internal_automation_router
 from app.routers.public import router as public_router
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(business_summaries_router)
     app.include_router(creative_router)
     app.include_router(internal_automation_router)
+    app.include_router(generation_worker_router)
     app.include_router(public_router)
     app.include_router(website_health_router)
 

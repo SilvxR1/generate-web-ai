@@ -12,9 +12,12 @@ is a clean, additive extension of this same boundary — it would consume
 explicitly not required for P2 and is not implemented here.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-from app.creative.frontend_engine.browser_qa import DEFAULT_VIEWPORTS, BrowserQAResult, run_browser_qa
+from app.creative.frontend_engine.browser_qa import DEFAULT_VIEWPORTS, BrowserQAResult
+from app.creative.frontend_engine.sandbox import SandboxRunner
+from app.creative.frontend_engine.sandboxed_browser_qa import run_browser_qa_sandboxed
 from app.storage import StorageProvider, generate_storage_key
 
 
@@ -30,14 +33,31 @@ class VisualQAResult:
         return self.browser_qa.passed
 
 
-def run_visual_qa(files: dict[str, bytes], *, business_id: str, storage: StorageProvider) -> VisualQAResult:
+def run_visual_qa(
+    files: dict[str, bytes],
+    *,
+    business_id: str,
+    storage: StorageProvider,
+    offline_assets: Mapping[str, bytes] | None = None,
+    runner: SandboxRunner | None = None,
+) -> VisualQAResult:
     """Captures one screenshot per required viewport (desktop 1440x900,
     tablet 768x1024, mobile 390x844) and persists each durably, then
     reuses browser_qa's own deterministic checks (no_broken_images,
     no_horizontal_overflow, has_visible_content, page_loads) as this
     module's "blank page / severe overflow / invisible content / broken
-    images" verdict — one real browser pass, not two."""
-    browser_result = run_browser_qa(files, viewports=DEFAULT_VIEWPORTS, capture_screenshots=True)
+    images" verdict — one real browser pass, not two.
+
+    v0.2 R4.1: the browser runs the generated JavaScript inside the
+    untrusted build zone (sandboxed_browser_qa) with no network; the
+    business's own assets arrive as `offline_assets` from trusted code."""
+    browser_result = run_browser_qa_sandboxed(
+        files,
+        offline_assets=offline_assets or {},
+        viewports=DEFAULT_VIEWPORTS,
+        capture_screenshots=True,
+        runner=runner,
+    )
 
     screenshot_keys: dict[str, str] = {}
     for viewport_name, png_bytes in browser_result.screenshots.items():

@@ -20,13 +20,15 @@ depend on motion (`prefers-reduced-motion: reduce` emulated).
 
 import functools
 import http.server
+import mimetypes
 import socketserver
 import tempfile
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_VIEWPORTS: tuple[tuple[str, int, int], ...] = (
     ("desktop", 1440, 900),
@@ -66,6 +68,11 @@ class BrowserQAResult:
     # Visual QA V1 persists, never generated when a caller only wants
     # the pass/fail findings (screenshots cost real time/space to keep).
     screenshots: dict[str, bytes] = field(default_factory=dict)
+    # v0.2 R4.1: with `offline_assets`, every request that is neither the
+    # local site nor a supplied asset is aborted and listed here.
+    blocked_requests: list[str] = field(default_factory=list)
+    # Results of `probe_script` per page (test/acceptance evidence only).
+    probes: list[object] = field(default_factory=list)
 
     @property
     def failures(self) -> list[BrowserQAFinding]:
@@ -191,11 +198,34 @@ def check_browser_qa_availability() -> tuple[bool, str | None]:
     return True, None
 
 
+def _offline_router(base_url: str, offline_assets: Mapping[str, bytes], blocked: list[str]) -> Callable[..., None]:
+    """v0.2 R4.1: the page may load only the local site and the business's
+    own assets (supplied by trusted code, never fetched from inside the
+    sandbox); everything else is aborted — defense in depth on top of the
+    sandbox's network namespace."""
+
+    def handle(route: Any) -> None:
+        url = route.request.url
+        if url.startswith(base_url + "/"):
+            route.continue_()
+        elif url in offline_assets:
+            content_type = mimetypes.guess_type(url.split("?", 1)[0])[0] or "application/octet-stream"
+            route.fulfill(status=200, body=offline_assets[url], headers={"content-type": content_type})
+        else:
+            if len(blocked) < 200:
+                blocked.append(url[:300])
+            route.abort()
+
+    return handle
+
+
 def run_browser_qa(
     files: dict[str, bytes],
     *,
     viewports: tuple[tuple[str, int, int], ...] = DEFAULT_VIEWPORTS,
     capture_screenshots: bool = False,
+    offline_assets: Mapping[str, bytes] | None = None,
+    probe_script: str | None = None,
 ) -> BrowserQAResult:
     """Runs the full check set at every viewport, plus one additional
     pass with `prefers-reduced-motion: reduce` emulated at the desktop
@@ -231,15 +261,23 @@ def run_browser_qa(
                     raise BrowserQAUnavailableError(
                         f"Chromium could not be launched — real browser/Visual QA is unavailable: {exc}"
                     ) from exc
+                context = browser.new_context()
+                if offline_assets is not None:
+                    context.route("**/*", _offline_router(base_url, offline_assets, result.blocked_requests))
                 try:
                     for name, width, height in viewports:
-                        page = browser.new_page(viewport={"width": width, "height": height})
+                        page = context.new_page()
+                        page.set_viewport_size({"width": width, "height": height})
                         result.findings.extend(_check_viewport(page, name=name, base_url=base_url))
+                        if probe_script is not None:
+                            page.wait_for_timeout(1500)
+                            result.probes.append(page.evaluate(probe_script))
                         if capture_screenshots:
                             result.screenshots[name] = page.screenshot(full_page=False)
                         page.close()
 
-                    reduced_motion_page = browser.new_page(viewport={"width": 1440, "height": 900})
+                    reduced_motion_page = context.new_page()
+                    reduced_motion_page.set_viewport_size({"width": 1440, "height": 900})
                     reduced_motion_page.emulate_media(reduced_motion="reduce")
                     result.findings.extend(
                         _check_viewport(reduced_motion_page, name="desktop-reduced-motion", base_url=base_url)

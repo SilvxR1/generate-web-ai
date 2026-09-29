@@ -55,8 +55,9 @@ from sqlalchemy.orm import Session
 from app.creative.director_orchestrator import domain_from_row
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError
-from app.creative.frontend_engine.build import rebuild_from_archive
+from app.creative.frontend_engine.build import inline_script_hashes, rebuild_from_archive
 from app.creative.frontend_engine.engine import FrontendEngineer
+from app.creative.frontend_engine.sandboxed_browser_qa import MAX_OFFLINE_ASSET_BYTES
 from app.creative.frontend_engine.visual_qa import run_visual_qa
 from app.creative.observability import log_pipeline_stage
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
@@ -76,10 +77,12 @@ from app.publishing.build import build_site
 from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
+from app.publishing.security_headers import generate_headers_file
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.truth_contract import TruthContractResult, validate_truth_contract
 from app.qa.validate import validate_site_config
+from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
 from app.repositories.website import WebsiteRepository
@@ -623,6 +626,77 @@ def create_generative_website_draft(
     return draft
 
 
+def judge_generative_candidate(
+    *,
+    draft: WebsiteDraft,
+    files: dict[str, bytes],
+    business_config: BusinessConfig,
+    business_truth: BusinessTruth,
+    artifact_storage: PrivateArtifactStorage,
+    api_base_url: str | None,
+) -> str | None:
+    """v0.2 R4.1: the trusted verdict on a candidate returned by an isolated
+    execution host — the same gates, in the same order and with the same
+    messages, as create_generative_website_draft's inline path. Returns
+    None when the draft is READY (artifact stored, SHA-256 recorded), else
+    the failed gate ("platform_contract" | "truth_contract" | "storage").
+
+    The candidate's own `_headers` (CSP) is discarded and re-derived here
+    from its HTML: security headers are never taken from the untrusted host.
+    """
+    files = {name: data for name, data in files.items() if name != "_headers"}
+    html = [data.decode("utf-8", errors="ignore") for name, data in files.items() if name.endswith(".html")]
+    files["_headers"] = generate_headers_file(script_hashes=inline_script_hashes(html), public_api_origin=api_base_url)
+    artifact = WebsiteArtifact(files=files, entry_point="index.html")
+
+    contract_result = validate_platform_contract(artifact.files, business_config=business_config)
+    issues = [f"[PlatformContract:{f.rule}] {f.message}" for f in contract_result.findings]
+    if not contract_result.passed:
+        draft.status = WebsiteDraftStatus.BUILD_FAILED
+        draft.build_error = "PlatformContract violation(s): " + "; ".join(
+            f.message for f in contract_result.blocking_violations
+        )
+        draft.validation_issues = issues or None
+        return "platform_contract"
+
+    truth_result = validate_truth_contract(artifact.files, business_truth=business_truth)
+    _log_truth_contract(truth_result, draft=draft, mode="blocking")
+    issues += [f"[TruthContract:{f.rule}] {f.description}" for f in truth_result.findings]
+    if not truth_result.passed:
+        draft.status = WebsiteDraftStatus.BUILD_FAILED
+        draft.build_error = "TruthContract violation(s): " + truth_result.summary()
+        draft.validation_issues = issues or None
+        return "truth_contract"
+
+    _promote_with_stored_artifact(draft=draft, artifact_storage=artifact_storage, artifact=artifact, issues=issues)
+    return None if draft.status is WebsiteDraftStatus.READY else "storage"
+
+
+def _visual_qa_assets(
+    session: Session, tenant_id: UUID, business_id: UUID, storage: StorageProvider
+) -> dict[str, bytes]:
+    """v0.2 R4.1: sandboxed Visual QA has no network, so the business's own
+    stored assets are handed in as bytes, keyed by the exact URL generated
+    pages embed (CreativeBriefAsset.url == BusinessAsset.storage_url).
+    Best effort per asset: one that can't be loaded simply shows up as a
+    broken image finding, never as a silent pass."""
+    assets: dict[str, bytes] = {}
+    total = 0
+    for asset in BusinessAssetRepository(session).list_for_business(tenant_id, business_id):
+        if asset.storage_key is None or asset.unavailable_reason is not None:
+            continue
+        try:
+            content = storage.load(asset.storage_key)
+        except Exception:  # noqa: BLE001 — surfaced as a broken-image finding instead
+            logger.warning("visual QA asset could not be loaded (asset_id=%s)", asset.id)
+            continue
+        total += len(content)
+        if total > MAX_OFFLINE_ASSET_BYTES:
+            break
+        assets[asset.storage_url] = content
+    return assets
+
+
 def run_visual_qa_for_draft(
     *,
     session: Session,
@@ -674,7 +748,12 @@ def run_visual_qa_for_draft(
         archive = storage.load(artifact_row.workspace_key)
         artifact = rebuild_from_archive(archive, business_id=str(business_id), api_base_url=api_base_url)
     try:
-        visual_result = run_visual_qa(artifact.files, business_id=str(business_id), storage=storage)
+        visual_result = run_visual_qa(
+            artifact.files,
+            business_id=str(business_id),
+            storage=storage,
+            offline_assets=_visual_qa_assets(session, tenant_id, business_id, storage),
+        )
     except BrowserQAUnavailableError as exc:
         # Never a silent skip/pass (P2.14's "no deterministic
         # substitution" rule extends here): the caller gets an explicit,

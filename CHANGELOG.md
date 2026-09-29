@@ -184,6 +184,22 @@ real-business pilot.
   - Proven by real malicious fixtures on local and CI hosts. Railway
     production feasibility is **unproven**, so the S0 gate stays OFF.
 
+- **R4.1: Production sandbox host decision.** A manual probe proved that
+  the Railway container runtime denies user, network and PID namespaces,
+  so Railway stays the control plane and untrusted execution moves to an
+  external host.
+  - Visual QA now runs generated JavaScript in Chromium inside the build
+    zone, with no network; the business's own assets are served offline.
+  - New provider-independent, dormant integration layer:
+    - job-scoped pull protocol;
+    - claim-only worker credential and per-job HMAC result token;
+    - worker executor, entrypoint and self-test;
+    - trusted candidate intake (SHA-256, archive shape, re-derived CSP,
+      PlatformContract, TruthContract, READY).
+  - Adds the host acceptance contract and `scripts/r4_host_acceptance.sh`.
+  - Recommended host: a single hardened KVM VM (not provisioned).
+  - The S0 gate stays OFF until a real host passes acceptance.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:
@@ -203,9 +219,10 @@ Kept visible, not resolved by this release transition:
   (`npm ci --ignore-scripts`, vetted lockfile) and disabled the generative
   path by default, but builds still have network, filesystem and process
   access as the API user. R4 closes this for hosts that can run its
-  bubblewrap build zone (verified locally and in CI); **still open for
-  production** until a worker host is chosen (R4 infrastructure decision).
-  Visual QA of generated JavaScript is still unrestricted network-wise.
+  bubblewrap build zone (verified locally and in CI). The Railway runtime
+  cannot host it (namespaces denied, R4.1 probe). **Still open for
+  production** until an external execution host passes the R4.1 acceptance
+  procedure. Visual QA is now inside the zone (R4.1).
 - Rollback of **historical** versions published before artifacts were
   recorded still rebuilds their SiteConfig (legacy compatibility, not
   exact-byte). Every version since S1 is artifact-backed and restored

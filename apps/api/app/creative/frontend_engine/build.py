@@ -249,7 +249,7 @@ def _inject_platform_consent(html: str) -> str:
     return html + PLATFORM_CONSENT_FRAGMENT  # No </body> (malformed AI output) — append rather than drop it.
 
 
-def _inline_script_hashes(html_files: list[str]) -> frozenset[str]:
+def inline_script_hashes(html_files: list[str]) -> frozenset[str]:
     """Same CSP `script-src 'sha256-...'` computation as
     app.publishing.build._inline_script_hashes, duplicated (not
     imported) since that's a private helper of a sibling module — kept
@@ -357,7 +357,7 @@ def build_generative_workspace(
     # The same api_base_url injected into every page's platform-config
     # above, so connect-src allows exactly what the SDK calls (A8.3.4-P0.2).
     files["_headers"] = generate_headers_file(
-        script_hashes=_inline_script_hashes(html_texts), public_api_origin=api_base_url
+        script_hashes=inline_script_hashes(html_texts), public_api_origin=api_base_url
     )
 
     return WebsiteArtifact(files=files, entry_point="index.html")
