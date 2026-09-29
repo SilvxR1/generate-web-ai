@@ -459,7 +459,15 @@ def publish_business_website(
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
 ) -> WebsiteStateResult:
-    """The one human-triggered action that turns a website *preview*
+    """LEGACY / INTERNAL (A8.4): Studio no longer calls this. Every
+    website — first site or redesign — now goes live through the
+    WebsiteDraft lifecycle (POST .../website-drafts -> preview -> approve
+    -> publish), which builds once and promotes the exact previewed
+    artifact. This route builds at publish time with no real preview; it
+    is kept only for backward compatibility and must not be wired into a
+    normal Studio flow again.
+
+    The one human-triggered action that turns a website *preview*
     into a real, live static site — never called automatically after
     analysis or business creation. `payload` is the exact SiteConfig
     Studio's own preview already computed via `generateSiteConfig()`
