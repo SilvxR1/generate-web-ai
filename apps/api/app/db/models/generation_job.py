@@ -42,6 +42,12 @@ class GenerationJob(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base
     draft_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("website_drafts.id", ondelete="SET NULL"), nullable=True
     )
+    # v0.2 R4.1: the job's build input — the generated SOURCE archive in
+    # private storage (produced trusted-side; the provider never runs on
+    # the execution host) and the public API origin the site calls.
+    source_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    api_base_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

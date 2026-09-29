@@ -68,6 +68,10 @@ def submit_job(
     business_id: uuid.UUID,
     idempotency_key: str,
     input_sha256: str,
+    draft_id: uuid.UUID | None = None,
+    source_key: str | None = None,
+    source_sha256: str | None = None,
+    api_base_url: str | None = None,
 ) -> GenerationJob:
     existing = session.scalar(
         select(GenerationJob).where(
@@ -85,6 +89,10 @@ def submit_job(
         input_sha256=input_sha256,
         status=GenerationJobStatus.QUEUED,
         attempts=0,
+        draft_id=draft_id,
+        source_key=source_key,
+        source_sha256=source_sha256,
+        api_base_url=api_base_url,
     )
     session.add(job)
     session.flush()
@@ -120,9 +128,22 @@ def claim(
     return job
 
 
-def succeed(job: GenerationJob, *, draft_id: uuid.UUID) -> None:
+def next_queued_job_id(session: Session) -> tuple[uuid.UUID, uuid.UUID] | None:
+    """(tenant_id, job_id) of the oldest QUEUED job with a build input —
+    for the platform-level execution host, which serves every tenant but
+    only ever receives one job's own input at a time."""
+    row = session.execute(
+        select(GenerationJob.tenant_id, GenerationJob.id)
+        .where(GenerationJob.status == GenerationJobStatus.QUEUED, GenerationJob.source_key.is_not(None))
+        .order_by(GenerationJob.created_at, GenerationJob.id)
+        .limit(1)
+    ).first()
+    return None if row is None else (row[0], row[1])
+
+
+def succeed(job: GenerationJob, *, draft_id: uuid.UUID | None = None) -> None:
     _transition(job, GenerationJobStatus.SUCCEEDED)
-    job.draft_id = draft_id
+    job.draft_id = draft_id or job.draft_id
     job.lease_expires_at = None
     job.finished_at = _now()
 

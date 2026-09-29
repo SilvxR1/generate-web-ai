@@ -68,6 +68,10 @@ class SandboxLimits:
     max_file_bytes: int = 256 * 1024**2  # RLIMIT_FSIZE: largest single file, incl. captured output
     tmp_bytes: int = 512 * 1024**2
     max_open_files: int = 4096
+    # Without a cgroup scope, memory falls back to RLIMIT_AS. Chromium
+    # reserves far more virtual address space than it uses, so Visual QA
+    # opts out; memory is then reported NOT enforced on such a host.
+    address_space_fallback: bool = True
 
 
 def _toolchain_roots() -> tuple[Path, ...]:
@@ -83,10 +87,19 @@ def _toolchain_roots() -> tuple[Path, ...]:
 class SandboxRunner:
     name = "abstract"
 
-    def run(self, argv: list[str], *, workspace: Path, env: dict[str, str], limits: SandboxLimits, step: str) -> None:
+    def run(
+        self,
+        argv: list[str],
+        *,
+        workspace: Path,
+        env: dict[str, str],
+        limits: SandboxLimits,
+        step: str,
+        ro_binds: tuple[tuple[str, str], ...] = (),
+    ) -> None:
         raise NotImplementedError
 
-    def limits_enforced(self) -> dict[str, bool]:
+    def limits_enforced(self, limits: SandboxLimits | None = None) -> dict[str, bool]:
         raise NotImplementedError
 
 
@@ -98,17 +111,26 @@ class BubblewrapRunner(SandboxRunner):
         self._systemd_run = systemd_run
         self._toolchains = _toolchain_roots()
 
-    def limits_enforced(self) -> dict[str, bool]:
+    def limits_enforced(self, limits: SandboxLimits | None = None) -> dict[str, bool]:
+        cgroup = self._systemd_run is not None
         return {
             "wall_timeout": True,
             "cpu": True,
             "file_size": True,
             "tmp_size": True,
-            "memory": True,  # cgroup MemoryMax, else RLIMIT_AS
-            "process_count": self._systemd_run is not None,
+            "memory": cgroup or (limits or SandboxLimits()).address_space_fallback,  # MemoryMax, else RLIMIT_AS
+            "process_count": cgroup,
         }
 
-    def command(self, argv: list[str], *, workspace: Path, env: dict[str, str], limits: SandboxLimits) -> list[str]:
+    def command(
+        self,
+        argv: list[str],
+        *,
+        workspace: Path,
+        env: dict[str, str],
+        limits: SandboxLimits,
+        ro_binds: tuple[tuple[str, str], ...] = (),
+    ) -> list[str]:
         cmd = [
             self._bwrap,
             "--unshare-all",
@@ -127,6 +149,8 @@ class BubblewrapRunner(SandboxRunner):
             cmd += ["--ro-bind-try", system_dir, system_dir]
         for root in self._toolchains:
             cmd += ["--ro-bind", str(root), str(root)]
+        for source, target in ro_binds:  # read-only, never the workspace's parent or a secret
+            cmd += ["--ro-bind", source, target]
         cmd += ["--proc", "/proc", "--dev", "/dev", "--size", str(limits.tmp_bytes), "--tmpfs", "/tmp"]
         cmd += ["--bind", str(workspace), SANDBOX_WORKSPACE, "--chdir", SANDBOX_WORKSPACE, "--", *argv]
         if self._systemd_run is None:
@@ -147,9 +171,18 @@ class BubblewrapRunner(SandboxRunner):
             *cmd,
         ]
 
-    def run(self, argv: list[str], *, workspace: Path, env: dict[str, str], limits: SandboxLimits, step: str) -> None:
-        cmd = self.command(argv, workspace=workspace, env=env, limits=limits)
-        use_rlimit_as = self._systemd_run is None
+    def run(
+        self,
+        argv: list[str],
+        *,
+        workspace: Path,
+        env: dict[str, str],
+        limits: SandboxLimits,
+        step: str,
+        ro_binds: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        cmd = self.command(argv, workspace=workspace, env=env, limits=limits, ro_binds=ro_binds)
+        use_rlimit_as = self._systemd_run is None and limits.address_space_fallback
 
         def _limit() -> None:  # in the child, before exec
             resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
