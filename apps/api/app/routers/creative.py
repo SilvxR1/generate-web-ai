@@ -52,6 +52,7 @@ from app.dependencies import (
     require_generative_builds_enabled,
 )
 from app.domain.business_config import BusinessConfig, CreativeConfig
+from app.domain.business_truth import derive_business_truth
 from app.domain.creative import build_creative_brief
 from app.domain.creative.budget import BudgetExceededError, CreativeBudget
 from app.domain.enums import (
@@ -1382,6 +1383,13 @@ def create_generative_website_draft_route(
 
     assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
     brief = build_creative_brief(business_config=config, assets=assets)
+    # v0.2 R1: the generation's only factual input — deterministic, from
+    # stored data (available assets + visible reviews), never AI-derived.
+    business_truth = derive_business_truth(
+        business_config=config,
+        assets=brief.available_assets,
+        reviews=BusinessReviewRepository(session).list_for_business(tenant_id, business_id),
+    )
     api_base_url = _public_base_url(request)
 
     try:
@@ -1395,6 +1403,7 @@ def create_generative_website_draft_route(
             artifact_storage=artifact_storage,
             assets=brief.available_assets,
             api_base_url=api_base_url,
+            business_truth=business_truth,
         )
     except GenerativeDraftError as exc:
         raise _draft_error(exc) from exc

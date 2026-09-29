@@ -129,6 +129,17 @@ real-business pilot.
   historical versions keep a legacy SiteConfig rebuild, which is not
   exact-byte.
 
+- **R1: Business Truth.** `app.domain.business_truth` is a deterministic,
+  provider-independent representation of what the platform knows:
+  identity, description, services, contact, location, hours, legal, real
+  vs generated assets, the real logo or none, visible reviews with
+  provenance, and no unsupported claims. The experimental generative
+  engine's only factual input is now a `BUSINESS TRUTH` block with explicit
+  no-fabrication rules, and its legal pages reach parity with the legacy
+  ones (legal name, registered address and more; missing items shown as
+  "not provided"). Generated presentation is never promoted into Business
+  Truth. The Truth Contract (output validation) is not implemented yet.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:

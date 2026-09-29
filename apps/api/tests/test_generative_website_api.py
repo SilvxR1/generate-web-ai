@@ -94,7 +94,9 @@ class _FakeFrontendEngineer(FrontendEngineer):
         platform_contract_version,
         business_id,
         api_base_url=None,
+        business_truth=None,
     ):
+        self.last_business_truth = business_truth
         html = (
             '<html><head><title>T</title><meta name="description" content="d">'
             '<meta name="viewport" content="width=device-width">'
@@ -194,8 +196,10 @@ def client(session, monkeypatch: pytest.MonkeyPatch):
     app.dependency_overrides[get_storage_provider] = lambda: storage
     app.dependency_overrides[get_private_artifact_storage] = lambda: PrivateArtifactStorage(private)
     app.dependency_overrides[get_creative_director] = lambda: _FakeDirector()
-    app.dependency_overrides[get_frontend_engineer] = lambda: _FakeFrontendEngineer()
+    engineer = _FakeFrontendEngineer()
+    app.dependency_overrides[get_frontend_engineer] = lambda: engineer
     test_client = TestClient(app)
+    test_client.engineer = engineer  # type: ignore[attr-defined]
     test_client.public_storage = storage  # type: ignore[attr-defined]
     test_client.private_storage = private  # type: ignore[attr-defined]
     try:
@@ -368,3 +372,54 @@ def test_visual_qa_endpoint_runs_a_real_browser_pass_and_persists_results(
     )
     assert after.json()["visual_qa_state"]["passed"] is True
     assert set(after.json()["screenshot_urls"]) == {"desktop", "tablet", "mobile"}
+
+
+def test_generative_route_feeds_the_engine_business_truth_with_only_visible_real_reviews(
+    client: TestClient, tenant: Tenant, business_with_config, session
+):
+    """v0.2 R1: the generative draft route derives BusinessTruth from stored
+    data (config + available assets + visible reviews) and that is the
+    engine's factual input — hidden reviews never reach it, nothing is
+    synthesized."""
+    from app.db.models.business_review import BusinessReview
+    from app.domain.business_truth import BusinessTruth
+    from app.domain.enums import ReviewSource
+
+    session.add_all(
+        [
+            BusinessReview(
+                tenant_id=tenant.id,
+                business_id=business_with_config.id,
+                source=ReviewSource.MANUAL,
+                author_name="Ana",
+                rating=5,
+                body="Quedó perfecto.",
+                is_visible=True,
+            ),
+            BusinessReview(
+                tenant_id=tenant.id,
+                business_id=business_with_config.id,
+                source=ReviewSource.GOOGLE,
+                body="Hidden by the owner.",
+                is_visible=False,
+            ),
+        ]
+    )
+    session.flush()
+    [direction] = client.post(
+        f"/businesses/{business_with_config.id}/creative-directions", json={}, headers=_headers(tenant.id)
+    ).json()
+
+    response = client.post(
+        f"/businesses/{business_with_config.id}/website-drafts/generative",
+        json={"creative_direction_id": direction["id"]},
+        headers=_headers(tenant.id),
+    )
+    assert response.status_code == 201, response.text
+
+    truth = client.engineer.last_business_truth
+    assert isinstance(truth, BusinessTruth)
+    assert truth.identity.name == EXAMPLE_REFORMA_VALENCIA_CONFIG.business_profile.name
+    assert [(r.body, r.author_name, r.rating, r.source) for r in truth.reviews] == [
+        ("Quedó perfecto.", "Ana", 5, ReviewSource.MANUAL)
+    ]

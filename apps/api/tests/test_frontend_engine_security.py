@@ -4,8 +4,11 @@ dependency allowlist) or test_higgsfield_cli_director.py (subprocess
 argv safety): prompt-injection framing and tenant-spoofing resistance.
 """
 
+import json
+
 from app.creative.frontend_engine.prompts import build_system_prompt, build_user_message
 from app.domain.business_config import BusinessConfig, BusinessProfile
+from app.domain.business_truth import derive_business_truth
 from app.domain.creative.direction import (
     ContentStrategy,
     CreativeConcept,
@@ -59,9 +62,12 @@ def test_prompt_injection_attempt_in_business_description_is_carried_as_inert_te
             name="Test Co", slug="test-co", industry=BusinessVertical.OTHER, description=malicious_description
         )
     )
-    message = build_user_message(business_config=config, creative_direction=_direction(), assets=[])
+    message = build_user_message(
+        business_truth=derive_business_truth(business_config=config), creative_direction=_direction()
+    )
 
-    assert malicious_description in message  # delivered verbatim, as data
+    # v0.2 R1: delivered verbatim as a JSON string value inside BUSINESS TRUTH, as data.
+    assert json.dumps(malicious_description)[1:-1] in message
     # The system prompt itself (the actual instruction channel) never
     # contains the injected text — it's confined to the user message.
     assert malicious_description not in build_system_prompt()

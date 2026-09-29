@@ -18,6 +18,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict
 
 from app.domain.business_config import BusinessConfig
+from app.domain.business_truth import BusinessTruth
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.direction import CreativeDirection
 from app.publishing.publisher import WebsiteArtifact
@@ -58,8 +59,14 @@ class FrontendEngineer(ABC):
         platform_contract_version: str,
         business_id: str,
         api_base_url: str | None = None,
+        business_truth: BusinessTruth | None = None,
     ) -> FrontendEngineResult:
-        """`business_config` is the sole source of factual claims (never
+        """v0.2 R1: `business_truth` (app.domain.business_truth) is the ONLY
+        factual input a generation may draw on; implementations derive it
+        from `business_config` + `assets` when the caller did not supply one
+        (the draft route supplies it, including visible reviews).
+
+        `business_config` is the sole source of factual claims (never
         `creative_direction`, which carries only intent — see
         CreativeDirection.constraints for the explicit allow/forbid
         boundary this call must respect); `assets` are the business's
