@@ -22,7 +22,7 @@ docstring for the full "why"; this module no longer touches
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
@@ -31,13 +31,15 @@ from app.db.models.website import Website
 from app.db.models.website_version import WebsiteVersion
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import DeployTarget, WebsiteStatus
-from app.publishing.artifact_store import short_hash
+from app.publishing.artifact_store import ArtifactError, short_hash, store_version_artifact
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact, WebsitePublisher
 from app.qa.platform_contract import validate_platform_contract
 from app.repositories.website import WebsiteRepository
 from app.schemas.site_config import SiteConfigPayload
+from app.storage.errors import StorageProviderError
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +112,8 @@ def publish_website(
     site_config: SiteConfigPayload,
     publisher: WebsitePublisher,
     business_config: BusinessConfig | None = None,
+    artifact_storage: PrivateArtifactStorage | None = None,
+    rolled_back_from_version_id: UUID | None = None,
 ) -> WebsiteStateResult:
     """`publisher` is already-validated-as-configured (see
     app.dependencies.get_website_publisher) and injected rather than
@@ -161,6 +165,8 @@ def publish_website(
         publisher=publisher,
         config=site_config.model_dump(mode="json"),
         produce_artifact=_build,
+        artifact_storage=artifact_storage,
+        rolled_back_from_version_id=rolled_back_from_version_id,
     )
 
 
@@ -172,8 +178,10 @@ def publish_prebuilt_artifact(
     artifact: WebsiteArtifact,
     config: dict,
     publisher: WebsitePublisher,
-    source_website_draft_id: UUID,
+    source_website_draft_id: UUID | None,
     artifact_sha256: str,
+    artifact_key: str,
+    rolled_back_from_version_id: UUID | None = None,
 ) -> WebsiteStateResult:
     """A8.3.4.1 build once / promote: deploys an already-built,
     already-validated and already-integrity-verified WebsiteArtifact
@@ -198,6 +206,8 @@ def publish_prebuilt_artifact(
         produce_artifact=lambda: artifact,
         source_website_draft_id=source_website_draft_id,
         artifact_sha256=artifact_sha256,
+        artifact_key=artifact_key,
+        rolled_back_from_version_id=rolled_back_from_version_id,
     )
 
 
@@ -211,13 +221,41 @@ def _deploy_and_record(
     produce_artifact: Callable[[], WebsiteArtifact],
     source_website_draft_id: UUID | None = None,
     artifact_sha256: str | None = None,
+    artifact_key: str | None = None,
+    artifact_storage: PrivateArtifactStorage | None = None,
+    rolled_back_from_version_id: UUID | None = None,
 ) -> WebsiteStateResult:
+    """v0.2 S1: the version recorded here is artifact-backed whenever the
+    artifact is durable — a promoted artifact brings its own key/hash, and
+    a freshly built one (the legacy SiteConfig path) is stored first when
+    `artifact_storage` is given. Storing happens BEFORE any deploy: a
+    storage failure deploys nothing and changes nothing."""
     repo = WebsiteRepository(session)
     website = repo.get_by_business(tenant_id, business_id)
     site_id = website_project_name(business_id)
+    version_id = uuid4()
 
     try:
         artifact = produce_artifact()
+        if artifact_key is None and artifact_storage is not None:
+            try:
+                stored = store_version_artifact(
+                    artifact_storage,
+                    tenant_id=tenant_id,
+                    business_id=business_id,
+                    version_id=version_id,
+                    artifact=artifact,
+                )
+            except (ArtifactError, StorageProviderError, OSError, ValueError) as exc:
+                logger.error(
+                    "website_version_artifact_store_failed business=%s error=%s", business_id, type(exc).__name__
+                )
+                raise WebsitePublishError(
+                    "The website could not be stored safely, so nothing was published. Please try again.",
+                    code="website_artifact_store_failed",
+                    status_code=503,
+                ) from exc
+            artifact_key, artifact_sha256 = stored.storage_key, stored.sha256
         published = publisher.publish(site_id=site_id, artifact=artifact)
     except WebsitePublisherError as exc:
         # One choke point for every publish-pipeline failure (A6.1):
@@ -279,6 +317,7 @@ def _deploy_and_record(
     # aware `website.deployed_at` this function just set into a naive
     # one before this function even returns.
     version = WebsiteVersion(
+        id=version_id,
         tenant_id=tenant_id,
         business_id=business_id,
         website_id=website.id,
@@ -288,6 +327,8 @@ def _deploy_and_record(
         published_at=website.deployed_at,
         source_website_draft_id=source_website_draft_id,
         artifact_sha256=artifact_sha256,
+        artifact_key=artifact_key,
+        rolled_back_from_version_id=rolled_back_from_version_id,
     )
     session.add(version)
     session.flush([version])

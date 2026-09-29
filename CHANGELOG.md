@@ -115,6 +115,20 @@ generation workspace · R7 WebsiteSource → validated WebsiteArtifact ·
 R8 Studio generative workflow · R9 shadow benchmark vs legacy · R10 controlled
 real-business pilot.
 
+### Progress (v0.2.0 in development)
+
+- **S0: Secure Generative Build** (#59). Generative builds no longer
+  inherit the API environment. Installs are deterministic
+  (`npm ci --ignore-scripts`, vetted lockfile), and the experimental
+  generative path is off by default and refused server-side.
+- **S1: Artifact-backed Exact Rollback.** Rollback restores a version's
+  exact stored, SHA-verified WebsiteArtifact, with no rebuild, generator or
+  provider. Every failure fails closed, and a rollback is recorded as a new
+  version with `rolled_back_from_version_id`. `WebsiteVersion.artifact_key`
+  gives every new version durable artifact provenance. Pre-artifact
+  historical versions keep a legacy SiteConfig rebuild, which is not
+  exact-byte.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:
@@ -135,9 +149,10 @@ Kept visible, not resolved by this release transition:
   path by default, but builds still have network, filesystem and process
   access as the API user. Closed only by the isolated generation worker
   (R6).
-- Version rollback republishes a stored SiteConfig through a fresh build
-  (`app.publishing.versions.rollback_to_version` → `publish_website`), not a
-  stored artifact — coupled to SiteConfig; flagged for R0.
+- Rollback of **historical** versions published before artifacts were
+  recorded still rebuilds their SiteConfig (legacy compatibility, not
+  exact-byte). Every version since S1 is artifact-backed and restored
+  exactly.
 
 ## [0.1.x] — Validated platform foundation / legacy block-generation architecture
 

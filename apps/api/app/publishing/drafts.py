@@ -444,7 +444,7 @@ def publish_website_draft(
     """
     draft = _require_approved(session, tenant_id, business_id, draft_id)
     artifact = _load_verified_artifact(draft, artifact_storage)
-    assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
+    assert draft.artifact_sha256 is not None and draft.artifact_key is not None  # by _load_verified_artifact
     result = publish_prebuilt_artifact(
         session=session,
         tenant_id=tenant_id,
@@ -454,6 +454,7 @@ def publish_website_draft(
         publisher=publisher,
         source_website_draft_id=draft.id,
         artifact_sha256=draft.artifact_sha256,
+        artifact_key=draft.artifact_key,
     )
     _mark_published(session, draft, preview_publisher)
     return result
@@ -676,7 +677,7 @@ def publish_generative_website_draft(
         )
 
     artifact = _load_verified_artifact(draft, artifact_storage)
-    assert draft.artifact_sha256 is not None  # guaranteed by _load_verified_artifact
+    assert draft.artifact_sha256 is not None and draft.artifact_key is not None  # by _load_verified_artifact
     direction_id = artifact_row.creative_direction_id
     config_snapshot = {
         "engine": "generative",
@@ -694,6 +695,7 @@ def publish_generative_website_draft(
         publisher=publisher,
         source_website_draft_id=draft.id,
         artifact_sha256=draft.artifact_sha256,
+        artifact_key=draft.artifact_key,
     )
     _mark_published(session, draft, preview_publisher)
     return result

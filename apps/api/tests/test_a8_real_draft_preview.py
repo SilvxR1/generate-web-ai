@@ -822,4 +822,5 @@ def test_preview_migration_is_additive_reversible_and_the_single_head(tmp_path: 
     assert "preview_deployment_id" not in columns()
     alembic("upgrade", "head")
     assert "preview_created_at" in columns()
-    assert alembic("heads").split() == ["e6f9a2b3c4d5", "(head)"]
+    heads = alembic("heads").split()
+    assert heads.count("(head)") == 1  # still a single head (later revisions build on this one)

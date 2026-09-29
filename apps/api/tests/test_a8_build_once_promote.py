@@ -710,30 +710,35 @@ def test_api_hash_mismatch_returns_a_safe_owner_facing_error(
 # --- 10. Rollback / version republish (explicitly unchanged) ------------------
 
 
-def test_rollback_still_republishes_from_site_config(
+def test_rollback_restores_the_promoted_artifact_without_rebuilding(
     session: Session, tenant: Tenant, business: Business, storage: PrivateArtifactStorage, builds: BuildCounter
 ):
-    """Documented debt: rollback is operational recovery and still
-    rebuilds from WebsiteVersion.site_config via publish_website — it is
-    unaffected by this slice, and its versions carry no draft/hash."""
+    """v0.2 S1 (was a documented debt here): rollback of a promoted version
+    redeploys its exact stored artifact — no rebuild — and is recorded as a
+    new version pointing back at the restored one."""
     draft = _create_and_approve(session, tenant, business, storage)
     _publish(session, tenant, business, draft, RecordingPublisher(), storage)
     [promoted] = _versions(session, tenant, business)
 
+    publisher = RecordingPublisher()
     result = rollback_to_version(
         session=session,
         tenant_id=tenant.id,
         business_id=business.id,
         version_id=promoted.id,
-        publisher=RecordingPublisher(),
+        publisher=publisher,
+        artifact_storage=storage,
     )
     assert result.status is WebsiteStatus.LIVE
-    assert builds.calls == 2  # the rollback's rebuild — never the draft publish
+    assert builds.calls == 1  # the draft's one build — the rollback built nothing
+    assert artifact_sha256(publisher.artifacts[0]) == promoted.artifact_sha256
     versions = _versions(session, tenant, business)
     assert len(versions) == 2
     rollback_version = next(v for v in versions if v.id != promoted.id)
-    assert rollback_version.source_website_draft_id is None
-    assert rollback_version.artifact_sha256 is None
+    assert rollback_version.rolled_back_from_version_id == promoted.id
+    assert rollback_version.source_website_draft_id == promoted.source_website_draft_id
+    assert rollback_version.artifact_sha256 == promoted.artifact_sha256
+    assert rollback_version.artifact_key == promoted.artifact_key == draft.artifact_key
 
 
 # --- 18. Migration ------------------------------------------------------------
