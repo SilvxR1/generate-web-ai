@@ -1,0 +1,181 @@
+# Changelog
+
+This file is the **canonical product release record** for generate-web-ai.
+
+The repository has no other authoritative product version: every workspace
+`package.json` and `apps/api/pyproject.toml` carry the placeholder `0.0.1`
+(private, unpublished packages), and `apps/api/app/config.py` holds the API's
+own runtime version string reported by `/health`. Those are deliberately not
+bumped to mark a product release — see
+[Versioning](docs/v0.2-generative-website-architecture.md#versioning) in the
+v0.2 architecture document for what executable versioning would require.
+
+## [0.2.0] — Generative Website Architecture
+
+**Status: In development.** This section marks the *start* of the v0.2.0
+line. Nothing below is implemented yet; production still runs the v0.1.x
+architecture unchanged.
+
+Full plan: [`docs/v0.2-generative-website-architecture.md`](docs/v0.2-generative-website-architecture.md).
+
+### Why
+
+Production-style testing (the Nexo Reformas onboarding test) confirmed that
+the v0.1.x block-based generator produces functional, operationally safe
+websites, but their visual composition remains recognizably
+template/block-constrained: even when a creative direction changes palette,
+typography, density, section order, hero variant, gallery layout or surfaces,
+the result still reads as a composition of predefined blocks.
+
+v0.2.0 replaces the **creative generation and website-source architecture** so
+website design can be substantially more unique, while preserving every
+platform guarantee validated during v0.1.x. It is not a platform rewrite.
+
+### Architectural direction
+
+From:
+
+```
+Business → CreativeDirection → predefined blocks → SiteConfig → Astro → WebsiteArtifact
+```
+
+Toward:
+
+```
+Business Truth → Creative Director → Creative Blueprint → generative Website Builder
+→ free-form website source → Platform Adapter / SDK → PlatformContract + TruthContract
+→ WebsiteArtifact
+```
+
+The downstream lifecycle stays as it is:
+
+```
+WebsiteArtifact → private storage → WebsiteDraft → real preview → explicit approval
+→ publish exact bytes → WebsiteVersion
+```
+
+### Architectural boundary
+
+> **Everything before WebsiteArtifact may evolve.
+> Everything after WebsiteArtifact should remain stable.**
+
+The migration replaces *business/creative input → website source generation*
+and preserves *WebsiteArtifact → Preview → Approve → Publish → Operate*.
+
+### Safety principle
+
+> **The AI controls how the website looks.
+> Generate Web AI controls what the website may claim, what platform
+> capabilities it must contain, and how it is validated, previewed, published
+> and operated.**
+
+### Preserve
+
+These capabilities must survive the migration (tracked per capability in the
+Feature Preservation Matrix):
+
+- authentication / authorization and tenant isolation
+- business lifecycle and real business information
+- persistent assets and asset provenance (real logo, real customer photos)
+- no fabricated reviews, testimonials, projects or claims
+- leads, email delivery, n8n automation, WhatsApp CTAs
+- analytics, consent, SEO, legal pages, reviews architecture
+- custom domains, health/readiness, monitoring, backup/recovery
+- WebsiteDraft lifecycle, Build Once / Promote, immutable WebsiteArtifact,
+  SHA-256 integrity validation
+- real preview, Cloudflare Access preview protection, preview side-effect
+  suppression
+- explicit approval, exact-byte publishing, WebsiteVersion history, rollback
+- failure safety, provider and cost tracking
+
+### Creative architecture
+
+Predefined blocks/templates are **no longer intended to be the primary creative
+architecture**. The current generator (`packages/website-generator`,
+`packages/blocks`, `SiteConfig`) remains available as the
+**LEGACY / BASIC / FALLBACK** builder during the migration and is not deleted.
+The future primary path allows substantially freer website composition.
+
+### Provider independence
+
+No provider — Higgsfield included — may become a hard architectural
+dependency. Creative direction and website building sit behind provider
+abstractions:
+
+- `CreativeDirectorProvider`: Internal, Higgsfield, future providers
+- `WebsiteBuilderProvider`: LegacyBlockBuilder, GenerativeWebsiteBuilder,
+  future builders
+
+### Roadmap
+
+R0 Architecture freeze + Feature Preservation Matrix · R1 Business Truth /
+Asset Manifest · R2 Creative Blueprint v2 · R3 WebsiteBuilderProvider ·
+R4 Platform SDK · R5 PlatformContract v2 + TruthContract · R6 isolated
+generation workspace · R7 WebsiteSource → validated WebsiteArtifact ·
+R8 Studio generative workflow · R9 shadow benchmark vs legacy · R10 controlled
+real-business pilot.
+
+### Known debts carried into v0.2
+
+Kept visible, not resolved by this release transition:
+
+- `A8_PREVIEW_CLEANUP_DEBT` — previews of abandoned drafts accumulate (behind
+  Cloudflare Access).
+- `A8_STORAGE_PRIVACY_DEBT` — business assets are served from public R2
+  (`r2.dev`) URLs; scope to be reviewed.
+- `A8_TEST_DISCOVERY_DEBT` — open test-discovery follow-up.
+- `A8_WWW_DOMAIN_DIAGNOSTIC` — `www.` of an attached custom domain does not
+  resolve (seen on the Cositas pilot).
+- Operator/user access is provisioned by an untracked local script
+  (`apps/api/scripts/bootstrap_operator.py`), not a reproducible,
+  documented flow.
+- Version rollback republishes a stored SiteConfig through a fresh build
+  (`app.publishing.versions.rollback_to_version` → `publish_website`), not a
+  stored artifact — coupled to SiteConfig; flagged for R0.
+
+## [0.1.x] — Validated platform foundation / legacy block-generation architecture
+
+**Status: In production.** v0.1.x built and validated the operational platform
+around website generation. It is the foundation v0.2 keeps — its limitation is
+a visual-differentiation ceiling in the block-based creative engine, not the
+platform.
+
+Validated in v0.1.x (see the git history for each milestone's PR):
+
+- **Business lifecycle** — briefing → AI analysis → reviewed BusinessConfig →
+  business; edit, delete, status visibility.
+- **Authentication & authorization (A2)** — session auth, CSRF, explicit
+  TenantAccess; tenant isolation on every business-scoped endpoint.
+- **Security remediation (A3.1)** — SVG upload, SSRF redirect handling,
+  paid-provider rate limits.
+- **Persistent business assets** — upload, batch, replace, verify, provenance.
+- **Creative generation (P2.x)** — provider abstraction, internal and
+  Higgsfield providers, brand intelligence, visual scene planning, Visual QA,
+  factual safety, provider/cost tracking; an experimental generative
+  frontend-engine track.
+- **Deterministic website generation (A8.1–A8.3)** — WebsiteCreativeDirection
+  contract, internal director, content distribution, header/navigation.
+- **Lead capture, email, n8n, WhatsApp, analytics (P0 / A4 / A8.3.4-P0)** —
+  server-side lead persistence with n8n dispatch after the fact; CSP allowing
+  the public API.
+- **Consent, SEO and legal integration**; **PlatformContract** gate on every
+  build.
+- **Publishing** — Cloudflare Pages, WebsiteVersion history, rollback, custom
+  domains, website health and production readiness.
+- **Monitoring & alerting (A6.1)**, backups / point-in-time recovery drill.
+- **Build Once / Promote (A8.3.4.1)** — one build per WebsiteDraft, immutable
+  WebsiteArtifact in private storage, SHA-256 integrity verification, publish
+  promotes the exact bytes.
+- **Real draft preview (A8.3.4.2)** — the stored artifact deployed to a
+  dedicated, Cloudflare Access-protected preview project; server-side preview
+  lead/event suppression; Studio "Open real preview".
+- **Test network isolation** — frontend tests fail closed on any unmocked
+  network request.
+- **First website artifact promotion (A8.4)** — the first website goes live
+  through the same lifecycle as a redesign:
+
+  ```
+  Generate → WebsiteDraft → Build Once → Real Preview → Approve → Publish exact bytes
+  ```
+
+  This downstream lifecycle is what v0.2 must preserve.
