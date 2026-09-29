@@ -427,3 +427,52 @@ def test_generative_route_feeds_the_engine_business_truth_with_only_visible_real
     assert [(r.body, r.author_name, r.rating, r.source) for r in truth.reviews] == [
         ("Quedó perfecto.", "Ana", 5, ReviewSource.MANUAL)
     ]
+
+
+def test_truth_contract_blocks_a_generated_site_that_invents_facts(
+    client: TestClient, tenant: Tenant, business_with_config, session
+):
+    """v0.2 R3 artifact gate: a generation that passes PlatformContract but
+    expands BusinessTruth becomes BUILD_FAILED — no stored artifact, never
+    READY, never approvable/publishable — and the engine is NOT called
+    again to "fix" it."""
+    from app.dependencies import get_frontend_engineer
+    from app.main import app
+
+    calls: list[int] = []
+
+    class _LyingEngineer(_FakeFrontendEngineer):
+        def generate(self, **kwargs):
+            calls.append(1)
+            result = super().generate(**kwargs)
+            files = dict(result.artifact.files)
+            files["index.html"] = files["index.html"].replace(
+                b"<p>Real content.</p>", b"<p>Real content. 15 a\xc3\xb1os de experiencia.</p>"
+            )
+            return result.model_copy(update={"artifact": WebsiteArtifact(files=files)})
+
+    from app.dependencies import get_rate_limiter
+    from app.security.rate_limit import InMemoryRateLimiter
+
+    app.dependency_overrides[get_frontend_engineer] = lambda: _LyingEngineer()
+    app.dependency_overrides[get_rate_limiter] = lambda: InMemoryRateLimiter()  # fresh budget for this test
+    [direction] = client.post(
+        f"/businesses/{business_with_config.id}/creative-directions", json={}, headers=_headers(tenant.id)
+    ).json()
+    response = client.post(
+        f"/businesses/{business_with_config.id}/website-drafts/generative",
+        json={"creative_direction_id": direction["id"]},
+        headers=_headers(tenant.id),
+    )
+    assert response.status_code == 201, response.text
+    draft = response.json()
+    assert draft["status"] == "build_failed"
+    assert draft["build_error"].startswith("TruthContract violation(s): truth.claims.years_experience")
+    assert "15 años" not in draft["build_error"]  # safe: rule ids, never content
+    assert calls == [1]  # no automatic AI repair loop
+    assert not [k for k in client.private_storage.objects if k.startswith("website-drafts/")]  # never stored
+    approve = client.post(
+        f"/businesses/{business_with_config.id}/website-drafts/{draft['id']}/approve", headers=_headers(tenant.id)
+    )
+    assert approve.status_code == 409  # never approvable
+    app.dependency_overrides.pop(get_rate_limiter, None)

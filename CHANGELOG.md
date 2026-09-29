@@ -158,6 +158,19 @@ real-business pilot.
   analytics, lead attribution, and preview suppression of its exact
   requests. Legacy builds pass the same contract. Nothing is removed.
 
+- **R3: Truth Contract** (`app.qa.truth_contract`, 1.0.0). "Generated
+  websites may transform presentation, but may not expand business truth."
+  It is a deterministic, zero-provider validation of every rendered page
+  against BusinessTruth, run after PlatformContract and before storage.
+  - It **blocks** generative drafts: contact destinations, legal
+    identifiers, fabricated reviews/ratings/counts, numeric claims, 24/7,
+    rankings, certifications/awards, street addresses and asset identity.
+  - Ambiguous marketing is advisory. BASIC drafts record findings as
+    advisory only.
+  - Nothing is re-validated on rollback, and there's no AI repair loop.
+  - Arbitrary semantic claims and JS-rendered content are documented as
+    not yet enforceable.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:

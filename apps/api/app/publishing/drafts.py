@@ -62,7 +62,7 @@ from app.creative.observability import log_pipeline_stage
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
-from app.domain.business_truth import BusinessTruth
+from app.domain.business_truth import BusinessTruth, derive_business_truth
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.image_qa import direction_is_approval_eligible
 from app.domain.enums import GenerationEngine, WebsiteDraftStatus
@@ -78,6 +78,7 @@ from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
+from app.qa.truth_contract import TruthContractResult, validate_truth_contract
 from app.qa.validate import validate_site_config
 from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
@@ -162,6 +163,21 @@ def _promote_with_stored_artifact(
     draft.artifact_key = stored.storage_key
     draft.artifact_sha256 = stored.sha256
     draft.status = WebsiteDraftStatus.READY
+
+
+def _log_truth_contract(result: TruthContractResult, *, draft: WebsiteDraft, mode: str) -> None:
+    """Safe metadata only — rule ids and counts, never content or truth."""
+    logger.info(
+        "truth_contract draft=%s business=%s version=%s mode=%s passed=%s blocking=%d advisory=%d rules=%s",
+        draft.id,
+        draft.business_id,
+        result.version,
+        mode,
+        result.passed,
+        len(result.violations),
+        len(result.warnings),
+        ",".join(sorted({f.rule for f in result.findings})) or "-",
+    )
 
 
 def _load_verified_artifact(draft: WebsiteDraft, artifact_storage: PrivateArtifactStorage) -> WebsiteArtifact:
@@ -335,6 +351,7 @@ def create_website_draft(
     artifact_storage: PrivateArtifactStorage,
     creative_generation_id: UUID | None = None,
     business_config: BusinessConfig | None = None,
+    business_truth: BusinessTruth | None = None,
 ) -> WebsiteDraft:
     """Persists `site_config` as a new draft, then runs the real build
     (app.publishing.build.build_site — the same `astro build` subprocess
@@ -394,6 +411,15 @@ def create_website_draft(
             )
             draft.validation_issues = issues or None
             return draft
+
+    # v0.2 R3: BASIC/legacy output is truth-checked in ADVISORY mode —
+    # findings are recorded on the draft, never block it (the legacy
+    # generator can still fall back to a generated logo asset; see docs,
+    # R3). Generative drafts are blocked instead.
+    if business_truth is not None:
+        truth_result = validate_truth_contract(artifact.files, business_truth=business_truth)
+        _log_truth_contract(truth_result, draft=draft, mode="advisory")
+        issues += [f"[TruthContract advisory:{f.rule}] {f.description}" for f in truth_result.findings]
 
     _promote_with_stored_artifact(draft=draft, artifact_storage=artifact_storage, artifact=artifact, issues=issues)
     return draft
@@ -572,6 +598,20 @@ def create_generative_website_draft(
         draft.build_error = "PlatformContract violation(s): " + "; ".join(
             f.message for f in contract_result.blocking_violations
         )
+        draft.validation_issues = issues or None
+        return draft
+
+    # v0.2 R3: TruthContract — the generated output may transform
+    # presentation but never expand BusinessTruth. A blocking violation
+    # means BUILD_FAILED: the artifact is never stored, never READY, never
+    # approvable. Deterministic; no provider is called again to "fix" it.
+    truth = business_truth or derive_business_truth(business_config=business_config, assets=assets)
+    truth_result = validate_truth_contract(result.artifact.files, business_truth=truth)
+    _log_truth_contract(truth_result, draft=draft, mode="blocking")
+    issues += [f"[TruthContract:{f.rule}] {f.description}" for f in truth_result.findings]
+    if not truth_result.passed:
+        draft.status = WebsiteDraftStatus.BUILD_FAILED
+        draft.build_error = "TruthContract violation(s): " + truth_result.summary()
         draft.validation_issues = issues or None
         return draft
 

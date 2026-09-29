@@ -835,6 +835,19 @@ def create_website_draft_route(
     the same contract a GENERATIVE draft is held to."""
     _get_business(session, tenant_id, business_id)
     business_config = _load_business_config(session, tenant_id, business_id)
+    # v0.2 R3: BASIC drafts are truth-checked in advisory mode.
+    business_truth = (
+        derive_business_truth(
+            business_config=business_config,
+            assets=build_creative_brief(
+                business_config=business_config,
+                assets=BusinessAssetRepository(session).list_for_business(tenant_id, business_id),
+            ).available_assets,
+            reviews=BusinessReviewRepository(session).list_for_business(tenant_id, business_id),
+        )
+        if business_config is not None
+        else None
+    )
     return create_website_draft(
         session=session,
         tenant_id=tenant_id,
@@ -843,6 +856,7 @@ def create_website_draft_route(
         site_config=payload.site_config,
         artifact_storage=artifact_storage,
         creative_generation_id=payload.creative_generation_id,
+        business_truth=business_truth,
     )
 
 
