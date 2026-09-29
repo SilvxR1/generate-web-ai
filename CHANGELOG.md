@@ -140,6 +140,24 @@ real-business pilot.
   "not provided"). Generated presentation is never promoted into Business
   Truth. The Truth Contract (output validation) is not implemented yet.
 
+- **R2: Generative Platform Feature Parity.** "No platform capability may
+  require a predefined visual block; platform contracts constrain behavior
+  and truth, not composition." Consent is now platform-owned for
+  generative sites: an injected banner shares the legacy hooks, and the SDK
+  gains `gwaConsent.set/open`. PlatformContract 1.1.0 adds
+  renderer-independent checks:
+  - consent controls and override protection;
+  - legal-page reachability and internal links;
+  - no external scripts;
+  - runtime-config shape;
+  - authoritative WhatsApp destinations.
+
+  The prompt now states behavior, not layout. A deterministic free-form
+  fixture is built for real, passes the contract, becomes a
+  WebsiteArtifact, and is tested in a real browser: consent-gated
+  analytics, lead attribution, and preview suppression of its exact
+  requests. Legacy builds pass the same contract. Nothing is removed.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:

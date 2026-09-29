@@ -109,6 +109,10 @@ class _FakeFrontendEngineer(FrontendEngineer):
             # browser Visual QA pass over this exact stored artifact
             # sees no page errors.
             "<script>function submitLead(){}window.gwaConsent={};window.gwaAnalytics={};</script>"
+            # v0.2 R2: consent controls + legal links, as every real build renders.
+            '<div id="gwa-consent-banner" hidden><button id="gwa-consent-reject">R</button>'
+            '<button id="gwa-consent-accept">A</button></div>'
+            '<footer><a href="/privacy">P</a><a href="/terms">T</a><a href="/cookies">C</a></footer>'
             "</body></html>"
         )
         legal = '<html><head><title>L</title><meta name="description" content="d"></head><body>l</body></html>'

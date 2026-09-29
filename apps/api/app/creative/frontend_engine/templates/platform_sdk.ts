@@ -242,7 +242,11 @@ export function getWhatsAppUrl(phoneNumber: string, message?: string): string {
 // as the primary authoring API.
 declare global {
   interface Window {
-    gwaConsent?: { isGranted(category: string): boolean; open(): void };
+    gwaConsent?: {
+      isGranted(category: string): boolean;
+      set(categories: Partial<Record<ConsentCategory, boolean>>): void;
+      open(): void;
+    };
     gwaAnalytics?: { track(eventType: AnalyticsEventType, metadata?: Record<string, string>): void };
   }
 }
@@ -269,7 +273,14 @@ if (isBrowser) {
 
   trackEvent("page_view");
 
-  window.gwaConsent = { isGranted: (category) => getConsent(category as ConsentCategory), open: () => {} };
+  // v0.2 R2: `set`/`open` are what the PLATFORM-INJECTED consent banner
+  // (build.py's _inject_platform_consent) drives — generated code never
+  // implements consent behavior itself.
+  window.gwaConsent = {
+    isGranted: (category) => getConsent(category as ConsentCategory),
+    set: (categories) => setConsent(categories),
+    open: () => window.dispatchEvent(new CustomEvent("gwa-consent-open")),
+  };
   window.gwaAnalytics = { track: trackEvent };
 }
 

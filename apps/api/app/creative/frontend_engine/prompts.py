@@ -32,18 +32,29 @@ total) under src/ or public/ only. You may NOT produce package.json, astro.confi
 tsconfig.json (the platform provides those). You may NOT produce any file under src/pages/api/ \
 — this site must stay fully static; call the real backend only through the platform SDK.
 
-REQUIRED STRUCTURE:
-- src/layouts/Layout.astro — accepts `Props { title: string; description: string }`, renders \
-`<slot />`, imports "../lib/platform-sdk" (already provided — do not redefine it), includes a \
-visible cookie-consent banner UI (checkboxes/buttons calling `setConsent(...)` from the SDK; \
-necessary is always on, nothing else preselected), and a footer with links to /privacy, /terms, \
-/cookies (these three pages already exist — do not create them).
-- src/pages/index.astro — the homepage. Must include a real, working contact/lead form with the \
-attribute `data-gwa-lead-form` on the <form> tag, and call `submitLead(fields)` from \
-"../lib/platform-sdk" on submit (prevent the default native submit). Every visible link/button \
-must do something real: scroll to a real in-page id, navigate to a real page, call `submitLead`, \
-open a real `getWhatsAppUrl(...)` link (only if BUSINESS TRUTH `contact.whatsapp` is not null), or \
-a real tel:/mailto: link (only for a phone/email present in BUSINESS TRUTH). NEVER use href="#" with no behavior.
+PLATFORM REQUIREMENTS — these describe BEHAVIOR, not layout. You are free to design the visual \
+composition; no section order, block, component name, grid or navigation style is required.
+- src/layouts/Layout.astro — a technical integration point (the platform's legal pages render \
+through it): accepts `Props { title: string; description: string }`, sets <title> and \
+<meta name="description"> from them, includes <meta name="viewport">, renders `<slot />`, and \
+loads the platform SDK in the browser on every page with `<script>import "../lib/platform-sdk";</script>` \
+(already provided — do not redefine it; this is what makes consent-gated analytics work on every \
+page). Everything else about it is yours.
+- src/pages/index.astro — the homepage. Somewhere (your choice of placement and design) it has a \
+real contact/lead form with the attribute `data-gwa-lead-form` on the <form> tag that calls \
+`submitLead(fields)` from "../lib/platform-sdk" on submit (prevent the default native submit). \
+Field names the platform understands: name, email, phone, message, subject, consent.
+- Legal pages /privacy, /terms and /cookies already exist (platform-authored; do not create \
+them). Link to all three from the homepage, anywhere and in any style.
+- Consent: the platform injects its own cookie-consent banner into every page. Do NOT build a \
+consent banner or re-implement consent. You may place a "Cookie settings" link or button with \
+the attribute `data-open-consent-preferences`, and may theme the banner only by setting the CSS \
+custom properties --gwa-consent-bg, --gwa-consent-fg, --gwa-consent-accent, \
+--gwa-consent-accent-fg and --gwa-consent-radius (never style #gwa-consent-banner directly).
+- Every visible link/button must do something real: scroll to a real in-page id, navigate to a \
+real page, call `submitLead`, open a real `getWhatsAppUrl(...)` link (only if BUSINESS TRUTH \
+`contact.whatsapp` is not null), or a real tel:/mailto: link (only for a phone/email present in \
+BUSINESS TRUTH). NEVER use href="#" with no behavior. Never load scripts from other origins.
 - src/styles/global.css (optional but recommended) — your bespoke visual language.
 - At most one more file (a component or a second page) if genuinely useful.
 

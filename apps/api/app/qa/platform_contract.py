@@ -34,7 +34,11 @@ from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource, PlatformContractSeverity
 from app.publishing.public_origin import canonical_public_origin, public_origin_problem
 
-PLATFORM_CONTRACT_VERSION = "1.0.0"
+# 1.1.0 (v0.2 R2): renderer-independent capability checks added — consent
+# controls, legal-page reachability, internal links, external scripts,
+# runtime-config safety and authoritative WhatsApp destinations. Every rule
+# checks behavior/wiring, never composition.
+PLATFORM_CONTRACT_VERSION = "1.1.0"
 
 _HREF_HASH_ONLY = re.compile(r'href\s*=\s*"#"')
 _HREF_ANCHOR = re.compile(r'href\s*=\s*"#([\w-]+)"')
@@ -69,6 +73,20 @@ _META_CSP = re.compile(
     r'<meta[^>]*\bhttp-equiv\s*=\s*"Content-Security-Policy"[^>]*\bcontent\s*=\s*"([^"]*)"', re.IGNORECASE
 )
 _DEFAULT_PORTS = {"http": 80, "https": 443}
+# v0.2 R2 renderer-independent hooks (all pre-existing platform hooks — the
+# legacy CookieConsentBanner.astro and the generative injected banner share
+# them): consent controls by id, legal pages by path.
+_CONSENT_BANNER_ID = re.compile(r'\bid\s*=\s*"gwa-consent-banner"')
+_CONSENT_ACCEPT_ID = re.compile(r'\bid\s*=\s*"gwa-consent-accept"')
+_CONSENT_REJECT_ID = re.compile(r'\bid\s*=\s*"gwa-consent-reject"')
+_PLATFORM_CONSENT_MARKER = "data-gwa-platform-consent"
+_STYLE_BLOCK = re.compile(r"<style([^>]*)>(.*?)</style>", re.DOTALL | re.IGNORECASE)
+_ANCHOR_HREF = re.compile(r'<a\b[^>]*\bhref\s*=\s*"([^"]*)"', re.IGNORECASE)
+_EXTERNAL_SCRIPT = re.compile(r'<script\b[^>]*\bsrc\s*=\s*"(?:https?:)?//', re.IGNORECASE)
+_WHATSAPP_NUMBER = re.compile(r"wa\.me/(\d+)")
+# The only keys a rendered runtime config may carry (both engines):
+# public, non-secret identifiers the browser needs to reach the public API.
+_RUNTIME_CONFIG_KEYS = frozenset({"businessId", "apiBaseUrl"})
 
 
 class PlatformContractFinding(BaseModel):
@@ -441,6 +459,166 @@ def _check_reduced_motion(script_text: str) -> list[PlatformContractFinding]:
     return []
 
 
+def _entry_html(html_files: dict[str, str]) -> str | None:
+    return html_files.get("index.html")
+
+
+def _check_consent_controls(files: dict[str, bytes], html_files: dict[str, str]) -> list[PlatformContractFinding]:
+    """v0.2 R2: a consent *marker* is not enough — the entry page must carry
+    working consent controls (the banner plus accept AND reject), whoever
+    rendered them (legacy CookieConsentBanner.astro or the generative
+    engine's post-build platform banner). The platform-injected banner may
+    be themed only through `--gwa-consent-*` CSS variables: generated CSS
+    that targets the banner, or a second banner, is refused."""
+    findings: list[PlatformContractFinding] = []
+    entry = _entry_html(html_files)
+    if entry is not None and not (
+        _CONSENT_BANNER_ID.search(entry) and _CONSENT_ACCEPT_ID.search(entry) and _CONSENT_REJECT_ID.search(entry)
+    ):
+        findings.append(
+            PlatformContractFinding(
+                rule="missing_consent_controls",
+                severity=PlatformContractSeverity.BLOCKING,
+                message="The entry page has no consent controls (gwa-consent-banner with accept and reject).",
+                location="index.html",
+            )
+        )
+    injected = any(_PLATFORM_CONSENT_MARKER in html for html in html_files.values())
+    if not injected:
+        return findings
+    overridden = [path for path, html in html_files.items() if len(_CONSENT_BANNER_ID.findall(html)) > 1]
+    for path, html in html_files.items():
+        # Every <style> except the platform banner's own (marked with the
+        # platform attribute) must leave the banner alone.
+        generated_css = "\n".join(
+            css for attrs, css in _STYLE_BLOCK.findall(html) if _PLATFORM_CONSENT_MARKER not in attrs
+        )
+        if "gwa-consent-banner" in generated_css or _PLATFORM_CONSENT_MARKER in generated_css:
+            overridden.append(path)
+    for path, content in files.items():
+        if path.endswith(".css") and "gwa-consent" in content.decode("utf-8", errors="ignore"):
+            overridden.append(path)
+    if overridden:
+        findings.append(
+            PlatformContractFinding(
+                rule="consent_banner_overridden",
+                severity=PlatformContractSeverity.BLOCKING,
+                message="Generated code redefines or restyles the platform consent banner; it may only be themed "
+                "via --gwa-consent-* CSS variables.",
+                location=sorted(set(overridden))[0],
+            )
+        )
+    return findings
+
+
+def _check_legal_links(files: dict[str, bytes], html_files: dict[str, str]) -> list[PlatformContractFinding]:
+    """v0.2 R2: legal pages must be discoverable — the entry page links to
+    each legal page that exists, wherever the design places the links."""
+    entry = _entry_html(html_files)
+    if entry is None:
+        return []
+    hrefs = {href.split("#")[0].split("?")[0].rstrip("/") or "/" for href in _ANCHOR_HREF.findall(entry)}
+    findings = []
+    for slug in _LEGAL_SLUGS:
+        if f"{slug}/index.html" not in files and f"{slug}.html" not in files:
+            continue  # missing_legal_page reports it
+        if not ({f"/{slug}", f"/{slug}.html", f"/{slug}/index.html", slug} & hrefs):
+            findings.append(
+                PlatformContractFinding(
+                    rule="legal_page_unlinked",
+                    severity=PlatformContractSeverity.BLOCKING,
+                    message=f"The entry page has no link to the /{slug} legal page.",
+                    location="index.html",
+                )
+            )
+    return findings
+
+
+def _page_exists(files: dict[str, bytes], path: str) -> bool:
+    clean = path.split("#")[0].split("?")[0]
+    if clean in ("", "/"):
+        return "index.html" in files
+    relative = clean.lstrip("/")
+    stripped = relative.rstrip("/")
+    return any(
+        candidate in files for candidate in (relative, stripped, f"{stripped}/index.html", f"{stripped}.html")
+    )
+
+
+def _check_internal_links(files: dict[str, bytes], html_files: dict[str, str]) -> list[PlatformContractFinding]:
+    """v0.2 R2: every root-relative link resolves to a built page/file —
+    navigation is validated by destination, never by structure."""
+    findings = []
+    for path, html in html_files.items():
+        for href in _ANCHOR_HREF.findall(html):
+            if not href.startswith("/") or href.startswith("//"):
+                continue
+            if not _page_exists(files, href):
+                findings.append(
+                    PlatformContractFinding(
+                        rule="broken_internal_link",
+                        severity=PlatformContractSeverity.BLOCKING,
+                        message=f'The link "{href}" does not resolve to any page or file in the build.',
+                        location=path,
+                    )
+                )
+    return findings
+
+
+def _check_external_scripts(html_files: dict[str, str]) -> list[PlatformContractFinding]:
+    """v0.2 R2: third-party scripts are never loaded (the platform CSP would
+    block them anyway, silently breaking whatever depended on them)."""
+    return [
+        PlatformContractFinding(
+            rule="external_script_source",
+            severity=PlatformContractSeverity.BLOCKING,
+            message="The page loads a script from an external origin.",
+            location=path,
+        )
+        for path, html in html_files.items()
+        if _EXTERNAL_SCRIPT.search(html)
+    ]
+
+
+def _check_runtime_config_safety(html_files: dict[str, str]) -> list[PlatformContractFinding]:
+    """v0.2 R2: the rendered runtime config carries only public identifiers
+    (businessId, apiBaseUrl) — never anything else, secrets included."""
+    for config in _runtime_configs(html_files):
+        unexpected = sorted(set(config) - _RUNTIME_CONFIG_KEYS)
+        if unexpected:
+            return [
+                PlatformContractFinding(
+                    rule="unsafe_runtime_config",
+                    severity=PlatformContractSeverity.BLOCKING,
+                    message=f"The rendered runtime config carries unexpected keys: {', '.join(unexpected)}.",
+                )
+            ]
+    return []
+
+
+def _check_whatsapp_destinations(all_text: str, *, business_config: BusinessConfig) -> list[PlatformContractFinding]:
+    """v0.2 R2: every wa.me link targets an authoritative WhatsApp number —
+    the enabled WhatsApp channel or the owner's listed WhatsApp contact —
+    never one inferred from a phone number or invented."""
+    allowed = set()
+    whatsapp = business_config.whatsapp
+    if whatsapp and whatsapp.enabled and whatsapp.phone_number:
+        allowed.add(re.sub(r"\D", "", whatsapp.phone_number))
+    contact = business_config.business_profile.contact
+    if contact and contact.whatsapp:
+        allowed.add(re.sub(r"\D", "", contact.whatsapp))
+    unauthorized = sorted({number for number in _WHATSAPP_NUMBER.findall(all_text) if number not in allowed})
+    if not unauthorized:
+        return []
+    return [
+        PlatformContractFinding(
+            rule="unauthorized_whatsapp_link",
+            severity=PlatformContractSeverity.BLOCKING,
+            message="A WhatsApp link targets a number that is not the business's authoritative WhatsApp contact.",
+        )
+    ]
+
+
 def validate_platform_contract(files: dict[str, bytes], *, business_config: BusinessConfig) -> PlatformContractResult:
     """Runs the full PlatformContract scan over one build's output files
     — called on both engines' output (app.publishing.drafts for
@@ -463,5 +641,12 @@ def validate_platform_contract(files: dict[str, bytes], *, business_config: Busi
     findings += _check_whatsapp(all_text, business_config=business_config)
     findings += _check_seo(html_files)
     findings += _check_reduced_motion(script_text)
+    # v0.2 R2 — renderer-independent capability checks.
+    findings += _check_consent_controls(files, html_files)
+    findings += _check_legal_links(files, html_files)
+    findings += _check_internal_links(files, html_files)
+    findings += _check_external_scripts(html_files)
+    findings += _check_runtime_config_safety(html_files)
+    findings += _check_whatsapp_destinations(all_text, business_config=business_config)
 
     return PlatformContractResult(findings=findings)

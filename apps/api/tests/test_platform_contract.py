@@ -31,6 +31,16 @@ _LEGAL_PAGES = {
 }
 
 
+# v0.2 R2: what every real build of either engine renders — consent
+# controls (legacy CookieConsentBanner.astro / generative injected banner
+# share these ids) and links to the legal pages.
+_PLATFORM_CHROME = (
+    b'<div id="gwa-consent-banner" hidden><button id="gwa-consent-reject">R</button>'
+    b'<button id="gwa-consent-accept">A</button></div>'
+    b'<footer><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/cookies">Cookies</a></footer>'
+)
+
+
 def _config(**overrides) -> BusinessConfig:
     profile = BusinessProfile(
         name="Reforma Valencia", slug="reforma-valencia", industry=BusinessVertical.HOME_RENOVATION
@@ -54,7 +64,8 @@ def _compliant_index_html() -> bytes:
         b'<script type="application/json" id="lead-submission-config">'
         b'{"businessId":"biz-1","apiBaseUrl":"https://api.example.com"}</script>'
         b'<script>var apiBaseUrl = "https://api.example.com";</script>'
-        b"</body></html>"
+        + _PLATFORM_CHROME
+        + b"</body></html>"
     )
 
 
@@ -224,6 +235,7 @@ def _index_with_runtime(api_base_url: str | None, *, business_id: str = "biz-1",
         + ("<form data-gwa-lead-form>...</form>" if form else "")
         + f'<script type="application/json" id="lead-submission-config">{config}</script>'
         + f'<script>var apiBaseUrl = "{api_base_url or ""}";</script>'
+        + _PLATFORM_CHROME.decode()
         + "</body></html>"
     ).encode()
 
