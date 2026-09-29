@@ -177,6 +177,7 @@ def test_network_is_denied_local_services_external_hosts_metadata_and_dns(runner
             + _connect_js("127.0.0.1", port, "local_api")
             + _connect_js("1.1.1.1", 443, "external")
             + _connect_js("169.254.169.254", 80, "metadata")
+            + _connect_js("10.0.0.1", 443, "internal_network")
             + "await new Promise(r=>require('dns').lookup('example.com',e=>{out.dns=e?e.code:'RESOLVED';r()}));"
             + "out.ifaces=Object.keys(require('os').networkInterfaces());save()})()",
         )

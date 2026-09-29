@@ -492,7 +492,7 @@ def test_worker_endpoints_require_the_narrow_credentials(api, monkeypatch):
 def test_the_worker_refuses_to_claim_work_on_a_host_that_cannot_isolate(monkeypatch, capsys):
     monkeypatch.setattr(sandbox_module.shutil, "which", lambda name: None)
     monkeypatch.setattr(worker_main.httpx, "Client", lambda *a, **k: pytest.fail("must not contact the API"))
-    assert worker_main.main([]) == 1
+    assert worker_main.main([]) == worker_main.EX_CONFIG
     assert '"ready": false' in capsys.readouterr().out
 
 

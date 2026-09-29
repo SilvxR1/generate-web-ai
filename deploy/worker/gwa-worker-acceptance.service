@@ -1,0 +1,41 @@
+# v0.2 R4.2 — production acceptance, run in the EXACT environment of
+# gwa-worker.service (same user, same hardening, same paths).
+#
+#   sudo systemctl start gwa-worker-acceptance.service
+#   journalctl -u gwa-worker-acceptance.service -o cat --no-pager | tail -40
+#
+# Must end with R4_HOST_ACCEPTANCE=PASS before the worker is ever started.
+# Makes no call to the Railway API, the provider or any paid service.
+# Keep the hardening block identical to gwa-worker.service.
+
+[Unit]
+Description=Generate Web AI worker host acceptance (v0.2 R4.2)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=gwa-worker
+Group=gwa-worker
+WorkingDirectory=/opt/gwa-worker/current/apps/api
+Environment=PLAYWRIGHT_BROWSERS_PATH=/opt/gwa-worker/ms-playwright
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/opt/gwa-worker/current/apps/api/.venv/bin/python scripts/r4_host_acceptance.py
+TimeoutStartSec=3600
+
+StateDirectory=gwa-worker
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectClock=yes
+LockPersonality=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+UMask=0077
+MemoryMax=2G
+TasksMax=512

@@ -54,6 +54,7 @@ def claim_job(
         verify_worker_token(_bearer(authorization), expected_sha256=token_hash)
     except WorkerAuthError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED) from exc
+    intake.expire_lost(session)  # a crashed worker's job fails here, never stays RUNNING/BUILDING
     claimed = intake.claim_next(
         session, artifact_storage=artifact_storage, asset_storage=asset_storage, signing_key=signing_key
     )

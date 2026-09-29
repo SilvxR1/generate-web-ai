@@ -100,7 +100,7 @@ class _RecordingRun(SandboxRunner):
         self.calls.append((list(args), dict(env)))
         return subprocess.CompletedProcess(args, 0, "", "")
 
-    def run(self, argv, *, workspace, env, limits, step):
+    def run(self, argv, *, workspace, env, limits, step, ro_binds=()):
         self.calls.append((list(argv), dict(env)))
         dist = Path(workspace) / "dist"
         dist.mkdir(exist_ok=True)

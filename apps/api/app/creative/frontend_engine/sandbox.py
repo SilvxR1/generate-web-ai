@@ -68,6 +68,9 @@ class SandboxLimits:
     max_file_bytes: int = 256 * 1024**2  # RLIMIT_FSIZE: largest single file, incl. captured output
     tmp_bytes: int = 512 * 1024**2
     max_open_files: int = 4096
+    # cgroup CPU bandwidth for the whole job tree (with a cgroup scope);
+    # RLIMIT_CPU above still bounds each process's total CPU time.
+    cpu_quota_percent: int = 200
     # Without a cgroup scope, memory falls back to RLIMIT_AS. Chromium
     # reserves far more virtual address space than it uses, so Visual QA
     # opts out; memory is then reported NOT enforced on such a host.
@@ -149,10 +152,13 @@ class BubblewrapRunner(SandboxRunner):
             cmd += ["--ro-bind-try", system_dir, system_dir]
         for root in self._toolchains:
             cmd += ["--ro-bind", str(root), str(root)]
-        for source, target in ro_binds:  # read-only, never the workspace's parent or a secret
-            cmd += ["--ro-bind", source, target]
         cmd += ["--proc", "/proc", "--dev", "/dev", "--size", str(limits.tmp_bytes), "--tmpfs", "/tmp"]
-        cmd += ["--bind", str(workspace), SANDBOX_WORKSPACE, "--chdir", SANDBOX_WORKSPACE, "--", *argv]
+        cmd += ["--bind", str(workspace), SANDBOX_WORKSPACE]
+        # After the workspace bind, so a target inside /workspace (e.g. the
+        # prepared node_modules) overlays it read-only. Never a secret.
+        for source, target in ro_binds:
+            cmd += ["--ro-bind", source, target]
+        cmd += ["--chdir", SANDBOX_WORKSPACE, "--", *argv]
         if self._systemd_run is None:
             return cmd
         return [
@@ -167,6 +173,8 @@ class BubblewrapRunner(SandboxRunner):
             "MemorySwapMax=0",
             "-p",
             f"TasksMax={limits.max_processes}",
+            "-p",
+            f"CPUQuota={limits.cpu_quota_percent}%",
             "--",
             *cmd,
         ]

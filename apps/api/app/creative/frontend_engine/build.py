@@ -58,7 +58,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from app.creative.frontend_engine.sandbox import SandboxError, SandboxLimits, SandboxRunner, detect_runner
+from app.creative.frontend_engine.dependencies import DependencyPreparationError, verify_prepared_dependencies
+from app.creative.frontend_engine.sandbox import (
+    SANDBOX_WORKSPACE,
+    SandboxError,
+    SandboxLimits,
+    SandboxRunner,
+    detect_runner,
+)
 from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build_package_json, vetted_lockfile
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace
 from app.publishing.errors import WebsitePublisherError
@@ -302,10 +309,23 @@ def build_generative_workspace(
     business_id: str,
     api_base_url: str | None = None,
     runner: SandboxRunner | None = None,
+    prepared_dependencies: Path | None = None,
 ) -> WebsiteArtifact:
+    """`prepared_dependencies` (R4.2, the execution host): a node_modules
+    tree installed ONCE by trusted code from the vetted lockfile
+    (app.creative.frontend_engine.dependencies) and mounted READ-ONLY into
+    the build zone — no per-job install, no registry access at job time,
+    nothing generated code can modify for the next job."""
     if not (workspace / "package.json").is_file():
         raise GenerativeBuildError(f"{workspace} has no package.json — write_manifest must run before building.")
     _verify_lockfile(workspace)
+    ro_binds: tuple[tuple[str, str], ...] = ()
+    if prepared_dependencies is not None:
+        try:
+            node_modules = verify_prepared_dependencies(prepared_dependencies)
+        except DependencyPreparationError as exc:
+            raise GenerativeBuildError(str(exc)) from exc
+        ro_binds = ((str(node_modules), f"{SANDBOX_WORKSPACE}/node_modules"),)
     try:
         runner = runner or detect_runner()  # fail closed BEFORE installing anything
     except SandboxError as exc:
@@ -314,15 +334,16 @@ def build_generative_workspace(
     toolchain_dir = Path(tempfile.mkdtemp(prefix="gwa-toolchain-"))
     try:
         env = generative_build_env(toolchain_dir)
-        logger.info("frontend_engine npm ci started")
-        _run(
-            ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
-            cwd=workspace,
-            env=env,
-            timeout=_INSTALL_TIMEOUT_SECONDS,
-            step="npm ci",
-        )
-        logger.info("frontend_engine npm ci completed")
+        if prepared_dependencies is None:
+            logger.info("frontend_engine npm ci started")
+            _run(
+                ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+                cwd=workspace,
+                env=env,
+                timeout=_INSTALL_TIMEOUT_SECONDS,
+                step="npm ci",
+            )
+            logger.info("frontend_engine npm ci completed")
         logger.info("frontend_engine astro build started (sandbox=%s)", runner.name)
         try:
             runner.run(
@@ -331,6 +352,7 @@ def build_generative_workspace(
                 env=sandbox_build_env(env),
                 limits=_BUILD_LIMITS,
                 step="astro build",
+                ro_binds=ro_binds,
             )
         except SandboxError as exc:
             raise GenerativeBuildError(str(exc)) from exc
