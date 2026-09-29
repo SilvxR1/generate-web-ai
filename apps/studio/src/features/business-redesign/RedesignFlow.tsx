@@ -7,12 +7,15 @@ import {
   approveWebsiteDraft,
   createCreativeGeneration,
   createWebsiteDraft,
+  previewWebsiteDraft,
   publishWebsiteDraft,
   type BusinessAsset,
   type CreatedBusiness,
   type WebsiteDraft,
   type WebsiteState,
 } from "../../lib/api";
+import { RealPreviewAction } from "../business-preview/RealPreviewAction";
+import { CONTENT_SUMMARY_HINT } from "../business-preview/realPreview";
 import { SiteConfigPreview } from "../business-preview/SiteConfigPreview";
 import { MODE_LABELS, proposalMode, summarizeDirection } from "./directionSummary";
 
@@ -63,8 +66,10 @@ interface RedesignFlowProps {
  *
  * Generate -> Preview -> Approve -> Publish is preserved exactly:
  * everything before handlePublish below only ever calls read/propose
- * endpoints (creative-generations, website-drafts, approve) — none of
- * which touch the live website. Only handlePublish calls POST
+ * endpoints (creative-generations, website-drafts, preview, approve) —
+ * none of which touch the live website. A8.3.4.2b: "Preview" is the
+ * draft's REAL built website (RealPreviewAction, new tab); the React
+ * SiteConfigPreview is only a secondary "Content summary". Only handlePublish calls POST
  * .../website-drafts/{id}/publish, the one call that can change
  * production. */
 export function RedesignFlow({ business, tenantId, assets, onPublished, onClose }: RedesignFlowProps) {
@@ -287,15 +292,19 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
 
       {step === "proposal" && draft && (
         <div className="redesign-flow__proposal">
-          <h3>Proposal preview</h3>
+          <h3>Your proposal</h3>
           {proposalDirection && (
             <p className="redesign-flow__mode">
               Redesign type: <strong>{MODE_LABELS[proposalMode(proposalDirection)]}</strong>
             </p>
           )}
           <p className="banner banner--warning redesign-flow__preview-state" role="status">
-            <strong>This is a preview.</strong> Your live website has not changed.
+            <strong>This is a proposal.</strong> Your live website has not changed.
           </p>
+
+          {(draft.status === "ready" || draft.status === "approved") && (
+            <RealPreviewAction requestPreview={() => previewWebsiteDraft(business.id, draft.id, tenantId)} />
+          )}
 
           {proposalDirection && (
             <section className="redesign-flow__changes" aria-labelledby="redesign-what-changed">
@@ -317,7 +326,11 @@ export function RedesignFlow({ business, tenantId, assets, onPublished, onClose 
           )}
 
           {draft.site_config ? (
-            <SiteConfigPreview siteConfig={draft.site_config} />
+            <details className="content-summary">
+              <summary>Content summary</summary>
+              <p className="field-hint">{CONTENT_SUMMARY_HINT}</p>
+              <SiteConfigPreview siteConfig={draft.site_config} />
+            </details>
           ) : (
             <p className="banner banner--error">{BUILD_FAILED_MESSAGE}</p>
           )}

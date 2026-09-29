@@ -17,6 +17,7 @@ import {
   listCreativeGenerations,
   listCreativeProviders,
   listWebsiteDrafts,
+  previewWebsiteDraft,
   publishWebsiteDraft,
   replaceBusinessAsset,
   updateCreativeConfig,
@@ -252,7 +253,7 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
         }
       />
 
-      <h3>Generated preview</h3>
+      <h3>Generated proposals</h3>
       <WebsiteDraftsPanel
         drafts={drafts.data}
         isLoading={drafts.isLoading}
@@ -266,6 +267,7 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
             return updated;
           })
         }
+        onPreview={(draftId) => previewWebsiteDraft(businessId, draftId, tenantId)}
         onPublish={(draftId) =>
           publishWebsiteDraft(businessId, draftId, tenantId).then((state) => {
             setDrafts((prev) => ({

@@ -115,8 +115,8 @@ export function WebsitePublish({ siteConfig, websiteState, isLoadingWebsiteState
         <div className="publish-confirm">
           <p className="banner__title">Confirm publication</p>
           <p className="activation-confirm__warning">
-            This will make this business's website publicly reachable at a live URL, using the content shown in the
-            preview above. Make sure it's ready before continuing.
+            This will make this business's website publicly reachable at a live URL, using the content shown
+            above. Make sure it's ready before continuing.
           </p>
           <div className="proposal-actions">
             <button type="button" onClick={() => setUi({ kind: "idle" })}>

@@ -184,7 +184,7 @@ describe("RedesignFlow", () => {
     await goToConfirmStep(user, "Refresh the current design");
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
 
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     const generationCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/creative-generations"));
     expect(generationCall).toBeDefined();
@@ -204,7 +204,7 @@ describe("RedesignFlow", () => {
     await goToConfirmStep(user, "Create a new design direction");
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
 
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     const generationCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/creative-generations"));
     const [, init] = generationCall as [string, RequestInit];
@@ -226,7 +226,7 @@ describe("RedesignFlow", () => {
     await goToConfirmStep(user);
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
 
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     const draftCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/website-drafts"));
     expect(draftCall).toBeDefined();
@@ -247,7 +247,7 @@ describe("RedesignFlow", () => {
     await goToConfirmStep(user);
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
 
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
     expect(screen.getByText(/your live website has not changed/i)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/publish"))).toBe(false);
     expect(onPublished).not.toHaveBeenCalled();
@@ -261,7 +261,7 @@ describe("RedesignFlow", () => {
 
     await goToConfirmStep(user);
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft({ status: "approved", approved_at: "2026-01-01T00:01:00Z" })));
     await user.click(screen.getByRole("button", { name: "Use this design" }));
@@ -280,7 +280,7 @@ describe("RedesignFlow", () => {
 
     await goToConfirmStep(user);
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft({ status: "approved", approved_at: "2026-01-01T00:01:00Z" })));
     await user.click(screen.getByRole("button", { name: "Use this design" }));
@@ -321,7 +321,7 @@ describe("RedesignFlow", () => {
 
     await goToConfirmStep(user);
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft({ status: "approved", approved_at: "x" })));
     await user.click(screen.getByRole("button", { name: "Use this design" }));
@@ -406,7 +406,7 @@ describe("RedesignFlow", () => {
 
     await goToConfirmStep(user, "Create a new design direction");
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
 
     const draftCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/website-drafts"));
     const body = JSON.parse((draftCall as [string, RequestInit])[1].body as string);
@@ -467,7 +467,7 @@ describe("RedesignFlow — what changed (A8.2.5)", () => {
     await user.click(await screen.findByText(choice));
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await user.click(screen.getByRole("button", { name: "Generate proposal" }));
-    await waitFor(() => expect(screen.getByText("Proposal preview")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
     const draftCall = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/website-drafts")).at(-1);
     const siteConfig = JSON.parse((draftCall as [string, RequestInit])[1].body as string).site_config;
     const panel = screen.getByRole("region", { name: "What changed" });
@@ -540,7 +540,7 @@ describe("RedesignFlow — what changed (A8.2.5)", () => {
     await generate("Create a new design direction", NEW_DIRECTION);
 
     const state = screen.getByRole("status");
-    expect(state.textContent).toBe("This is a preview. Your live website has not changed.");
+    expect(state.textContent).toBe("This is a proposal. Your live website has not changed.");
     const preserved = screen.getByText(/Your business information and logo are unchanged/);
     expect(preserved.textContent).toContain("only your real photos are used");
     expect(preserved.textContent).toContain("none are deleted");
@@ -592,5 +592,85 @@ describe("RedesignFlow — what changed (A8.2.5)", () => {
     expect(details.open).toBe(false);
     await user.click(summary);
     expect(details.open).toBe(true);
+  });
+});
+
+// A8.3.4.2b: the proposal's primary inspection action is the REAL built
+// website (new tab); the React summary is a secondary "Content summary".
+// Opening the real preview never approves or publishes.
+describe("RedesignFlow real preview", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const onPublished = vi.fn();
+  const PREVIEW = {
+    preview_url: "https://1a2b3c4d.gwa-draft-previews.pages.dev/",
+    created_at: "2026-09-29T00:00:00Z",
+    expires_at: "2026-10-06T00:00:00Z",
+  };
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("open", vi.fn(() => ({ document: document.implementation.createHTMLDocument(""), opener: null, closed: false, close: vi.fn() })));
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    onPublished.mockClear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  async function toProposal(draftOverrides: Record<string, unknown> = {}) {
+    const user = userEvent.setup();
+    render(<RedesignFlow business={business()} tenantId={TENANT_ID} assets={[]} onPublished={onPublished} onClose={vi.fn()} />);
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, creativeGeneration()));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft(draftOverrides)));
+    await user.click(await screen.findByText("Refresh the current design"));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Generate proposal" }));
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
+    return user;
+  }
+
+  it("a READY proposal shows Open real preview with the notice, and the summary is labeled Content summary", async () => {
+    await toProposal();
+
+    expect(screen.getByRole("button", { name: /Open real preview/ })).toBeInTheDocument();
+    expect(screen.getByText(/Your live site won't change until you publish/)).toBeInTheDocument();
+    expect(screen.getByText("Content summary")).toBeInTheDocument();
+    expect(screen.queryByText("Proposal preview")).not.toBeInTheDocument();
+    expect(screen.queryByText(/This is a preview\./)).not.toBeInTheDocument();
+  });
+
+  it("Open real preview calls the draft's preview endpoint only — never approve or publish, and the draft stays READY", async () => {
+    const user = await toProposal();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, PREVIEW));
+
+    await user.click(screen.getByRole("button", { name: /Open real preview/ }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: /Open real preview/ })).toBeEnabled());
+    const previewCalls = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/website-drafts/draft-1/preview"));
+    expect(previewCalls).toHaveLength(1);
+    expect((previewCalls[0]![1] as RequestInit).method).toBe("POST");
+    expect(fetchMock.mock.calls.some(([url]) => /\/(approve|publish)$/.test(String(url)))).toBe(false);
+    expect(onPublished).not.toHaveBeenCalled();
+    // Explicit approval is still required.
+    expect(screen.getByRole("button", { name: "Use this design" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+  });
+
+  it("an APPROVED, unpublished proposal still offers Open real preview next to Publish", async () => {
+    const user = await toProposal();
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft({ status: "approved", approved_at: "x" })));
+    await user.click(screen.getByRole("button", { name: "Use this design" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /Open real preview/ })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/publish"))).toBe(false);
+  });
+
+  it("a build-failed proposal offers no real preview", async () => {
+    await toProposal({ status: "build_failed", build_error: "boom" });
+    expect(screen.queryByRole("button", { name: /real preview/i })).not.toBeInTheDocument();
   });
 });
