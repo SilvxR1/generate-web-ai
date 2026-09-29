@@ -77,6 +77,9 @@ def _public_api_origin(monkeypatch: pytest.MonkeyPatch):
     from app.config import settings
 
     monkeypatch.setattr(settings, "internal_api_base_url", "https://api.example.com")
+    # v0.2 S0: the generative path is OFF by default; these tests exercise
+    # it, so they opt in explicitly (never the production default).
+    monkeypatch.setattr(settings, "generative_website_builds_enabled", True)
 
 
 class _FakeFrontendEngineer(FrontendEngineer):

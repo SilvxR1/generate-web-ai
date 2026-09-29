@@ -43,6 +43,15 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-opus-5"
 
+    # v0.2 S0: the experimental GENERATIVE website path (AI-authored source
+    # built with `npm ci` + `astro build`, and its Visual QA) executes
+    # untrusted code inside the API's own runtime, which has no network,
+    # filesystem or process isolation yet (see
+    # app.creative.frontend_engine.build's TRUST BOUNDARY note). OFF by
+    # default everywhere; production must stay off until the isolated
+    # generation worker exists. Development/tests opt in explicitly.
+    generative_website_builds_enabled: bool = False
+
     # Shared secret n8n sends back to /internal/leads and
     # /internal/notifications (see app.dependencies.verify_internal_automation_token)
     # to prove the caller is our own n8n workflow, not the public

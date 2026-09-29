@@ -33,6 +33,14 @@ from tests.test_creative_directions_composition_api import _business, _director,
 from tests.test_creative_director import _brief, _direction
 
 
+@pytest.fixture(autouse=True)
+def _generative_builds_enabled(monkeypatch: pytest.MonkeyPatch):
+    # v0.2 S0: the generative path is OFF by default; opted in explicitly here.
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "generative_website_builds_enabled", True)
+
+
 @pytest.fixture()
 def client(session: Session):
     def _override_get_session():

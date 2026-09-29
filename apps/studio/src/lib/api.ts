@@ -1188,6 +1188,10 @@ export interface GenerativeSubsystemCapability {
 }
 
 export interface GenerativePipelineCapability {
+  /** v0.2 S0: whether this server allows generative builds at all
+   * (settings.generative_website_builds_enabled, OFF by default). Studio
+   * mounts the experimental workflow only when this is true. */
+  enabled: boolean;
   creative_director: GenerativeSubsystemCapability;
   creative_director_provider: CreativeProviderName;
   frontend_engineer: GenerativeSubsystemCapability;

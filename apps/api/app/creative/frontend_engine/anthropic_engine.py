@@ -138,7 +138,7 @@ class AnthropicFrontendEngine(FrontendEngineer):
         deleted by the time anyone looks."""
         buffer = BytesIO()
         with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
-            for relative in ("src", "package.json", "astro.config.mjs", "tsconfig.json"):
+            for relative in ("src", "package.json", "package-lock.json", "astro.config.mjs", "tsconfig.json"):
                 path = workspace / relative
                 if path.exists():
                     tar.add(path, arcname=relative)

@@ -298,6 +298,10 @@ class GenerativePipelineCapability(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    # v0.2 S0: whether this server allows generative builds at all
+    # (settings.generative_website_builds_enabled). Studio shows the
+    # experimental workflow only when this is true.
+    enabled: bool
     creative_director: GenerativeSubsystemCapability
     creative_director_provider: CreativeProviderName
     frontend_engineer: GenerativeSubsystemCapability

@@ -612,6 +612,16 @@ def get_creative_director(
     )
 
 
+def require_generative_builds_enabled() -> None:
+    """v0.2 S0 server-side gate for every route that can run a generative
+    build or execute generated code (see
+    settings.generative_website_builds_enabled). Hiding Studio controls is
+    not enough: a direct API request is refused here too. The response is
+    deliberately generic."""
+    if not settings.generative_website_builds_enabled:
+        raise AppError("This feature is not available.", code="feature_not_available", status_code=403)
+
+
 def get_frontend_engineer(
     storage: StorageProvider = Depends(get_storage_provider),
 ) -> FrontendEngineer:

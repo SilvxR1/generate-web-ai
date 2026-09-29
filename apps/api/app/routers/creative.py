@@ -49,6 +49,7 @@ from app.dependencies import (
     get_storage_provider,
     get_website_publisher,
     rate_limit_dependency,
+    require_generative_builds_enabled,
 )
 from app.domain.business_config import BusinessConfig, CreativeConfig
 from app.domain.creative import build_creative_brief
@@ -914,6 +915,7 @@ def run_visual_qa_route(
     business_id: UUID,
     draft_id: UUID,
     tenant_id: UUID = Depends(get_current_tenant_id),
+    _generative_enabled: None = Depends(require_generative_builds_enabled),
     session: Session = Depends(get_session),
     storage: StorageProvider = Depends(get_storage_provider),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
@@ -1144,6 +1146,7 @@ def get_generative_pipeline_capability_route(
             available=True, unavailable_reason=business_asset_storage_reason
         ),
         business_asset_storage_persistent=storage_persistent,
+        enabled=settings.generative_website_builds_enabled,
     )
 
 
@@ -1362,6 +1365,7 @@ def create_generative_website_draft_route(
     business_id: UUID,
     payload: GenerateWebsiteFromDirectionRequest,
     tenant_id: UUID = Depends(get_current_tenant_id),
+    _generative_enabled: None = Depends(require_generative_builds_enabled),
     session: Session = Depends(get_session),
     frontend_engineer: FrontendEngineer = Depends(get_frontend_engineer),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
