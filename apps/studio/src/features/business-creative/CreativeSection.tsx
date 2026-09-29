@@ -33,6 +33,7 @@ import {
 import { AssetsPanel } from "./AssetsPanel";
 import { CreativeConfigPanel } from "./CreativeConfigPanel";
 import { GenerationsPanel } from "./GenerationsPanel";
+import { GenerativeWorkflowGate } from "./GenerativeWorkflowGate";
 import { GenerativeWorkflowPanel } from "./GenerativeWorkflowPanel";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { ReviewsPanel } from "./ReviewsPanel";
@@ -282,32 +283,34 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
       />
 
       <h3>Generate website with AI (experimental)</h3>
-      <GenerativeWorkflowPanel
-        businessId={businessId}
-        tenantId={tenantId}
-        generativeDrafts={(drafts.data ?? []).filter((draft) => draft.engine === "generative")}
-        onDraftCreated={(draft) => setDrafts((prev) => ({ ...prev, data: [draft, ...(prev.data ?? [])] }))}
-        onApprove={(draftId) =>
-          approveWebsiteDraft(businessId, draftId, tenantId).then((updated) => {
-            setDrafts((prev) => ({
-              ...prev,
-              data: (prev.data ?? []).map((draft) => (draft.id === updated.id ? updated : draft)),
-            }));
-            return updated;
-          })
-        }
-        onPublish={(draftId) =>
-          publishWebsiteDraft(businessId, draftId, tenantId).then((state) => {
-            setDrafts((prev) => ({
-              ...prev,
-              data: (prev.data ?? []).map((draft) =>
-                draft.id === draftId ? { ...draft, status: "published", published_at: new Date().toISOString() } : draft,
-              ),
-            }));
-            return state;
-          })
-        }
-      />
+      <GenerativeWorkflowGate businessId={businessId} tenantId={tenantId}>
+        <GenerativeWorkflowPanel
+          businessId={businessId}
+          tenantId={tenantId}
+          generativeDrafts={(drafts.data ?? []).filter((draft) => draft.engine === "generative")}
+          onDraftCreated={(draft) => setDrafts((prev) => ({ ...prev, data: [draft, ...(prev.data ?? [])] }))}
+          onApprove={(draftId) =>
+            approveWebsiteDraft(businessId, draftId, tenantId).then((updated) => {
+              setDrafts((prev) => ({
+                ...prev,
+                data: (prev.data ?? []).map((draft) => (draft.id === updated.id ? updated : draft)),
+              }));
+              return updated;
+            })
+          }
+          onPublish={(draftId) =>
+            publishWebsiteDraft(businessId, draftId, tenantId).then((state) => {
+              setDrafts((prev) => ({
+                ...prev,
+                data: (prev.data ?? []).map((draft) =>
+                  draft.id === draftId ? { ...draft, status: "published", published_at: new Date().toISOString() } : draft,
+                ),
+              }));
+              return state;
+            })
+          }
+        />
+      </GenerativeWorkflowGate>
     </div>
   );
 }

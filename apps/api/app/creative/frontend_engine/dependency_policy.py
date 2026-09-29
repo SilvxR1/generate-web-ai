@@ -27,9 +27,14 @@ BASE_DEV_DEPENDENCIES: dict[str, str] = {
 # manifest may request by name — start minimal (P2: "smallest useful
 # set"); extend this dict (name -> pinned version), never accept a
 # manifest-supplied version, when a real generation genuinely needs one.
-ALLOWED_ADDITIONAL_DEPENDENCIES: dict[str, str] = {
-    "sharp": "^0.35.4",
-}
+#
+# v0.2 S0: EMPTY. Every generative install runs `npm ci` against ONE vetted
+# lockfile (templates/package-lock.json, generated for exactly the base
+# dependencies above), so any additional dependency would be lockfile drift
+# and fail closed. `sharp` (previously allowed) is already in that lockfile
+# transitively through astro. Adding a name here requires regenerating and
+# re-vetting that lockfile in the same change.
+ALLOWED_ADDITIONAL_DEPENDENCIES: dict[str, str] = {}
 
 
 class DependencyPolicyError(CreativeProviderError):

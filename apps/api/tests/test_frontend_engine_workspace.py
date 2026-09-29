@@ -98,9 +98,13 @@ def test_platform_sdk_and_config_files_are_always_present_after_write():
 # --- dependency_policy ---------------------------------------------------
 
 
-def test_allowed_dependency_is_accepted():
-    [name] = list(ALLOWED_ADDITIONAL_DEPENDENCIES)
-    validate_dependencies([name])  # does not raise
+def test_no_additional_dependencies_are_allowed_under_the_vetted_lockfile():
+    # v0.2 S0: installs are `npm ci` against one vetted lockfile, so any
+    # additional dependency would be drift — the allowlist is empty.
+    assert ALLOWED_ADDITIONAL_DEPENDENCIES == {}
+    validate_dependencies([])  # does not raise
+    with pytest.raises(DependencyPolicyError):
+        validate_dependencies(["sharp"])  # previously allowed; now only transitively via the lockfile
 
 
 def test_arbitrary_dependency_is_rejected():
@@ -108,10 +112,8 @@ def test_arbitrary_dependency_is_rejected():
         validate_dependencies(["left-pad", "some-malicious-package"])
 
 
-def test_resolve_dependencies_never_uses_a_manifest_supplied_version():
-    [name] = list(ALLOWED_ADDITIONAL_DEPENDENCIES)
-    resolved = resolve_dependencies([name])
-    assert resolved[name] == ALLOWED_ADDITIONAL_DEPENDENCIES[name]
+def test_resolve_dependencies_adds_nothing_beyond_the_vetted_base():
+    assert resolve_dependencies([]) == {}
 
 
 def test_package_json_rejects_arbitrary_dependency_end_to_end():

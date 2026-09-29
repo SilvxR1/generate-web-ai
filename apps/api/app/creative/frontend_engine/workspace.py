@@ -30,6 +30,7 @@ from pathlib import Path
 
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine.manifest import GeneratedProjectManifest
+from app.creative.frontend_engine.templates import vetted_lockfile
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _PLATFORM_SDK_RELATIVE_PATH = "src/lib/platform-sdk.ts"
@@ -40,6 +41,7 @@ ALLOWED_CONTENT_ROOTS = ("src/", "public/")
 RESERVED_PATHS = frozenset(
     {
         "package.json",
+        "package-lock.json",
         "astro.config.mjs",
         "tsconfig.json",
         _PLATFORM_SDK_RELATIVE_PATH,
@@ -127,6 +129,9 @@ def write_manifest(
     import json as _json
 
     (workspace_root / "package.json").write_text(_json.dumps(package_json, indent=2), encoding="utf-8")
+    # v0.2 S0: installs are `npm ci` against the engine's vetted lockfile —
+    # never resolved fresh (see templates.VETTED_LOCKFILE_PATH).
+    (workspace_root / "package-lock.json").write_text(vetted_lockfile(), encoding="utf-8")
     (workspace_root / "astro.config.mjs").write_text(astro_config, encoding="utf-8")
     (workspace_root / "tsconfig.json").write_text(tsconfig, encoding="utf-8")
 

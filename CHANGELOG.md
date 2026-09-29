@@ -129,6 +129,12 @@ Kept visible, not resolved by this release transition:
 - Operator/user access is provisioned by an untracked local script
   (`apps/api/scripts/bootstrap_operator.py`), not a reproducible,
   documented flow.
+- `GENERATIVE_BUILD_NETWORK_ISOLATION_DEBT` — v0.2 S0 removed inherited
+  secrets from generative builds, made installs deterministic
+  (`npm ci --ignore-scripts`, vetted lockfile) and disabled the generative
+  path by default, but builds still have network, filesystem and process
+  access as the API user. Closed only by the isolated generation worker
+  (R6).
 - Version rollback republishes a stored SiteConfig through a fresh build
   (`app.publishing.versions.rollback_to_version` → `publish_website`), not a
   stored artifact — coupled to SiteConfig; flagged for R0.

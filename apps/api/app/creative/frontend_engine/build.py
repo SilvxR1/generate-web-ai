@@ -12,16 +12,43 @@ why an untrusted install must never run with the real repository
 anywhere on its path) — `pnpm exec` would look for pnpm-workspace.yaml
 up the tree and either fail or accidentally resolve packages from the
 real repo, neither of which is desired here.
+
+TRUST BOUNDARY (v0.2 S0). Generated website source is UNTRUSTED CODE, and
+`astro build` EXECUTES it: component frontmatter, astro.config and any
+integration run as Node.js in this subprocess. S0 is containment, not a
+sandbox:
+
+- Environment: deny by default. The subprocess gets ONLY
+  `generative_build_env()` — never the API process's environment, so no
+  platform credential (AI provider, Cloudflare, DATABASE_URL, R2, email,
+  Higgsfield, n8n, ...) is inherited. HOME/TMPDIR/npm cache point at a
+  throwaway toolchain directory, so no user-level `.npmrc` or credential
+  file is read either.
+- Dependencies: `npm ci --ignore-scripts` against the engine's vetted
+  lockfile (templates.VETTED_LOCKFILE_PATH), after a strict
+  package.json/lockfile consistency check. No fresh resolution, no
+  dependency lifecycle scripts.
+- NOT provided (GENERATIVE_BUILD_NETWORK_ISOLATION_DEBT, closed only by the
+  isolated generation worker): network isolation (install and build can
+  reach the network), filesystem isolation (the process runs as the API's
+  own OS user and can read whatever that user can, including other
+  processes' /proc/<pid>/environ when permitted), and kernel/process
+  isolation. Until then the whole path is disabled in production by
+  `settings.generative_website_builds_enabled` (default False).
 """
 
 import base64
 import hashlib
 import json
 import logging
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
+from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build_package_json, vetted_lockfile
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact
@@ -43,21 +70,86 @@ class GenerativeBuildError(WebsitePublisherError):
     swallowed into a deterministic-looking success (P2.14)."""
 
 
-def _subprocess_env() -> dict[str, str]:
-    """No secrets flow into this subprocess — see this module's own
-    docstring: the workspace never contains the real repository or its
-    .env files, so inheriting the parent's environment carries no
-    ambient credential the build process could read off disk; the
-    Anthropic/Higgsfield credentials this backend itself holds are never
-    passed as environment variables to this subprocess either."""
-    import os
+# The ONLY variable names an untrusted generative build ever receives
+# (v0.2 S0). Nothing here is read from the API's own environment except
+# the location of the Node.js toolchain, which is not secret.
+GENERATIVE_BUILD_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "TMPDIR",
+        "LANG",
+        "npm_config_cache",
+        "npm_config_userconfig",
+        "npm_config_update_notifier",
+        "npm_config_fund",
+        "npm_config_audit",
+        "ASTRO_TELEMETRY_DISABLED",
+    }
+)
+_SYSTEM_PATH_DIRS = ("/usr/local/bin", "/usr/bin", "/bin")
 
-    return dict(os.environ)
+
+def generative_build_env(toolchain_dir: Path) -> dict[str, str]:
+    """Deny by default: a fresh environment built from scratch — never a
+    filtered copy of os.environ — containing only
+    GENERATIVE_BUILD_ENV_ALLOWLIST. PATH is the directory holding the
+    `node`/`npm` this API would run plus standard system directories;
+    HOME/TMPDIR/npm cache/userconfig all live in `toolchain_dir`, a
+    throwaway directory outside the workspace and the repository."""
+    node = shutil.which("node")
+    if node is None:
+        raise GenerativeBuildError("node is not available on this server.")
+    path_dirs = [str(Path(node).resolve().parent), os.path.dirname(node), *_SYSTEM_PATH_DIRS]
+    home = toolchain_dir / "home"
+    tmp = toolchain_dir / "tmp"
+    cache = toolchain_dir / "npm-cache"
+    for directory in (home, tmp, cache):
+        directory.mkdir(parents=True, exist_ok=True)
+    userconfig = home / ".npmrc"
+    userconfig.touch()
+    env = {
+        "PATH": os.pathsep.join(dict.fromkeys(path_dirs)),
+        "HOME": str(home),
+        "TMPDIR": str(tmp),
+        "LANG": "C.UTF-8",
+        "npm_config_cache": str(cache),
+        "npm_config_userconfig": str(userconfig),
+        "npm_config_update_notifier": "false",
+        "npm_config_fund": "false",
+        "npm_config_audit": "false",
+        "ASTRO_TELEMETRY_DISABLED": "1",
+    }
+    if set(env) != GENERATIVE_BUILD_ENV_ALLOWLIST:
+        raise GenerativeBuildError("Generative build environment does not match its allowlist.")
+    return env
 
 
-def _run(args: list[str], *, cwd: Path, timeout: int, step: str) -> None:
+def _verify_lockfile(workspace: Path) -> None:
+    """Fails closed unless the workspace carries the vetted lockfile AND
+    package.json's dependency specs are exactly the lockfile's root specs
+    — any drift is refused here, before any install runs (npm ci alone
+    would accept a changed range the locked version still satisfies)."""
+    lock_path = workspace / "package-lock.json"
+    if not lock_path.is_file():
+        raise GenerativeBuildError("Dependency lockfile is missing — refusing to resolve dependencies freshly.")
     try:
-        result = subprocess.run(args, cwd=cwd, env=_subprocess_env(), capture_output=True, text=True, timeout=timeout)
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        package = json.loads((workspace / "package.json").read_text(encoding="utf-8"))
+        root = lock["packages"][""]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise GenerativeBuildError("Dependency lockfile or package.json is unreadable.") from exc
+    for field in ("dependencies", "devDependencies"):
+        if (package.get(field) or {}) != (root.get(field) or {}):
+            raise GenerativeBuildError(
+                f"package.json {field} do not match the vetted lockfile — refusing to install (dependency drift)."
+            )
+
+
+def _run(args: list[str], *, cwd: Path, env: dict[str, str], timeout: int, step: str) -> None:
+    """`env` is always generative_build_env(); it is never logged."""
+    try:
+        result = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise GenerativeBuildError(f"{step} timed out after {timeout}s") from exc
     except OSError as exc:
@@ -111,6 +203,16 @@ def rebuild_from_archive(archive: bytes, *, business_id: str, api_base_url: str 
     try:
         with tarfile.open(fileobj=BytesIO(archive), mode="r:gz") as tar:
             tar.extractall(workspace, filter="data")  # noqa: S202 — trusted, platform-archived content, not user input
+        # v0.2 S0: engine-owned scaffolding is always re-authored, never
+        # taken from the archive (older archives predate the vetted
+        # lockfile and carry their own package.json).
+        (workspace / "package.json").write_text(
+            json.dumps(build_package_json(name="gwa-generated-site", additional_dependencies=[]), indent=2),
+            encoding="utf-8",
+        )
+        (workspace / "package-lock.json").write_text(vetted_lockfile(), encoding="utf-8")
+        (workspace / "astro.config.mjs").write_text(ASTRO_CONFIG, encoding="utf-8")
+        (workspace / "tsconfig.json").write_text(TSCONFIG, encoding="utf-8")
         return build_generative_workspace(workspace, business_id=business_id, api_base_url=api_base_url)
     finally:
         cleanup_workspace(workspace)
@@ -121,19 +223,26 @@ def build_generative_workspace(
 ) -> WebsiteArtifact:
     if not (workspace / "package.json").is_file():
         raise GenerativeBuildError(f"{workspace} has no package.json — write_manifest must run before building.")
+    _verify_lockfile(workspace)
 
-    logger.info("frontend_engine npm install started")
-    _run(
-        ["npm", "install", "--no-audit", "--no-fund"],
-        cwd=workspace,
-        timeout=_INSTALL_TIMEOUT_SECONDS,
-        step="npm install",
-    )
-    logger.info("frontend_engine npm install completed")
+    toolchain_dir = Path(tempfile.mkdtemp(prefix="gwa-toolchain-"))
+    try:
+        env = generative_build_env(toolchain_dir)
+        logger.info("frontend_engine npm ci started")
+        _run(
+            ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+            cwd=workspace,
+            env=env,
+            timeout=_INSTALL_TIMEOUT_SECONDS,
+            step="npm ci",
+        )
+        logger.info("frontend_engine npm ci completed")
+        logger.info("frontend_engine astro build started")
+        _run(["npm", "run", "build"], cwd=workspace, env=env, timeout=_BUILD_TIMEOUT_SECONDS, step="astro build")
+        logger.info("frontend_engine astro build completed")
+    finally:
+        shutil.rmtree(toolchain_dir, ignore_errors=True)
     out_dir = workspace / "dist"
-    logger.info("frontend_engine astro build started")
-    _run(["npm", "run", "build"], cwd=workspace, timeout=_BUILD_TIMEOUT_SECONDS, step="astro build")
-    logger.info("frontend_engine astro build completed")
 
     if not out_dir.is_dir():
         raise GenerativeBuildError(f"astro build reported success but {out_dir} doesn't exist")

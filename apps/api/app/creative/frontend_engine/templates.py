@@ -8,12 +8,25 @@ architecture" instruction) and there is no server adapter of any kind.
 """
 
 import json
+from pathlib import Path
 
 from app.creative.frontend_engine.dependency_policy import (
     BASE_DEPENDENCIES,
     BASE_DEV_DEPENDENCIES,
     resolve_dependencies,
 )
+
+# v0.2 S0: the ONE vetted npm lockfile every generative workspace installs
+# from (`npm ci`). Generated with `npm install --package-lock-only` for
+# exactly BASE_DEPENDENCIES/BASE_DEV_DEPENDENCIES; every entry resolves from
+# the public npm registry with an integrity hash. Regenerate (and review)
+# it whenever those dependencies change — build.py refuses to install when
+# package.json and this lockfile disagree.
+VETTED_LOCKFILE_PATH = Path(__file__).parent / "templates" / "package-lock.json"
+
+
+def vetted_lockfile() -> str:
+    return VETTED_LOCKFILE_PATH.read_text(encoding="utf-8")
 
 ASTRO_CONFIG = """import { defineConfig } from "astro/config";
 
