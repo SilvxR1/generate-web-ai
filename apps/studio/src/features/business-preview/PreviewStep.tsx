@@ -357,11 +357,15 @@ export function PreviewStep({ business, tenantId, justCreated, onEdit, onCreateA
         />
       </details>
 
-      <h2>Website preview</h2>
+      {/* A8.3.4.2b: the first-site flow publishes straight from SiteConfig
+       * (no WebsiteDraft, so no real preview exists here yet — tracked as
+       * A8_ARTIFACT_PROMOTION_FOLLOWUP). This is a content summary, never
+       * called a preview. */}
+      <h2>Review site content</h2>
       {siteConfig ? (
         <SiteConfigPreview siteConfig={siteConfig} />
       ) : (
-        <p className="field-hint">This business has no configuration yet, so there's no website to preview.</p>
+        <p className="field-hint">This business has no configuration yet, so there's no website content to review.</p>
       )}
       <WebsitePublish
         siteConfig={siteConfig}

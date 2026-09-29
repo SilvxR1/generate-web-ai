@@ -1106,6 +1106,32 @@ export function approveWebsiteDraft(businessId: string, draftId: string, tenantI
   );
 }
 
+/** A8.3.4.2b — the only preview data the backend hands Studio
+ * (app.schemas.website_draft.WebsiteDraftPreviewRead): the Access-
+ * protected URL of the draft's REAL built website, and its lifetime. */
+export interface WebsiteDraftPreview {
+  preview_url: string;
+  created_at: string;
+  expires_at: string;
+}
+
+/** READY/APPROVED drafts only. Deploys (or reuses) the draft's exact
+ * stored website on the private preview host — never approves, never
+ * publishes, never touches the live website. Only the three documented
+ * fields are kept, so nothing else a response might carry is exposed. */
+export async function previewWebsiteDraft(
+  businessId: string,
+  draftId: string,
+  tenantId: string,
+): Promise<WebsiteDraftPreview> {
+  const body = await requestJson<WebsiteDraftPreview>(
+    `/businesses/${businessId}/website-drafts/${draftId}/preview`,
+    { method: "POST" },
+    tenantId,
+  );
+  return { preview_url: body.preview_url, created_at: body.created_at, expires_at: body.expires_at };
+}
+
 /** Requires an APPROVED draft (the backend 409s otherwise) — the one
  * call that actually goes live, reusing the exact same publish machinery
  * publishWebsite above uses. */
