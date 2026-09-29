@@ -20,10 +20,17 @@ class WebsiteDraftRepository(TenantScopedRepository[WebsiteDraft]):
         )
         return list(self.session.scalars(stmt).all())
 
-    def get_for_business(self, tenant_id: UUID, business_id: UUID, draft_id: UUID) -> WebsiteDraft | None:
+    def get_for_business(
+        self, tenant_id: UUID, business_id: UUID, draft_id: UUID, *, for_update: bool = False
+    ) -> WebsiteDraft | None:
+        """`for_update=True` takes a row lock (SELECT ... FOR UPDATE on
+        Postgres; a no-op on SQLite) — A8.3.4.2a uses it so two concurrent
+        Preview clicks for one draft serialize instead of both deploying."""
         stmt = select(WebsiteDraft).where(
             WebsiteDraft.tenant_id == tenant_id,
             WebsiteDraft.business_id == business_id,
             WebsiteDraft.id == draft_id,
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         return self.session.scalars(stmt).first()

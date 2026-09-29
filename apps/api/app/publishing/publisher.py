@@ -67,3 +67,34 @@ class WebsitePublisher(ABC):
         this codebase's own persisted Website row, that's the caller's
         job (see app.publishing.service.unpublish_website)."""
         ...
+
+
+class PreviewDeployment(BaseModel):
+    """One draft preview as it exists on the hosting provider (A8.3.4.2a).
+    `deployment_id` is opaque to every layer above the provider; `url` is
+    that deployment's own immutable URL (never a production alias)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    deployment_id: str
+    url: AnyHttpUrl
+
+
+class PreviewPublisher(ABC):
+    """Deploys a draft's EXACT stored WebsiteArtifact to an isolated,
+    non-production preview location (A8.3.4.2a). Deliberately a separate
+    interface from WebsitePublisher: an implementation is bound to ONE
+    dedicated preview project at construction, and neither method accepts
+    a project/site id — so no caller can aim a preview at a business's
+    production site. It deploys the artifact byte-for-byte (no noindex
+    injection, no header rewriting); preview-only policy lives in the
+    hosting platform, outside the artifact."""
+
+    @abstractmethod
+    def publish_preview(self, *, branch: str, artifact: WebsiteArtifact) -> PreviewDeployment: ...
+
+    @abstractmethod
+    def retire_preview(self, *, branch: str, deployment_id: str) -> None:
+        """Best-effort removal of a superseded/finished preview. Never
+        touches a stored artifact."""
+        ...

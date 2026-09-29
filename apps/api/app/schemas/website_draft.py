@@ -39,3 +39,15 @@ class WebsiteDraftRead(BaseModel):
     published_at: datetime | None
     published_website_id: uuid.UUID | None
     created_at: datetime
+
+
+class WebsiteDraftPreviewRead(BaseModel):
+    """A8.3.4.2a — the ONLY preview data Studio receives: the preview
+    deployment's URL and its lifetime. Never the artifact key/hash, an R2
+    URL, a presigned URL or any provider identifier."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    preview_url: str
+    created_at: datetime
+    expires_at: datetime

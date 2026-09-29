@@ -42,6 +42,8 @@ from app.dependencies import (
     get_internal_creative_provider,
     get_manual_review_provider,
     get_optional_higgsfield_provider,
+    get_optional_preview_publisher,
+    get_preview_publisher,
     get_private_artifact_storage,
     get_session,
     get_storage_provider,
@@ -66,11 +68,12 @@ from app.publishing.drafts import (
     approve_website_draft,
     create_generative_website_draft,
     create_website_draft,
+    ensure_draft_preview,
     publish_generative_website_draft,
     publish_website_draft,
     run_visual_qa_for_draft,
 )
-from app.publishing.publisher import WebsitePublisher
+from app.publishing.publisher import PreviewPublisher, WebsitePublisher
 from app.publishing.service import WebsitePublishError, WebsiteStateResult
 from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.business_review import BusinessReviewRepository
@@ -100,7 +103,7 @@ from app.schemas.creative import (
     GenerativeSubsystemCapability,
     ReviewProviderAvailability,
 )
-from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftRead
+from app.schemas.website_draft import WebsiteDraftCreateRequest, WebsiteDraftPreviewRead, WebsiteDraftRead
 from app.services.asset_health import check_business_asset_availability
 from app.services.brand_measurement import with_brand_measurements
 from app.services.business_service import BusinessNotFoundError, BusinessService
@@ -955,6 +958,38 @@ def approve_website_draft_route(
         raise _draft_error(exc) from exc
 
 
+@router.post("/website-drafts/{draft_id}/preview", response_model=WebsiteDraftPreviewRead)
+def preview_website_draft_route(
+    business_id: UUID,
+    draft_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
+    preview_publisher: PreviewPublisher = Depends(get_preview_publisher),
+) -> WebsiteDraftPreviewRead:
+    """A8.3.4.2a — the owner's REAL preview: the draft's exact stored
+    artifact (private storage, SHA-256-verified, never rebuilt) deployed
+    to the dedicated, Access-protected preview project. Lazy (only on
+    this request), reused for PREVIEW_TTL, READY/APPROVED drafts only.
+    Never approves, never publishes, never touches the live website.
+    Returns only the preview URL and its lifetime."""
+    _get_business(session, tenant_id, business_id)
+    try:
+        preview = ensure_draft_preview(
+            session=session,
+            tenant_id=tenant_id,
+            business_id=business_id,
+            draft_id=draft_id,
+            artifact_storage=artifact_storage,
+            preview_publisher=preview_publisher,
+        )
+    except WebsiteDraftError as exc:
+        raise _draft_error(exc) from exc
+    return WebsiteDraftPreviewRead(
+        preview_url=preview.preview_url, created_at=preview.created_at, expires_at=preview.expires_at
+    )
+
+
 @router.post("/website-drafts/{draft_id}/publish", response_model=WebsiteStateResult)
 def publish_website_draft_route(
     business_id: UUID,
@@ -963,6 +998,7 @@ def publish_website_draft_route(
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
+    preview_publisher: PreviewPublisher | None = Depends(get_optional_preview_publisher),
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
     (Phase 10: generation/build/validation alone never publish). One
@@ -988,6 +1024,7 @@ def publish_website_draft_route(
                 draft_id=draft_id,
                 publisher=publisher,
                 artifact_storage=artifact_storage,
+                preview_publisher=preview_publisher,
             )
         return publish_website_draft(
             session=session,
@@ -996,6 +1033,7 @@ def publish_website_draft_route(
             draft_id=draft_id,
             publisher=publisher,
             artifact_storage=artifact_storage,
+            preview_publisher=preview_publisher,
         )
     except (WebsiteDraftError, GenerativeDraftError) as exc:
         raise _draft_error(exc) from exc

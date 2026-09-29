@@ -46,7 +46,8 @@ after the APPROVED check and a successful artifact integrity check.
 
 import logging
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -71,8 +72,9 @@ from app.publishing.artifact_store import (
     store_draft_artifact,
 )
 from app.publishing.build import build_site
+from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
-from app.publishing.publisher import WebsiteArtifact, WebsitePublisher
+from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.validate import validate_site_config
@@ -201,11 +203,126 @@ def _require_approved(
     return draft
 
 
-def _mark_published(session: Session, draft: WebsiteDraft) -> None:
+def _mark_published(
+    session: Session, draft: WebsiteDraft, preview_publisher: PreviewPublisher | None = None
+) -> None:
     website = WebsiteRepository(session).get_by_business(draft.tenant_id, draft.business_id)
     draft.status = WebsiteDraftStatus.PUBLISHED
     draft.published_at = datetime.now(UTC)
     draft.published_website_id = website.id if website else None
+    _retire_preview_best_effort(draft, preview_publisher)
+
+
+# --- A8.3.4.2a: real draft preview ---------------------------------------------
+
+PREVIEW_TTL = timedelta(days=7)
+_PREVIEWABLE = (WebsiteDraftStatus.READY, WebsiteDraftStatus.APPROVED)
+
+
+@dataclass(frozen=True)
+class DraftPreview:
+    preview_url: str
+    created_at: datetime
+    expires_at: datetime
+
+
+def _aware(value: datetime) -> datetime:
+    # SQLite doesn't round-trip tzinfo (see publish_website's own note);
+    # every value this module writes is UTC.
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+def _current_preview(draft: WebsiteDraft, now: datetime) -> DraftPreview | None:
+    if not (draft.preview_url and draft.preview_deployment_id and draft.preview_created_at):
+        return None
+    created = _aware(draft.preview_created_at)
+    if now >= created + PREVIEW_TTL:
+        return None
+    return DraftPreview(preview_url=draft.preview_url, created_at=created, expires_at=created + PREVIEW_TTL)
+
+
+def ensure_draft_preview(
+    *,
+    session: Session,
+    tenant_id: UUID,
+    business_id: UUID,
+    draft_id: UUID,
+    artifact_storage: PrivateArtifactStorage,
+    preview_publisher: PreviewPublisher,
+    now: datetime | None = None,
+) -> DraftPreview:
+    """Lazily deploys (or reuses) the real preview of a READY/APPROVED
+    draft: the EXACT stored artifact, loaded from private storage and
+    SHA-256-verified — never build_site, never a transformed copy. A live
+    preview younger than PREVIEW_TTL is returned as-is; an expired one is
+    redeployed from the same artifact. Never changes the draft's approval
+    state and never touches production. The row lock serializes
+    concurrent clicks for the same draft."""
+    now = now or datetime.now(UTC)
+    draft = WebsiteDraftRepository(session).get_for_business(tenant_id, business_id, draft_id, for_update=True)
+    if draft is None:
+        raise WebsiteDraftError("Website draft not found.", code="website_draft_not_found", status_code=404)
+    if draft.status not in _PREVIEWABLE:
+        raise WebsiteDraftError(
+            "This proposal can't be previewed"
+            + (" — it's already live." if draft.status is WebsiteDraftStatus.PUBLISHED else ".")
+            + f" (current status: {draft.status.value!r})",
+            code="website_draft_not_previewable",
+            status_code=409,
+        )
+
+    existing = _current_preview(draft, now)
+    if existing is not None:
+        return existing
+
+    artifact = _load_verified_artifact(draft, artifact_storage)
+    branch = preview_branch_for(draft.id)
+    try:
+        deployed = preview_publisher.publish_preview(branch=branch, artifact=artifact)
+    except WebsitePublisherError as exc:
+        logger.error("website_preview_failed draft=%s business=%s error=%s", draft.id, business_id, exc)
+        raise WebsiteDraftError(
+            "The preview couldn't be prepared right now. Your live website is unchanged; please try again.",
+            code="website_draft_preview_failed",
+            status_code=502,
+        ) from exc
+
+    superseded = draft.preview_deployment_id
+    draft.preview_deployment_id = deployed.deployment_id
+    draft.preview_url = str(deployed.url)
+    draft.preview_created_at = now
+    logger.info("website_preview_deployed draft=%s business=%s", draft.id, business_id)
+    if superseded and superseded != deployed.deployment_id:
+        _delete_superseded_best_effort(preview_publisher, superseded, draft.id)
+    return DraftPreview(preview_url=draft.preview_url, created_at=now, expires_at=now + PREVIEW_TTL)
+
+
+def _delete_superseded_best_effort(preview_publisher: PreviewPublisher, deployment_id: str, draft_id: UUID) -> None:
+    delete = getattr(preview_publisher, "delete_superseded", None)
+    if delete is None:
+        return
+    try:
+        delete(deployment_id)
+    except Exception as exc:  # noqa: BLE001 — cleanup must never fail the preview
+        logger.warning("website_preview_cleanup_failed draft=%s error=%s", draft_id, type(exc).__name__)
+
+
+def _retire_preview_best_effort(draft: WebsiteDraft, preview_publisher: PreviewPublisher | None) -> None:
+    """After a successful production publish: the preview has done its
+    job. Best-effort — a retirement failure never fails the publish that
+    already succeeded; the preview metadata is cleared either way so it's
+    never handed out again."""
+    deployment_id = draft.preview_deployment_id
+    draft.preview_deployment_id = None
+    draft.preview_url = None
+    draft.preview_created_at = None
+    if not deployment_id or preview_publisher is None:
+        return
+    try:
+        preview_publisher.retire_preview(branch=preview_branch_for(draft.id), deployment_id=deployment_id)
+        logger.info("website_preview_retired draft=%s", draft.id)
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        logger.warning("website_preview_retire_failed draft=%s error=%s", draft.id, type(exc).__name__)
 
 
 def create_website_draft(
@@ -313,6 +430,7 @@ def publish_website_draft(
     draft_id: UUID,
     publisher: WebsitePublisher,
     artifact_storage: PrivateArtifactStorage,
+    preview_publisher: PreviewPublisher | None = None,
 ) -> WebsiteStateResult:
     """The one call that actually goes live — requires an APPROVED draft
     (Phase 10: generation/build/validation alone never publish). A8.3.4.1:
@@ -337,7 +455,7 @@ def publish_website_draft(
         source_website_draft_id=draft.id,
         artifact_sha256=draft.artifact_sha256,
     )
-    _mark_published(session, draft)
+    _mark_published(session, draft, preview_publisher)
     return result
 
 
@@ -541,6 +659,7 @@ def publish_generative_website_draft(
     draft_id: UUID,
     publisher: WebsitePublisher,
     artifact_storage: PrivateArtifactStorage,
+    preview_publisher: PreviewPublisher | None = None,
 ) -> WebsiteStateResult:
     """The GENERATIVE counterpart to publish_website_draft above — same
     APPROVED requirement, same A8.3.4.1 promotion of the stored,
@@ -576,5 +695,5 @@ def publish_generative_website_draft(
         source_website_draft_id=draft.id,
         artifact_sha256=draft.artifact_sha256,
     )
-    _mark_published(session, draft)
+    _mark_published(session, draft, preview_publisher)
     return result

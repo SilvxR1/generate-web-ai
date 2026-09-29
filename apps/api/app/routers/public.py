@@ -63,6 +63,7 @@ from app.repositories.lead import LeadRepository
 from app.repositories.workflow import WorkflowRepository
 from app.schemas.analytics import AnalyticsEventCreateRequest, AnalyticsEventCreateResponse
 from app.schemas.public import PublicLeadCreateRequest, PublicLeadCreateResponse
+from app.security.preview_origin import is_preview_origin
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,9 @@ def create_public_lead(
         rate_limit_dependency(key_prefix="public_lead", limit_attr="public_lead_rate_limit_per_minute")
     ),
 ) -> PublicLeadCreateResponse:
-    del request  # rate_limit_dependency already reads this for the client IP; nothing else here needs it.
+    # A8.3.4.2a: a draft preview (Cloudflare Access-protected preview
+    # project) runs the exact production artifact — recognize it by Origin.
+    from_preview = is_preview_origin(request.headers.get("origin"))
 
     business = BusinessRepository(session).get_by_id_only(business_id)
     if business is None:
@@ -100,6 +103,13 @@ def create_public_lead(
         # Never tell a bot its submission was rejected — that only
         # teaches it to iterate. The lead is simply never created; the
         # caller sees the exact same response as a real success.
+        return PublicLeadCreateResponse()
+
+    if from_preview:
+        # Same response shape as a real success (the site's form shows its
+        # normal confirmation), but nothing is persisted, notified or
+        # dispatched. No payload/PII in the log.
+        logger.info("public_lead_suppressed_preview business=%s", business.id)
         return PublicLeadCreateResponse()
 
     lead = Lead(
@@ -230,10 +240,13 @@ def create_public_analytics_event(
     analytics beacon has. `received: true` is returned even for an
     unknown business, so this can never be used to probe which business
     ids exist."""
-    del request  # rate_limit_dependency already reads this for the client IP.
-
     business = BusinessRepository(session).get_by_id_only(business_id)
     if business is None:
+        return AnalyticsEventCreateResponse()
+
+    if is_preview_origin(request.headers.get("origin")):
+        # A8.3.4.2a: preview visits never become analytics. No payload logged.
+        logger.info("public_event_suppressed_preview business=%s", business.id)
         return AnalyticsEventCreateResponse()
 
     provider.record_event(
