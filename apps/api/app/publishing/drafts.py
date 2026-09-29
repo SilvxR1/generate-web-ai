@@ -62,6 +62,7 @@ from app.creative.observability import log_pipeline_stage
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
+from app.domain.business_truth import BusinessTruth
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.image_qa import direction_is_approval_eligible
 from app.domain.enums import GenerationEngine, WebsiteDraftStatus
@@ -475,6 +476,7 @@ def create_generative_website_draft(
     artifact_storage: PrivateArtifactStorage,
     assets: Sequence[CreativeBriefAsset] = (),
     api_base_url: str | None = None,
+    business_truth: BusinessTruth | None = None,
 ) -> WebsiteDraft:
     """The GENERATIVE counterpart to create_website_draft above — same
     DRAFT -> BUILDING -> READY|BUILD_FAILED state machine
@@ -529,6 +531,7 @@ def create_generative_website_draft(
             platform_contract_version=PLATFORM_CONTRACT_VERSION,
             business_id=str(business_id),
             api_base_url=api_base_url,
+            business_truth=business_truth,
         )
     except CreativeProviderError as exc:
         draft.status = WebsiteDraftStatus.BUILD_FAILED

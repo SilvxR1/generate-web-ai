@@ -14,6 +14,7 @@ from app.creative.frontend_engine.manifest import GeneratedFile, GeneratedProjec
 from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build_package_json
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace, write_manifest
 from app.domain.business_config import BusinessConfig, BusinessProfile
+from app.domain.business_truth import derive_business_truth
 from app.domain.enums import BusinessVertical
 from app.qa.platform_contract import validate_platform_contract
 
@@ -83,7 +84,8 @@ def test_real_npm_install_and_astro_build_produce_a_valid_static_site():
         )
         package_json = build_package_json(name="real-build-test", additional_dependencies=[])
         write_manifest(workspace, manifest, package_json=package_json, astro_config=ASTRO_CONFIG, tsconfig=TSCONFIG)
-        for relative_path, content in build_legal_pages(_business_config()).items():
+        truth = derive_business_truth(business_config=_business_config())
+        for relative_path, content in build_legal_pages(truth).items():
             page_path = workspace / relative_path
             page_path.parent.mkdir(parents=True, exist_ok=True)
             page_path.write_text(content, encoding="utf-8")

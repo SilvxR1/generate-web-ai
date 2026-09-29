@@ -36,6 +36,7 @@ from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace, write_manifest
 from app.creative.observability import StageTimer
 from app.domain.business_config import BusinessConfig
+from app.domain.business_truth import BusinessTruth, derive_business_truth
 from app.domain.creative import CreativeBriefAsset
 from app.domain.creative.direction import CreativeDirection
 from app.storage import StorageProvider, generate_storage_key
@@ -64,9 +65,12 @@ class AnthropicFrontendEngine(FrontendEngineer):
         platform_contract_version: str,
         business_id: str,
         api_base_url: str | None = None,
+        business_truth: BusinessTruth | None = None,
     ) -> FrontendEngineResult:
         del platform_contract_version  # Not needed for generation itself — validated downstream by the caller.
         started = time.monotonic()
+        # v0.2 R1: every fact the model sees comes from BusinessTruth.
+        truth = business_truth or derive_business_truth(business_config=business_config, assets=assets)
 
         with StageTimer(
             stage="frontend_generate", business_id=business_id, provider=self.name, model=self._model
@@ -74,9 +78,7 @@ class AnthropicFrontendEngine(FrontendEngineer):
             try:
                 manifest = self._client.generate_manifest(
                     system=build_system_prompt(),
-                    user_content=build_user_message(
-                        business_config=business_config, creative_direction=creative_direction, assets=assets
-                    ),
+                    user_content=build_user_message(business_truth=truth, creative_direction=creative_direction),
                 )
                 validate_dependencies(manifest.additional_dependencies)
                 logger.info(
@@ -95,7 +97,7 @@ class AnthropicFrontendEngine(FrontendEngineer):
             write_manifest(
                 workspace, manifest, package_json=package_json, astro_config=ASTRO_CONFIG, tsconfig=TSCONFIG
             )
-            for relative_path, content in build_legal_pages(business_config).items():
+            for relative_path, content in build_legal_pages(truth).items():
                 page_path = workspace / relative_path
                 page_path.parent.mkdir(parents=True, exist_ok=True)
                 page_path.write_text(content, encoding="utf-8")
