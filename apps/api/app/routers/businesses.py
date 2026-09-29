@@ -26,6 +26,7 @@ from app.dependencies import (
     get_domain_provider,
     get_n8n_client,
     get_optional_n8n_client,
+    get_private_artifact_storage,
     get_session,
     get_website_publisher,
 )
@@ -72,6 +73,7 @@ from app.schemas.readiness import ProductionReadinessReport
 from app.schemas.site_config import SiteConfigPayload
 from app.schemas.website_version import WebsiteVersionSummary
 from app.services.business_service import BusinessNotFoundError, BusinessService, SlugConflictError
+from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
 
@@ -458,6 +460,7 @@ def publish_business_website(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> WebsiteStateResult:
     """LEGACY / INTERNAL (A8.4): Studio no longer calls this. Every
     website — first site or redesign — now goes live through the
@@ -495,6 +498,8 @@ def publish_business_website(
             # — a direct publish must never ship a build a draft of the
             # same config would have been refused for.
             business_config=_load_business_config(session, tenant_id, business_id),
+            # v0.2 S1: the build is stored so this version is artifact-backed.
+            artifact_storage=artifact_storage,
         )
     except WebsitePublishError as exc:
         if exc.code == "platform_contract_violation":
@@ -612,11 +617,12 @@ def rollback_business_website(
     tenant_id: UUID = Depends(get_current_tenant_id),
     session: Session = Depends(get_session),
     publisher: WebsitePublisher = Depends(get_website_publisher),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> WebsiteStateResult:
-    """Republishes this business's site exactly as it was at a previous
-    successful publish (app.publishing.versions.rollback_to_version) —
-    a real republish through the same path POST .../website/publish
-    uses, not a local status flip. A failed rollback leaves the
+    """v0.2 S1: restores the version's exact stored artifact (integrity-
+    verified, never rebuilt); only historical versions without an artifact
+    use the legacy SiteConfig rebuild (see app.publishing.versions). A
+    real deploy recorded as a new version, not a local status flip. A failed rollback leaves the
     currently-live site reported live, the same guarantee a normal
     failed publish already has; no version is ever deleted, whatever
     the outcome."""
@@ -628,6 +634,7 @@ def rollback_business_website(
             business_id=business_id,
             version_id=version_id,
             publisher=publisher,
+            artifact_storage=artifact_storage,
         )
     except WebsitePublishError as exc:
         # This except block catches two distinct cases rollback_to_version

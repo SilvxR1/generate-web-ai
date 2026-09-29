@@ -17,7 +17,18 @@ from app.db.models.tenant import Tenant
 from app.domain.enums import WebsiteStatus
 from app.publishing.service import WebsitePublishError, get_website_state, publish_website
 from app.publishing.versions import list_website_versions, rollback_to_version
+from app.storage import LocalStorageProvider
+from app.storage.private import PrivateArtifactStorage
 from tests.test_website_publish_service import _FAKE_ARTIFACT, FakePublisher, _site_config
+
+# v0.2 S1: versions published here via publish_website WITHOUT storage are
+# historical-style rows (no artifact), so the rollbacks below exercise the
+# isolated LEGACY REBUILD path (see app.publishing.versions).
+
+
+@pytest.fixture()
+def artifact_storage(tmp_path) -> PrivateArtifactStorage:
+    return PrivateArtifactStorage(LocalStorageProvider(root_dir=tmp_path / "private"))
 
 
 @pytest.fixture(autouse=True)
@@ -84,7 +95,7 @@ def test_a_failed_publish_does_not_append_a_version(session: Session, business: 
 
 def test_rollback_to_an_older_version_republishes_it_and_appends_a_new_version(
     session: Session, business: Business
-):
+, artifact_storage):
     _publish(session, business, brand={"name": "Old Name", "tagline": "Old tagline"})
     _publish(session, business, brand={"name": "New Name", "tagline": "New tagline"})
     versions_before = list_website_versions(session=session, tenant_id=business.tenant_id, business_id=business.id)
@@ -96,6 +107,7 @@ def test_rollback_to_an_older_version_republishes_it_and_appends_a_new_version(
         business_id=business.id,
         version_id=old_version_id,
         publisher=FakePublisher(),
+        artifact_storage=artifact_storage,
     )
 
     assert result.status is WebsiteStatus.LIVE
@@ -113,7 +125,7 @@ def test_rollback_to_an_older_version_republishes_it_and_appends_a_new_version(
     assert state.status is WebsiteStatus.LIVE
 
 
-def test_rollback_for_an_unknown_version_is_rejected(session: Session, business: Business):
+def test_rollback_for_an_unknown_version_is_rejected(session: Session, business: Business, artifact_storage):
     import uuid
 
     _publish(session, business)
@@ -125,6 +137,7 @@ def test_rollback_for_an_unknown_version_is_rejected(session: Session, business:
             business_id=business.id,
             version_id=uuid.uuid4(),
             publisher=FakePublisher(),
+            artifact_storage=artifact_storage,
         )
 
     assert exc_info.value.code == "website_version_not_found"
@@ -132,7 +145,7 @@ def test_rollback_for_an_unknown_version_is_rejected(session: Session, business:
 
 def test_rollback_failure_leaves_the_currently_live_site_reported_live_and_deletes_nothing(
     session: Session, business: Business
-):
+, artifact_storage):
     live = _publish(session, business)
     versions = list_website_versions(session=session, tenant_id=business.tenant_id, business_id=business.id)
     version_id = versions[0].id
@@ -144,6 +157,7 @@ def test_rollback_failure_leaves_the_currently_live_site_reported_live_and_delet
             business_id=business.id,
             version_id=version_id,
             publisher=FakePublisher(fail=True),
+            artifact_storage=artifact_storage,
         )
 
     state = get_website_state(session=session, tenant_id=business.tenant_id, business_id=business.id)
@@ -167,7 +181,7 @@ def test_list_versions_never_leaks_across_tenants(session: Session, business: Bu
     assert versions == []
 
 
-def test_rollback_never_crosses_tenants(session: Session, business: Business, other_tenant: Tenant):
+def test_rollback_never_crosses_tenants(session: Session, business: Business, other_tenant: Tenant, artifact_storage):
     _publish(session, business)
     versions = list_website_versions(session=session, tenant_id=business.tenant_id, business_id=business.id)
 
@@ -178,6 +192,7 @@ def test_rollback_never_crosses_tenants(session: Session, business: Business, ot
             business_id=business.id,
             version_id=versions[0].id,
             publisher=FakePublisher(),
+            artifact_storage=artifact_storage,
         )
 
     assert exc_info.value.code == "website_version_not_found"

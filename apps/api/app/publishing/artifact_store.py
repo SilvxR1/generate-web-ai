@@ -198,6 +198,49 @@ def draft_artifact_storage_key(*, tenant_id: UUID, business_id: UUID, draft_id: 
     return f"website-drafts/{tenant_id.hex}/{business_id.hex}/{draft_id.hex}/artifact.tar.gz"
 
 
+def version_artifact_storage_key(*, tenant_id: UUID, business_id: UUID, version_id: UUID) -> str:
+    """v0.2 S1: where a version-scoped artifact lives — only for a publish
+    that built its own artifact (the legacy SiteConfig path), so that every
+    new WebsiteVersion is artifact-backed. Promoted drafts keep their draft
+    key; nothing is copied."""
+    return f"website-versions/{tenant_id.hex}/{business_id.hex}/{version_id.hex}/artifact.tar.gz"
+
+
+def _store_artifact(
+    storage: PrivateArtifactStorage,
+    *,
+    storage_key: str,
+    artifact: WebsiteArtifact,
+    kind: str,
+    ref: UUID,
+    business_id: UUID,
+) -> StoredArtifact:
+    sha256 = artifact_sha256(artifact)
+    archive = pack_artifact(artifact)
+    # Prove the stored representation reproduces the validated bytes
+    # *before* anything is persisted — a packing bug must fail draft
+    # creation, not surface later as a publish-time integrity mismatch.
+    if artifact_sha256(unpack_artifact(archive)) != sha256:
+        raise ArtifactIntegrityError("packed archive does not reproduce the validated artifact")
+
+    # Write-once: a stored artifact is immutable. StorageProvider has no
+    # conditional put, so this is an application-level guard; the key
+    # embeds a fresh, unique id, so it can only trip on a bug.
+    if storage.exists(storage_key):
+        raise ArtifactAlreadyExistsError(f"an artifact already exists for {kind} {ref}")
+    storage.save(storage_key=storage_key, content=archive, content_type=_ARCHIVE_CONTENT_TYPE)
+    logger.info(
+        "website_artifact_stored %s=%s business=%s sha256=%s files=%d archive_bytes=%d",
+        kind,
+        ref,
+        business_id,
+        short_hash(sha256),
+        len(artifact.files),
+        len(archive),
+    )
+    return StoredArtifact(storage_key=storage_key, sha256=sha256)
+
+
 def store_draft_artifact(
     storage: PrivateArtifactStorage,
     *,
@@ -209,30 +252,83 @@ def store_draft_artifact(
     """Hashes, packs, round-trip-verifies and saves `artifact` exactly
     once. Raises ArtifactError/StorageProviderError on any failure — the
     caller must then never mark the draft publishable."""
-    sha256 = artifact_sha256(artifact)
-    archive = pack_artifact(artifact)
-    # Prove the stored representation reproduces the validated bytes
-    # *before* anything is persisted — a packing bug must fail draft
-    # creation, not surface later as a publish-time integrity mismatch.
-    if artifact_sha256(unpack_artifact(archive)) != sha256:
-        raise ArtifactIntegrityError("packed archive does not reproduce the validated artifact")
-
-    storage_key = draft_artifact_storage_key(tenant_id=tenant_id, business_id=business_id, draft_id=draft_id)
-    # Write-once: a draft's artifact is immutable. StorageProvider has no
-    # conditional put, so this is an application-level guard; the key
-    # embeds the (fresh, unique) draft id, so it can only trip on a bug.
-    if storage.exists(storage_key):
-        raise ArtifactAlreadyExistsError(f"an artifact already exists for draft {draft_id}")
-    storage.save(storage_key=storage_key, content=archive, content_type=_ARCHIVE_CONTENT_TYPE)
-    logger.info(
-        "website_artifact_stored draft=%s business=%s sha256=%s files=%d archive_bytes=%d",
-        draft_id,
-        business_id,
-        short_hash(sha256),
-        len(artifact.files),
-        len(archive),
+    return _store_artifact(
+        storage,
+        storage_key=draft_artifact_storage_key(tenant_id=tenant_id, business_id=business_id, draft_id=draft_id),
+        artifact=artifact,
+        kind="draft",
+        ref=draft_id,
+        business_id=business_id,
     )
-    return StoredArtifact(storage_key=storage_key, sha256=sha256)
+
+
+def store_version_artifact(
+    storage: PrivateArtifactStorage,
+    *,
+    tenant_id: UUID,
+    business_id: UUID,
+    version_id: UUID,
+    artifact: WebsiteArtifact,
+) -> StoredArtifact:
+    """v0.2 S1: same write-once, round-trip-verified storage as a draft
+    artifact, keyed by the WebsiteVersion about to be recorded."""
+    return _store_artifact(
+        storage,
+        storage_key=version_artifact_storage_key(tenant_id=tenant_id, business_id=business_id, version_id=version_id),
+        artifact=artifact,
+        kind="version",
+        ref=version_id,
+        business_id=business_id,
+    )
+
+
+def load_artifact(
+    storage: PrivateArtifactStorage, *, storage_key: str, expected_sha256: str, kind: str, ref: UUID
+) -> WebsiteArtifact:
+    """Loads, unpacks and integrity-verifies a stored artifact. Never
+    rebuilds and never repairs: any failure raises (ArtifactUnavailableError,
+    ArtifactArchiveCorruptError, ArtifactIntegrityError). Logs only ids and
+    short hashes — never keys' contents, archive bytes or credentials."""
+    try:
+        archive = storage.load(storage_key)
+    except (StorageProviderError, OSError, ValueError) as exc:
+        logger.error(
+            "website_artifact_missing %s=%s sha256=%s error=%s",
+            kind,
+            ref,
+            short_hash(expected_sha256),
+            type(exc).__name__,
+        )
+        raise ArtifactUnavailableError(f"stored artifact for {kind} {ref} could not be loaded") from exc
+
+    try:
+        artifact = unpack_artifact(archive)
+        actual_sha256 = artifact_sha256(artifact)
+    except ArtifactError as exc:
+        logger.error(
+            "website_artifact_integrity_mismatch %s=%s expected=%s reason=corrupt detail=%s",
+            kind,
+            ref,
+            short_hash(expected_sha256),
+            exc,
+        )
+        raise ArtifactArchiveCorruptError(f"stored artifact for {kind} {ref} is corrupt: {exc}") from exc
+
+    logger.info("website_artifact_loaded %s=%s files=%d", kind, ref, len(artifact.files))
+    if actual_sha256 != expected_sha256:
+        logger.error(
+            "website_artifact_integrity_mismatch %s=%s expected=%s actual=%s",
+            kind,
+            ref,
+            short_hash(expected_sha256),
+            short_hash(actual_sha256),
+        )
+        raise ArtifactIntegrityError(
+            f"stored artifact for {kind} {ref} failed integrity verification "
+            f"(expected {short_hash(expected_sha256)}, got {short_hash(actual_sha256)})"
+        )
+    logger.info("website_artifact_integrity_verified %s=%s sha256=%s", kind, ref, short_hash(actual_sha256))
+    return artifact
 
 
 def load_draft_artifact(
@@ -240,40 +336,4 @@ def load_draft_artifact(
 ) -> WebsiteArtifact:
     """Loads, unpacks and integrity-verifies a stored draft artifact.
     Never rebuilds and never repairs: any failure raises."""
-    try:
-        archive = storage.load(storage_key)
-    except (StorageProviderError, OSError, ValueError) as exc:
-        logger.error(
-            "website_artifact_missing draft=%s sha256=%s error=%s",
-            draft_id,
-            short_hash(expected_sha256),
-            type(exc).__name__,
-        )
-        raise ArtifactUnavailableError(f"stored artifact for draft {draft_id} could not be loaded") from exc
-
-    try:
-        artifact = unpack_artifact(archive)
-        actual_sha256 = artifact_sha256(artifact)
-    except ArtifactError as exc:
-        logger.error(
-            "website_artifact_integrity_mismatch draft=%s expected=%s reason=corrupt detail=%s",
-            draft_id,
-            short_hash(expected_sha256),
-            exc,
-        )
-        raise ArtifactArchiveCorruptError(f"stored artifact for draft {draft_id} is corrupt: {exc}") from exc
-
-    logger.info("website_artifact_loaded draft=%s files=%d", draft_id, len(artifact.files))
-    if actual_sha256 != expected_sha256:
-        logger.error(
-            "website_artifact_integrity_mismatch draft=%s expected=%s actual=%s",
-            draft_id,
-            short_hash(expected_sha256),
-            short_hash(actual_sha256),
-        )
-        raise ArtifactIntegrityError(
-            f"stored artifact for draft {draft_id} failed integrity verification "
-            f"(expected {short_hash(expected_sha256)}, got {short_hash(actual_sha256)})"
-        )
-    logger.info("website_artifact_integrity_verified draft=%s sha256=%s", draft_id, short_hash(actual_sha256))
-    return artifact
+    return load_artifact(storage, storage_key=storage_key, expected_sha256=expected_sha256, kind="draft", ref=draft_id)
