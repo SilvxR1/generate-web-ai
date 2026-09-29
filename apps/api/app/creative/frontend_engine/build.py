@@ -59,6 +59,13 @@ logger = logging.getLogger(__name__)
 _INSTALL_TIMEOUT_SECONDS = 180
 _BUILD_TIMEOUT_SECONDS = 120
 _HEAD_CLOSE_TAG = re.compile(r"</head>", re.IGNORECASE)
+_BODY_CLOSE_TAG = re.compile(r"</body>", re.IGNORECASE)
+# v0.2 R2: the platform-owned consent banner (same ids/hooks as the legacy
+# CookieConsentBanner.astro), injected into every page AFTER the AI's files
+# are compiled — generated code never implements consent behavior.
+PLATFORM_CONSENT_FRAGMENT = (Path(__file__).parent / "templates" / "platform_consent.html").read_text(
+    encoding="utf-8"
+).strip()
 _INLINE_SCRIPT_PATTERN = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.DOTALL)
 
 
@@ -171,6 +178,16 @@ def _inject_platform_config(html: str, *, business_id: str, api_base_url: str | 
     return tag + html  # No <head> found (malformed AI output) — prepend rather than silently drop config.
 
 
+def _inject_platform_consent(html: str) -> str:
+    """v0.2 R2: consent is platform-owned. The banner and its behavior are
+    engine-authored and injected post-build into every page; generated
+    code may only theme it through `--gwa-consent-*` CSS custom properties
+    and open it via `data-open-consent-preferences` (the legacy hook)."""
+    if _BODY_CLOSE_TAG.search(html):
+        return _BODY_CLOSE_TAG.sub(lambda _: PLATFORM_CONSENT_FRAGMENT + "</body>", html, count=1)
+    return html + PLATFORM_CONSENT_FRAGMENT  # No </body> (malformed AI output) — append rather than drop it.
+
+
 def _inline_script_hashes(html_files: list[str]) -> frozenset[str]:
     """Same CSP `script-src 'sha256-...'` computation as
     app.publishing.build._inline_script_hashes, duplicated (not
@@ -255,7 +272,9 @@ def build_generative_workspace(
         relative = path.relative_to(out_dir).as_posix()
         if relative.endswith(".html"):
             html = path.read_text(encoding="utf-8", errors="ignore")
-            injected = _inject_platform_config(html, business_id=business_id, api_base_url=api_base_url)
+            injected = _inject_platform_consent(
+                _inject_platform_config(html, business_id=business_id, api_base_url=api_base_url)
+            )
             html_texts.append(injected)
             files[relative] = injected.encode("utf-8")
         else:

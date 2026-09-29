@@ -531,7 +531,11 @@ _INDEX_WITH_ANCHOR = (
     b'<meta name="viewport" content="width=device-width"></head><body><script>window.gwaConsent={}</script>'
     b'<a href="#contact">Contactar</a>%s<form data-gwa-lead-form></form><script>submitLead()</script>'
     b'<script type="application/json" id="lead-submission-config">'
-    b'{"businessId":"biz-1","apiBaseUrl":"https://api.example.com"}</script></body></html>'
+    b'{"businessId":"biz-1","apiBaseUrl":"https://api.example.com"}</script>'
+    # v0.2 R2: consent controls + legal links, as every real build renders.
+    b'<div id="gwa-consent-banner" hidden><button id="gwa-consent-reject">R</button>'
+    b'<button id="gwa-consent-accept">A</button></div>'
+    b'<a href="/privacy">P</a><a href="/terms">T</a><a href="/cookies">C</a></body></html>'
 )
 
 

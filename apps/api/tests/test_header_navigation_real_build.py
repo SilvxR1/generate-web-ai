@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from app.domain.business_config import BusinessConfig, BusinessProfile
+from app.domain.business_config.business_profile import ContactInfo
 from app.domain.enums import BusinessVertical
 from app.publishing import build as build_module
 from app.qa.platform_contract import validate_platform_contract
@@ -23,7 +24,15 @@ DIRECTED = json.loads((FIXTURES / "a8_directed_site_configs.json").read_text("ut
 # Lead capture enabled with a website form: the same contract the fixtures'
 # businesses are generated under.
 CONTRACT_CONFIG = BusinessConfig(
-    business_profile=BusinessProfile(name="Taller", slug="taller", industry=BusinessVertical.OTHER)
+    business_profile=BusinessProfile(
+        name="Taller",
+        slug="taller",
+        industry=BusinessVertical.OTHER,
+        # v0.2 R2: the contract validates WhatsApp destinations against the
+        # business's own authoritative WhatsApp contact — the one the
+        # fixtures' example business lists (and renders as a wa.me link).
+        contact=ContactInfo(whatsapp="+34 600 000 000"),
+    )
 )
 
 CASES = {
