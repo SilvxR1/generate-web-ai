@@ -30,6 +30,7 @@ from app.creative.frontend_engine.build import (
     generative_build_env,
 )
 from app.creative.frontend_engine.manifest import GeneratedFile, GeneratedProjectManifest
+from app.creative.frontend_engine.sandbox import SandboxRunner
 from app.creative.frontend_engine.templates import (
     ASTRO_CONFIG,
     TSCONFIG,
@@ -86,25 +87,31 @@ def workspace():
         cleanup_workspace(ws)
 
 
-class _RecordingRun:
-    """Stands in for subprocess.run: records argv/env, fakes a dist/."""
+class _RecordingRun(SandboxRunner):
+    """Stands in for subprocess.run (the trusted install) AND the sandbox
+    runner (the untrusted build, R4): records argv/env, fakes a dist/."""
+
+    name = "recording"
 
     def __init__(self) -> None:
         self.calls: list[tuple[list[str], dict[str, str]]] = []
 
     def __call__(self, args, *, cwd, env, capture_output, text, timeout):
         self.calls.append((list(args), dict(env)))
-        if args[:2] == ["npm", "run"]:
-            dist = Path(cwd) / "dist"
-            dist.mkdir(exist_ok=True)
-            (dist / "index.html").write_text("<html><head></head><body>ok</body></html>")
         return subprocess.CompletedProcess(args, 0, "", "")
+
+    def run(self, argv, *, workspace, env, limits, step):
+        self.calls.append((list(argv), dict(env)))
+        dist = Path(workspace) / "dist"
+        dist.mkdir(exist_ok=True)
+        (dist / "index.html").write_text("<html><head></head><body>ok</body></html>")
 
 
 @pytest.fixture()
 def recorded(monkeypatch: pytest.MonkeyPatch) -> _RecordingRun:
     recorder = _RecordingRun()
     monkeypatch.setattr(generative_build.subprocess, "run", recorder)
+    monkeypatch.setattr(generative_build, "detect_runner", lambda: recorder)
     return recorder
 
 
@@ -114,7 +121,7 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> _RecordingRun:
 def test_build_subprocesses_never_inherit_platform_secrets(parent_secrets, workspace, recorded):
     build_generative_workspace(workspace, business_id="b1", api_base_url="https://api.example.com")
 
-    assert [call[0][:2] for call in recorded.calls] == [["npm", "ci"], ["npm", "run"]]
+    assert [call[0][:2] for call in recorded.calls] == [["npm", "ci"], ["node", "node_modules/astro/bin/astro.mjs"]]
     for _, env in recorded.calls:
         for name, value in parent_secrets.items():
             assert name not in env, name

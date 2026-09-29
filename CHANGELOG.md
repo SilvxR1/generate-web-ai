@@ -171,6 +171,19 @@ real-business pilot.
   - Arbitrary semantic claims and JS-rendered content are documented as
     not yet enforceable.
 
+- **R4: Isolated Generation Worker — preparatory, infrastructure decision
+  pending.** "Untrusted generated code must never execute inside the
+  trusted API process or with access to platform secrets."
+  - `astro build` of generated code now runs only in a bubblewrap build
+    zone: no env, no network, workspace-only filesystem, own PID namespace,
+    resource limits. It fails closed where the host can't enforce it.
+  - Build output is a bounded, link-free candidate that the trusted
+    contracts judge.
+  - Durable, idempotent `GenerationJob` state machine (no automatic
+    retries).
+  - Proven by real malicious fixtures on local and CI hosts. Railway
+    production feasibility is **unproven**, so the S0 gate stays OFF.
+
 ### Known debts carried into v0.2
 
 Kept visible, not resolved by this release transition:
@@ -189,8 +202,10 @@ Kept visible, not resolved by this release transition:
   secrets from generative builds, made installs deterministic
   (`npm ci --ignore-scripts`, vetted lockfile) and disabled the generative
   path by default, but builds still have network, filesystem and process
-  access as the API user. Closed only by the isolated generation worker
-  (R6).
+  access as the API user. R4 closes this for hosts that can run its
+  bubblewrap build zone (verified locally and in CI); **still open for
+  production** until a worker host is chosen (R4 infrastructure decision).
+  Visual QA of generated JavaScript is still unrestricted network-wise.
 - Rollback of **historical** versions published before artifacts were
   recorded still rebuilds their SiteConfig (legacy compatibility, not
   exact-byte). Every version since S1 is artifact-backed and restored

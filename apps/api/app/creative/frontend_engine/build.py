@@ -13,10 +13,18 @@ anywhere on its path) — `pnpm exec` would look for pnpm-workspace.yaml
 up the tree and either fail or accidentally resolve packages from the
 real repo, neither of which is desired here.
 
-TRUST BOUNDARY (v0.2 S0). Generated website source is UNTRUSTED CODE, and
-`astro build` EXECUTES it: component frontmatter, astro.config and any
-integration run as Node.js in this subprocess. S0 is containment, not a
-sandbox:
+TRUST BOUNDARY (v0.2 S0 + R4). Generated website source is UNTRUSTED CODE,
+and `astro build` EXECUTES it (component frontmatter and bundling of
+generated TS/JS). Since R4 that step runs ONLY inside the untrusted build
+zone (app.creative.frontend_engine.sandbox): no inherited environment, no
+network, no filesystem beyond the job's workspace, its own PID namespace
+and resource limits — and fails closed where the host cannot enforce it.
+Its output is only a CANDIDATE (`collect_candidate_files`): read without
+following links, bounded, then judged by trusted code (PlatformContract,
+TruthContract, SHA-256, private storage) before anything reaches READY.
+
+The trusted install step stays outside the build zone (it needs the
+registry) but executes no generated code:
 
 - Environment: deny by default. The subprocess gets ONLY
   `generative_build_env()` — never the API process's environment, so no
@@ -28,13 +36,14 @@ sandbox:
   lockfile (templates.VETTED_LOCKFILE_PATH), after a strict
   package.json/lockfile consistency check. No fresh resolution, no
   dependency lifecycle scripts.
-- NOT provided (GENERATIVE_BUILD_NETWORK_ISOLATION_DEBT, closed only by the
-  isolated generation worker): network isolation (install and build can
-  reach the network), filesystem isolation (the process runs as the API's
-  own OS user and can read whatever that user can, including other
-  processes' /proc/<pid>/environ when permitted), and kernel/process
-  isolation. Until then the whole path is disabled in production by
-  `settings.generative_website_builds_enabled` (default False).
+- Generated files may only live under src/ and public/ with allowlisted
+  extensions (workspace.py), so no .npmrc, package.json or config of theirs
+  is ever read by the install.
+
+Whether PRODUCTION can host the build zone is unproven
+(GENERATIVE_BUILD_NETWORK_ISOLATION_DEBT, see the R4 architecture section);
+the whole path stays disabled in production by
+`settings.generative_website_builds_enabled` (default False).
 """
 
 import base64
@@ -44,10 +53,12 @@ import logging
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
 
+from app.creative.frontend_engine.sandbox import SandboxError, SandboxLimits, SandboxRunner, detect_runner
 from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build_package_json, vetted_lockfile
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace
 from app.publishing.errors import WebsitePublisherError
@@ -57,7 +68,13 @@ from app.publishing.security_headers import generate_headers_file
 logger = logging.getLogger(__name__)
 
 _INSTALL_TIMEOUT_SECONDS = 180
-_BUILD_TIMEOUT_SECONDS = 120
+_BUILD_LIMITS = SandboxLimits(wall_timeout_seconds=120)
+# Candidate output bounds (R4): what trusted code agrees to read back.
+MAX_CANDIDATE_FILES = 2000
+MAX_CANDIDATE_FILE_BYTES = 25 * 1024**2
+MAX_CANDIDATE_TOTAL_BYTES = 100 * 1024**2
+# astro's own CLI entry, run by node directly — no npm inside the build zone.
+_ASTRO_BUILD_ARGV = ["node", "node_modules/astro/bin/astro.mjs", "build"]
 _HEAD_CLOSE_TAG = re.compile(r"</head>", re.IGNORECASE)
 _BODY_CLOSE_TAG = re.compile(r"</body>", re.IGNORECASE)
 # v0.2 R2: the platform-owned consent banner (same ids/hooks as the legacy
@@ -153,6 +170,50 @@ def _verify_lockfile(workspace: Path) -> None:
             )
 
 
+def sandbox_build_env(env: dict[str, str]) -> dict[str, str]:
+    """The same allowlisted keys, with every writable location pointing at
+    the build zone's private /tmp (the host toolchain dir does not exist
+    there)."""
+    return {
+        **env,
+        "HOME": "/tmp",
+        "TMPDIR": "/tmp",
+        "npm_config_cache": "/tmp/npm-cache",
+        "npm_config_userconfig": "/tmp/.npmrc",
+    }
+
+
+def collect_candidate_files(out_dir: Path) -> dict[str, bytes]:
+    """Reads the untrusted build output as a CANDIDATE: never follows a
+    link (a planted `dist/x -> /etc/passwd` or `-> other job` would
+    otherwise be read by the trusted process), accepts regular files only,
+    and bounds count and size."""
+    if out_dir.is_symlink() or not out_dir.is_dir():
+        raise GenerativeBuildError("astro build produced no output directory")
+    files: dict[str, bytes] = {}
+    total = 0
+    for dirpath, dirnames, filenames in os.walk(out_dir, followlinks=False):
+        for name in [*dirnames, *filenames]:
+            path = Path(dirpath) / name
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                raise GenerativeBuildError("candidate output contains a symbolic link — rejected")
+            if name in dirnames:
+                continue
+            if not stat.S_ISREG(mode):
+                raise GenerativeBuildError("candidate output contains a non-regular file — rejected")
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as handle:
+                data = handle.read(MAX_CANDIDATE_FILE_BYTES + 1)
+            if len(data) > MAX_CANDIDATE_FILE_BYTES:
+                raise GenerativeBuildError("candidate output file exceeds the size limit")
+            total += len(data)
+            if total > MAX_CANDIDATE_TOTAL_BYTES or len(files) >= MAX_CANDIDATE_FILES:
+                raise GenerativeBuildError("candidate output exceeds the artifact size/file-count limit")
+            files[path.relative_to(out_dir).as_posix()] = data
+    return files
+
+
 def _run(args: list[str], *, cwd: Path, env: dict[str, str], timeout: int, step: str) -> None:
     """`env` is always generative_build_env(); it is never logged."""
     try:
@@ -236,11 +297,19 @@ def rebuild_from_archive(archive: bytes, *, business_id: str, api_base_url: str 
 
 
 def build_generative_workspace(
-    workspace: Path, *, business_id: str, api_base_url: str | None = None
+    workspace: Path,
+    *,
+    business_id: str,
+    api_base_url: str | None = None,
+    runner: SandboxRunner | None = None,
 ) -> WebsiteArtifact:
     if not (workspace / "package.json").is_file():
         raise GenerativeBuildError(f"{workspace} has no package.json — write_manifest must run before building.")
     _verify_lockfile(workspace)
+    try:
+        runner = runner or detect_runner()  # fail closed BEFORE installing anything
+    except SandboxError as exc:
+        raise GenerativeBuildError(str(exc)) from exc
 
     toolchain_dir = Path(tempfile.mkdtemp(prefix="gwa-toolchain-"))
     try:
@@ -254,31 +323,33 @@ def build_generative_workspace(
             step="npm ci",
         )
         logger.info("frontend_engine npm ci completed")
-        logger.info("frontend_engine astro build started")
-        _run(["npm", "run", "build"], cwd=workspace, env=env, timeout=_BUILD_TIMEOUT_SECONDS, step="astro build")
+        logger.info("frontend_engine astro build started (sandbox=%s)", runner.name)
+        try:
+            runner.run(
+                _ASTRO_BUILD_ARGV,
+                workspace=workspace,
+                env=sandbox_build_env(env),
+                limits=_BUILD_LIMITS,
+                step="astro build",
+            )
+        except SandboxError as exc:
+            raise GenerativeBuildError(str(exc)) from exc
         logger.info("frontend_engine astro build completed")
     finally:
         shutil.rmtree(toolchain_dir, ignore_errors=True)
-    out_dir = workspace / "dist"
-
-    if not out_dir.is_dir():
-        raise GenerativeBuildError(f"astro build reported success but {out_dir} doesn't exist")
 
     files: dict[str, bytes] = {}
     html_texts: list[str] = []
-    for path in out_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(out_dir).as_posix()
+    for relative, data in collect_candidate_files(workspace / "dist").items():
         if relative.endswith(".html"):
-            html = path.read_text(encoding="utf-8", errors="ignore")
+            html = data.decode("utf-8", errors="ignore")
             injected = _inject_platform_consent(
                 _inject_platform_config(html, business_id=business_id, api_base_url=api_base_url)
             )
             html_texts.append(injected)
             files[relative] = injected.encode("utf-8")
         else:
-            files[relative] = path.read_bytes()
+            files[relative] = data
 
     if "index.html" not in files:
         raise GenerativeBuildError("astro build produced no index.html")
