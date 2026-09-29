@@ -474,7 +474,8 @@ def test_worker_endpoints_require_the_narrow_credentials(api, monkeypatch):
     monkeypatch.setattr(settings, "generation_worker_signing_key", "signing-" + uuid.uuid4().hex)
     assert api.post("/internal/generation-worker/claim").status_code == 401
     assert api.post("/internal/generation-worker/claim", headers={"Authorization": "Bearer nope"}).status_code == 401
-    assert api.post("/internal/generation-worker/claim", headers={"Authorization": f"Bearer {token}"}).status_code == 204
+    authorized = {"Authorization": f"Bearer {token}"}
+    assert api.post("/internal/generation-worker/claim", headers=authorized).status_code == 204
     body = ExecutionResult(job_id=uuid.uuid4(), attempt=1, status="failed").model_dump(mode="json")
     # The claim credential is NOT a result credential.
     response = api.post(
