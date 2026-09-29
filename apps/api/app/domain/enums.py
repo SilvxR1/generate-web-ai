@@ -454,3 +454,30 @@ class HealthStatus(StrEnum):
     DEGRADED = "degraded"
     DOWN = "down"
     UNKNOWN = "unknown"
+
+
+class GenerationJobStatus(StrEnum):
+    """v0.2 R4: a generative website job's durable lifecycle
+    (app.creative.generation_jobs). QUEUED -> RUNNING -> SUCCEEDED | FAILED;
+    QUEUED -> FAILED. SUCCEEDED and FAILED are terminal — a job is never
+    re-run; a deliberate retry is a NEW job with a new idempotency key."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class GenerationFailureKind(StrEnum):
+    """Why a generation job FAILED — a safe category, never customer
+    content or a raw provider/build log."""
+
+    SANDBOX_UNAVAILABLE = "sandbox_unavailable"
+    PROVIDER = "provider"
+    DEPENDENCY_DRIFT = "dependency_drift"
+    BUILD = "build"
+    RESOURCE_LIMIT = "resource_limit"
+    CANDIDATE_REJECTED = "candidate_rejected"
+    PLATFORM_CONTRACT = "platform_contract"
+    TRUTH_CONTRACT = "truth_contract"
+    WORKER_LOST = "worker_lost"

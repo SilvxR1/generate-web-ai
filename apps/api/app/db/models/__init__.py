@@ -15,6 +15,7 @@ from app.db.models.creative_generation import CreativeGeneration
 from app.db.models.credential import Credential
 from app.db.models.custom_domain import CustomDomain
 from app.db.models.execution import Execution
+from app.db.models.generation_job import GenerationJob
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.integration import Integration
 from app.db.models.internal_notification import InternalNotification
@@ -42,6 +43,7 @@ __all__ = [
     "CreativeGeneration",
     "CustomDomain",
     "Execution",
+    "GenerationJob",
     "GenerativeWebsiteArtifact",
     "InternalNotification",
     "Integration",
