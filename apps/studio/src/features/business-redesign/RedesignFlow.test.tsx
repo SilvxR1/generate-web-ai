@@ -310,7 +310,12 @@ describe("RedesignFlow", () => {
 
     expect(screen.getByRole("button", { name: /Generating proposal/ })).toBeDisabled();
 
+    // Let the flow finish INSIDE this test (it creates the draft next);
+    // unawaited, that request outlived the test and its fetch stub.
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, websiteDraft()));
     resolveGeneration(jsonResponse(200, creativeGeneration()));
+    await waitFor(() => expect(screen.getByText("Your proposal")).toBeInTheDocument());
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes("/creative-generations"))).toHaveLength(1);
   });
 
   it("disables Publish while publishing, preventing a duplicate submission", async () => {
