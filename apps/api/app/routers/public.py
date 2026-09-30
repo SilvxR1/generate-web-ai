@@ -32,6 +32,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.analytics_events.provider import AnalyticsProvider
@@ -112,6 +113,13 @@ def create_public_lead(
         logger.info("public_lead_suppressed_preview business=%s", business.id)
         return PublicLeadCreateResponse()
 
+    leads = LeadRepository(session)
+    # H1.2: a retry of an already-stored submission (same business, same
+    # client submission id) gets the identical response — never a second
+    # lead, never a second round of notifications/automation.
+    if payload.submission_id is not None and leads.get_by_client_submission(business.id, payload.submission_id):
+        return PublicLeadCreateResponse()
+
     lead = Lead(
         tenant_id=business.tenant_id,
         business_id=business.id,
@@ -123,8 +131,14 @@ def create_public_lead(
         subject=payload.subject,
         source_url=payload.source_url,
         consent_given=payload.consent,
+        details=[detail.model_dump() for detail in payload.details] or None,
+        client_submission_id=payload.submission_id,
     )
-    LeadRepository(session).add(lead)
+    try:
+        with session.begin_nested():  # a concurrent retry loses the race on the unique constraint
+            leads.add(lead)
+    except IntegrityError:
+        return PublicLeadCreateResponse()
 
     # Best-effort from here on — the lead above is already persisted
     # (this function's transaction commits on return, see

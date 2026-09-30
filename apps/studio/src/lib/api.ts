@@ -480,7 +480,15 @@ export interface Lead {
   consent_given: boolean;
   status: LeadStatus;
   acknowledgement_status: NotificationDeliveryStatus;
+  /** H1.2: the site form's additional fields, as the visitor saw them. */
+  details?: LeadDetail[] | null;
   created_at: string;
+}
+
+export interface LeadDetail {
+  key: string;
+  label: string;
+  value: string;
 }
 
 export interface LeadFilters {
@@ -1352,6 +1360,8 @@ export interface GenerativeArtifact {
   visual_qa_state: { passed?: boolean; findings?: unknown[] } & Record<string, unknown>;
   screenshot_keys: Record<string, string>;
   screenshot_urls: Record<string, string>;
+  /** H1.2: true only when visual_qa_state was produced for THIS draft's current artifact. */
+  visual_qa_current?: boolean;
   generated_at: string;
   duration_ms: number | null;
 }

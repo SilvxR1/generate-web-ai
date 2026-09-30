@@ -214,6 +214,16 @@ export function LeadsList({
                 <span className="field-hint">Source: {SOURCE_LABELS[lead.source] ?? lead.source}</span>
                 <span className="field-hint">{ACKNOWLEDGEMENT_LABELS[lead.acknowledgement_status]}</span>
               </div>
+              {lead.details && lead.details.length > 0 && (
+                <dl className="leads-list__details" aria-label="Form details">
+                  {lead.details.map((detail) => (
+                    <div key={detail.key}>
+                      <dt>{detail.label}</dt>
+                      <dd>{detail.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
               {isExpanded && lead.subject && (
                 <p className="leads-list__message">
                   <strong>Subject:</strong> {lead.subject}

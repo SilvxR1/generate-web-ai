@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, ForeignKey, String, Text
+from sqlalchemy import JSON, Boolean, ForeignKey, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -31,6 +31,10 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     QUALIFIED -> WON/LOST) is the only follow-up field; no notes, no
     pipeline stages, no user assignment.
     """
+    __table_args__ = (
+        UniqueConstraint("business_id", "client_submission_id", name="uq_leads_business_submission"),
+    )
+
 
     __tablename__ = "leads"
 
@@ -64,6 +68,13 @@ class Lead(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
     # every SQLAlchemy declarative model (Base.metadata), same reasoning
     # as BusinessAsset.asset_metadata/CreativeGeneration.generation_metadata.
     lead_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # H1.2: the site form's additional fields as the visitor entered them —
+    # [{"key", "label", "value"}] validated by PublicLeadDetail (bounded,
+    # labelled). Request content the business asked for, not provenance.
+    details: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # H1.2: client-generated id of the submission attempt series; unique per
+    # business so a retried POST can never create a second lead.
+    client_submission_id: Mapped[uuid.UUID | None] = mapped_column(Uuid(as_uuid=True), nullable=True)
     # Unlike `source` above, this one *is* an enum column (str_enum,
     # same as Business.status/Website.status): a lead's status is a
     # closed, code-owned vocabulary — never free text a caller could put

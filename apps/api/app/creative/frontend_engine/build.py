@@ -90,6 +90,12 @@ _BODY_CLOSE_TAG = re.compile(r"</body>", re.IGNORECASE)
 PLATFORM_CONSENT_FRAGMENT = (Path(__file__).parent / "templates" / "platform_consent.html").read_text(
     encoding="utf-8"
 ).strip()
+# H1.2: the same banner (identical ids and script) with localized text;
+# the locale is chosen by trusted code, never by the site.
+PLATFORM_CONSENT_FRAGMENTS = {
+    "en": PLATFORM_CONSENT_FRAGMENT,
+    "es": (Path(__file__).parent / "templates" / "platform_consent.es.html").read_text(encoding="utf-8").strip(),
+}
 _INLINE_SCRIPT_PATTERN = re.compile(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", re.DOTALL)
 
 
@@ -246,22 +252,27 @@ def _inject_platform_config(html: str, *, business_id: str, api_base_url: str | 
     return tag + html  # No <head> found (malformed AI output) — prepend rather than silently drop config.
 
 
-def _inject_platform_consent(html: str) -> str:
+def _inject_platform_consent(html: str, locale: str = "en") -> str:
     """v0.2 R2: consent is platform-owned. The banner and its behavior are
     engine-authored and injected post-build into every page; generated
     code may only theme it through `--gwa-consent-*` CSS custom properties
     and open it via `data-open-consent-preferences` (the legacy hook)."""
+    fragment = PLATFORM_CONSENT_FRAGMENTS.get(locale)
+    if fragment is None:
+        raise ValueError(f"no platform consent banner for locale {locale!r}")
     if _BODY_CLOSE_TAG.search(html):
-        return _BODY_CLOSE_TAG.sub(lambda _: PLATFORM_CONSENT_FRAGMENT + "</body>", html, count=1)
-    return html + PLATFORM_CONSENT_FRAGMENT  # No </body> (malformed AI output) — append rather than drop it.
+        return _BODY_CLOSE_TAG.sub(lambda _: fragment + "</body>", html, count=1)
+    return html + fragment  # No </body> (malformed AI output) — append rather than drop it.
 
 
-def inject_platform_runtime(html: str, *, business_id: str, api_base_url: str | None) -> str:
+def inject_platform_runtime(html: str, *, business_id: str, api_base_url: str | None, locale: str = "en") -> str:
     """The platform runtime every built page receives post-build: the
     server-controlled `platform-config` and the platform consent banner.
     Also used by app.creative.source_adapter for exported (non-Astro)
     sources, so both paths inject exactly the same bytes."""
-    return _inject_platform_consent(_inject_platform_config(html, business_id=business_id, api_base_url=api_base_url))
+    return _inject_platform_consent(
+        _inject_platform_config(html, business_id=business_id, api_base_url=api_base_url), locale
+    )
 
 
 def _browser_script_text(body: str) -> str:

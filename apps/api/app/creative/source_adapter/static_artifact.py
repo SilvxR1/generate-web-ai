@@ -64,6 +64,7 @@ def assemble_static_artifact(
     api_base_url: str | None,
     site_origin: str,
     csp_extensions: CspExtensions | None,
+    locale: str = "en",
 ) -> WebsiteArtifact:
     candidate = collect_candidate_files(client_dir)
     files: dict[str, bytes] = {}
@@ -72,7 +73,7 @@ def assemble_static_artifact(
             continue
         if relative.endswith(".html"):
             html = inject_platform_runtime(
-                data.decode("utf-8", errors="ignore"), business_id=business_id, api_base_url=api_base_url
+                data.decode("utf-8", errors="ignore"), business_id=business_id, api_base_url=api_base_url, locale=locale
             )
             files[relative] = html.encode("utf-8")
         else:

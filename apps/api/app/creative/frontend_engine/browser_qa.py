@@ -84,6 +84,33 @@ class BrowserQAResult:
 
 
 HEADERS_FILE = "_headers"
+# H1.2: scroll the whole page so `loading="lazy"` images actually load, wait
+# for them to settle, then classify. BROKEN = completed with no pixels (a
+# failed or corrupt file) or rendered yet still loading after the wait.
+# Lazy images that are never rendered (e.g. hover-only) are reported, not
+# failed. Scrolls back to the top before returning.
+_SETTLE_IMAGES = """async () => {
+  const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const step = Math.max(200, Math.floor(window.innerHeight * 0.8));
+  for (let y = 0; y <= document.documentElement.scrollHeight; y += step) {
+    window.scrollTo(0, y);
+    await pause(60);
+  }
+  const images = [...document.images];
+  const deadline = Date.now() + 5000;
+  while (images.some((i) => !i.complete && i.getClientRects().length > 0) && Date.now() < deadline) {
+    await pause(100);
+  }
+  window.scrollTo(0, 0);
+  await pause(100);
+  const rendered = (i) => i.getClientRects().length > 0;
+  return {
+    broken: images
+      .filter((i) => (i.complete && i.naturalWidth === 0) || (!i.complete && rendered(i)))
+      .map((i) => i.currentSrc || i.src),
+    unrendered_lazy: images.filter((i) => !i.complete && !rendered(i)).length,
+  };
+}"""
 _CSP_VIOLATION_WATCH = (
     "window.__gwaCspViolations = [];"
     "document.addEventListener('securitypolicyviolation', e => window.__gwaCspViolations.push("
@@ -197,11 +224,12 @@ def _check_viewport(page, *, name: str, base_url: str, expected_csp: str | None 
     )
     findings.append(BrowserQAFinding(name, "no_uncaught_page_errors", not page_errors, "; ".join(page_errors)[:500]))
 
-    # No broken images.
-    broken_images = page.eval_on_selector_all(
-        "img", "imgs => imgs.filter(i => !i.complete || i.naturalWidth === 0).map(i => i.src)"
-    )
-    findings.append(BrowserQAFinding(name, "no_broken_images", len(broken_images) == 0, "; ".join(broken_images)))
+    # No broken images (H1.2: lazy images are exercised, not guessed at).
+    images = page.evaluate(_SETTLE_IMAGES)
+    detail = "; ".join(images["broken"])
+    if images["unrendered_lazy"]:
+        detail = (detail + "; " if detail else "") + f"{images['unrendered_lazy']} lazy image(s) never rendered"
+    findings.append(BrowserQAFinding(name, "no_broken_images", not images["broken"], detail))
 
     # No horizontal overflow.
     overflow = page.evaluate("document.documentElement.scrollWidth > window.innerWidth + 1")
@@ -264,7 +292,24 @@ def check_browser_qa_availability() -> tuple[bool, str | None]:
     return True, None
 
 
-def _offline_router(base_url: str, offline_assets: Mapping[str, bytes], blocked: list[str]) -> Callable[..., None]:
+def _csp_authorized_origins(csp: str | None) -> frozenset[str]:
+    """H1.2: the exact https origins the artifact's own CSP allows for
+    stylesheets and fonts (e.g. a licensed webfont API) — the only
+    third-party requests offline QA may answer (with an empty stub)."""
+    origins: set[str] = set()
+    for directive in (csp or "").split(";"):
+        tokens = directive.split()
+        if tokens and tokens[0] in ("style-src", "font-src"):
+            origins.update(t.rstrip("/") for t in tokens[1:] if t.startswith("https://") and "*" not in t)
+    return frozenset(origins)
+
+
+def _offline_router(
+    base_url: str,
+    offline_assets: Mapping[str, bytes],
+    blocked: list[str],
+    stub_origins: frozenset[str] = frozenset(),
+) -> Callable[..., None]:
     """v0.2 R4.1: the page may load only the local site and the business's
     own assets (supplied by trusted code, never fetched from inside the
     sandbox); everything else is aborted — defense in depth on top of the
@@ -274,6 +319,14 @@ def _offline_router(base_url: str, offline_assets: Mapping[str, bytes], blocked:
         url = route.request.url
         if url.startswith(base_url + "/"):
             route.continue_()
+        elif "/".join(url.split("/", 3)[:3]) in stub_origins:
+            # Deterministic tier (H1.2): a CSP-authorized font/style origin is
+            # answered with an empty stub (no network, no console error); the
+            # page falls back to its font stack. Recorded, never hidden.
+            if len(blocked) < 200:
+                blocked.append(f"stubbed {url[:290]}")
+            is_css = url.split("?", 1)[0].endswith(".css") or "/css" in url
+            route.fulfill(status=200, body=b"", headers={"content-type": "text/css" if is_css else "font/woff2"})
         elif url in offline_assets:
             content_type = mimetypes.guess_type(url.split("?", 1)[0])[0] or "application/octet-stream"
             route.fulfill(status=200, body=offline_assets[url], headers={"content-type": content_type})
@@ -333,7 +386,9 @@ def run_browser_qa(
                 # H1.1: every CSP violation the artifact's own policy reports.
                 context.add_init_script(_CSP_VIOLATION_WATCH)
                 if offline_assets is not None:
-                    context.route("**/*", _offline_router(base_url, offline_assets, result.blocked_requests))
+                    stubs = _csp_authorized_origins(expected_csp)
+                    router = _offline_router(base_url, offline_assets, result.blocked_requests, stubs)
+                    context.route("**/*", router)
                 try:
                     for name, width, height in viewports:
                         page = context.new_page()

@@ -581,5 +581,6 @@ def test_r4_1_migration_is_additive_reversible_and_the_single_head(tmp_path):
     alembic("downgrade", "a4d2e8f1c7b3")
     assert "source_key" not in columns()
     alembic("upgrade", "head")
-    # H1.1 (d2b7e4a9c1f3, generation_jobs.source_family) now follows R4.1.
-    assert alembic("heads").split() == ["d2b7e4a9c1f3", "(head)"]
+    # H1.1 (d2b7e4a9c1f3, generation_jobs.source_family) and H1.2
+    # (e5c1a7b3d9f2, leads.details/client_submission_id) now follow R4.1.
+    assert alembic("heads").split() == ["e5c1a7b3d9f2", "(head)"]

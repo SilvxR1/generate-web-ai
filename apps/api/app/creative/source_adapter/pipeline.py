@@ -24,7 +24,7 @@ from pathlib import Path
 
 from app.creative.frontend_engine.sandbox import SandboxRunner, detect_runner
 from app.creative.source_adapter.cleanup import portability_cleanup
-from app.creative.source_adapter.mapping import SourceMapping, apply_mapping, resolved_csp
+from app.creative.source_adapter.mapping import SiteContext, SourceMapping, apply_mapping, resolved_csp
 from app.creative.source_adapter.records import AdapterError, sha256_hex
 from app.creative.source_adapter.snapshot import snapshot_export
 from app.creative.source_adapter.static_artifact import assemble_static_artifact
@@ -49,6 +49,35 @@ def external_links(files: dict[str, bytes]) -> list[dict[str, object]]:
             new_tab = 'target="_blank"' in attrs
             links.append({"page": path, "new_tab": new_tab, "safe": not new_tab or "noopener" in attrs})
     return links
+
+
+_FONTSOURCE_FAMILIES = ("inter-tight", "ibm-plex-mono")
+_PLATFORM_FILES = frozenset({"_headers", "robots.txt", "sitemap.xml"})
+
+
+def asset_provenance(files: dict[str, bytes], *, snapshot_files: dict[str, str], app_dir: str) -> dict:
+    """H1.2: where every artifact file comes from. An export asset must be
+    byte-identical to the immutable snapshot's public/ file (same SHA-256),
+    so the artifact provably persists the ORIGINAL media, not a copy that
+    drifted; everything else is labelled by origin."""
+    counts: dict[str, int] = {}
+    media: list[dict[str, str]] = []
+    for path, data in sorted(files.items()):
+        digest = sha256_hex(data)
+        if snapshot_files.get(f"{app_dir}/public/{path}") == digest:
+            origin = "higgsfield-export"
+        elif path in _PLATFORM_FILES:
+            origin = "gwa-platform"
+        elif path == "og-image.jpg":
+            origin = "gwa-derived"
+        elif path.endswith((".woff", ".woff2")) and any(f in path for f in _FONTSOURCE_FAMILIES):
+            origin = "self-hosted-ofl-font"
+        else:
+            origin = "build-output"
+        counts[origin] = counts.get(origin, 0) + 1
+        if origin != "build-output":
+            media.append({"path": path, "origin": origin, "sha256": digest})
+    return {"counts": counts, "files": media}
 
 
 def _make_writable(root: Path) -> None:
@@ -87,7 +116,8 @@ def adapt_export(
 
     truth = derive_business_truth(business_config=business_config)
     cleanup = portability_cleanup(app)
-    changes = cleanup.changes + apply_mapping(app, mapping, truth)
+    site = SiteContext(origin=site_origin.rstrip("/"), locale=mapping.locale)
+    changes = cleanup.changes + apply_mapping(app, mapping, truth, site)
     (work_root / "changes.json").write_text(json.dumps([asdict(c) for c in changes], indent=2), encoding="utf-8")
 
     toolchain = toolchain or Toolchain.detect()
@@ -106,6 +136,7 @@ def adapt_export(
         api_base_url=api_base_url,
         site_origin=site_origin,
         csp_extensions=csp_extensions,
+        locale=mapping.locale,
     )
     platform = validate_platform_contract(artifact.files, business_config=business_config)
     truth_result = validate_truth_contract(artifact.files, business_truth=truth)
@@ -115,6 +146,10 @@ def adapt_export(
     if artifact_sha256(unpack_artifact(archive)) != sha256 or pack_artifact(unpack_artifact(archive)) != archive:
         raise AdapterError("the packed artifact does not round-trip to the same identity")
     ready = platform.passed and truth_result.passed
+    readiness = [asdict(f) for f in (mapping.readiness(truth) if mapping.readiness is not None else [])]
+    provenance = asset_provenance(
+        artifact.files, snapshot_files={f.path: f.sha256 for f in snapshot.files}, app_dir=snapshot.app_dir
+    )
     (work_root / "artifact.tar.gz").write_bytes(archive)
 
     report = {
@@ -162,6 +197,11 @@ def adapt_export(
             "findings": [f.model_dump(mode="json") for f in truth_result.findings],
         },
         "ready": ready,
+        # H1.2: owner/legal input still needed for a real launch (separate from
+        # artifact validity, which is the contracts' verdict above).
+        "readiness_findings": readiness,
+        "launch_ready": ready and not any(f["severity"] == "launch_blocker" for f in readiness),
+        "asset_provenance": provenance,
     }
     (work_root / "h1-report.json").write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     return report

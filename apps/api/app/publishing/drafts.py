@@ -44,6 +44,7 @@ since nothing here deploys until publish_*website_draft, and that only
 after the APPROVED check and a successful artifact integrity check.
 """
 
+import hashlib
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -77,6 +78,7 @@ from app.publishing.build import build_site
 from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
+from app.publishing.qa_evidence import visual_qa_evidence
 from app.publishing.security_headers import CspExtensions
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
@@ -765,13 +767,19 @@ def run_visual_qa_for_draft(
         # (missing Playwright/Chromium), never a QA *finding*.
         raise GenerativeDraftError(str(exc), code="visual_qa_unavailable", status_code=503) from exc
 
-    artifact_row.visual_qa_state = {
-        "passed": visual_result.passed,
-        "findings": [
+    # H1.2: evidence names the exact artifact identity and `_headers` it was
+    # produced under (a legacy rebuild has no stored identity: never current).
+    headers = artifact.files.get("_headers")
+    artifact_row.visual_qa_state = visual_qa_evidence(
+        passed=visual_result.passed,
+        findings=[
             {"viewport": f.viewport, "check": f.check, "passed": f.passed, "detail": f.detail}
             for f in visual_result.browser_qa.findings
         ],
-    }
+        artifact_sha256=draft.artifact_sha256 if draft.artifact_key is not None else None,
+        headers_sha256=hashlib.sha256(headers).hexdigest() if headers is not None else None,
+        source="api-visual-qa",
+    )
     artifact_row.screenshot_keys = visual_result.screenshot_keys
     return artifact_row
 

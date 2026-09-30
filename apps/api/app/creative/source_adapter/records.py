@@ -64,6 +64,29 @@ class JsonFieldPatch:
 
 
 @dataclass(frozen=True)
+class JsonFieldSet:
+    """Set top-level `key` of the JSON file `path` to `value`, only if it is
+    currently absent or null (H1.2: e.g. an owned og:image replacing the
+    removed builder-hosted one) — never overwrites a real value."""
+
+    path: str
+    key: str
+    value: object
+    reason: str
+    visible: str | None = None
+
+
+@dataclass(frozen=True)
+class NewBinaryFile:
+    """A platform-derived binary file (H1.2: the owned Open Graph image)."""
+
+    path: str
+    content: bytes
+    reason: str
+    visible: str | None = None
+
+
+@dataclass(frozen=True)
 class NewFile:
     path: str
     content: str
@@ -121,13 +144,29 @@ def apply_json_field(root: Path, patch: JsonFieldPatch) -> ChangeRecord:
     return ChangeRecord(patch.path, "patch", patch.reason, patch.visible, before, _file_sha(target))
 
 
-def write_new_file(root: Path, new: NewFile) -> ChangeRecord:
+def write_new_file(root: Path, new: NewFile | NewBinaryFile) -> ChangeRecord:
     target = root / new.path
     if target.exists():
         raise AdapterError(f"{new.path}: refusing to overwrite an existing source file")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(new.content, encoding="utf-8")
+    if isinstance(new, NewBinaryFile):
+        target.write_bytes(new.content)
+    else:
+        target.write_text(new.content, encoding="utf-8")
     return ChangeRecord(new.path, "add", new.reason, new.visible, None, _file_sha(target))
+
+
+def set_json_field(root: Path, patch: JsonFieldSet) -> ChangeRecord:
+    target = root / patch.path
+    before = _file_sha(target)
+    if before is None:
+        raise PatchMismatchError(f"{patch.path}: file not found")
+    data = json.loads(target.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or data.get(patch.key) is not None:
+        raise PatchMismatchError(f"{patch.path}: {patch.key!r} already has a value; refusing to overwrite it")
+    data[patch.key] = patch.value
+    target.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return ChangeRecord(patch.path, "patch", patch.reason, patch.visible, before, _file_sha(target))
 
 
 def remove_file(root: Path, relative: str, *, reason: str, kind: str = "remove") -> ChangeRecord:

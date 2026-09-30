@@ -6,6 +6,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 
 
+class LeadDetailRead(BaseModel):
+    """H1.2: one additional site-form field, as the visitor saw it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    value: str
+
+
 class LeadRead(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
 
@@ -25,6 +35,8 @@ class LeadRead(BaseModel):
     # automation, server-side, after it was already persisted — see
     # app.automation.n8n.dispatch's own docstring.
     automation_dispatch_status: NotificationDeliveryStatus
+    # H1.2: the site form's additional fields (None for leads without any).
+    details: list[LeadDetailRead] | None = None
     created_at: datetime
 
 

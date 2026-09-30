@@ -1,8 +1,12 @@
 """SourceMapping (H1): the source-specific half of the adapter — fixed data
 for ONE export, applied in a fixed order by apply_mapping:
 
-    removed backend files -> patches -> JSON field patches -> added dependencies -> new
-    platform files -> BusinessTruth bindings
+    removed backend files -> patches -> JSON field patches/sets -> added
+    dependencies -> new platform files -> BusinessTruth bindings
+
+H1.2: callables receive the SiteContext (public origin, locale) and a
+mapping reports launch-readiness findings (owner/legal input still
+needed), kept separate from artifact validity (the contracts).
 
 Every step is a records.py primitive, so every change is recorded with its
 before/after SHA-256 and any drift in the export stops the adapter.
@@ -18,18 +22,44 @@ from app.creative.source_adapter.records import (
     ChangeRecord,
     ContentBinding,
     JsonFieldPatch,
+    JsonFieldSet,
+    NewBinaryFile,
     NewFile,
     SourcePatch,
     apply_binding,
     apply_json_field,
     apply_patch,
     remove_file,
+    set_json_field,
     sha256_hex,
     write_new_file,
 )
 from app.domain.business_truth import BusinessTruth
 from app.publishing.csp_policy import validate_requested
 from app.publishing.security_headers import CspExtensions
+
+
+class BusinessTruthGapError(AdapterError):
+    """The export presents a business fact BusinessTruth does not contain
+    (e.g. a service the business never listed): fail closed — nothing is
+    invented and nothing is silently dropped."""
+
+
+@dataclass(frozen=True)
+class SiteContext:
+    origin: str  # the site's canonical public origin (https://...)
+    locale: str  # platform text locale (consent banner, legal pages)
+
+
+@dataclass(frozen=True)
+class ReadinessFinding:
+    """Launch readiness (H1.2), separate from artifact validity:
+    `launch_blocker` = must be resolved by the owner before a real launch;
+    `owner_review` = content the owner must confirm; `info` = recorded."""
+
+    code: str
+    severity: str  # launch_blocker | owner_review | info
+    detail: str
 
 
 @dataclass(frozen=True)
@@ -45,10 +75,16 @@ class SourceMapping:
     removed_files: tuple[str, ...]
     patches: tuple[SourcePatch, ...]
     bindings: tuple[ContentBinding, ...]
-    new_files: Callable[[BusinessTruth], list[NewFile]]
+    new_files: Callable[[BusinessTruth, SiteContext], list[NewFile | NewBinaryFile]]
     truth_values: Callable[[BusinessTruth], dict[str, str]]
     unbound_content: tuple[str, ...] = ()
     json_fields: tuple[JsonFieldPatch, ...] = ()
+    locale: str = "en"
+    json_sets: Callable[[BusinessTruth, SiteContext], list[JsonFieldSet]] | None = None
+    readiness: Callable[[BusinessTruth], list[ReadinessFinding]] | None = None
+    # Platform-derived binary files computed from the export itself (e.g. the
+    # owned Open Graph image cropped from the export's own frame).
+    derived_files: Callable[[Path], list[NewBinaryFile]] | None = None
 
 
 def resolved_csp(mapping: SourceMapping) -> CspExtensions:
@@ -78,16 +114,20 @@ def _add_dependencies(app: Path, dependencies: dict[str, str]) -> ChangeRecord:
     )
 
 
-def apply_mapping(app: Path, mapping: SourceMapping, truth: BusinessTruth) -> list[ChangeRecord]:
+def apply_mapping(app: Path, mapping: SourceMapping, truth: BusinessTruth, site: SiteContext) -> list[ChangeRecord]:
     changes = [
         remove_file(app, relative, reason="Higgsfield server backend replaced by the GWA public Lead API")
         for relative in mapping.removed_files
     ]
     changes += [apply_patch(app, patch) for patch in mapping.patches]
     changes += [apply_json_field(app, field) for field in mapping.json_fields]
+    if mapping.json_sets is not None:
+        changes += [set_json_field(app, field) for field in mapping.json_sets(truth, site)]
     if mapping.added_dependencies:
         changes.append(_add_dependencies(app, mapping.added_dependencies))
-    changes += [write_new_file(app, new) for new in mapping.new_files(truth)]
+    if mapping.derived_files is not None:
+        changes += [write_new_file(app, new) for new in mapping.derived_files(app)]
+    changes += [write_new_file(app, new) for new in mapping.new_files(truth, site)]
     values = mapping.truth_values(truth)
     changes += [apply_binding(app, binding, values[binding.field]) for binding in mapping.bindings]
     return changes

@@ -262,7 +262,11 @@ export function GenerativeWorkflowPanel({
     stageDetail = activeDraft.build_error ?? undefined;
   } else if (activeDraft && artifact?.visual_qa_state && Object.keys(artifact.visual_qa_state).length > 0) {
     stage = "PREVIEW_READY";
-    stageDetail = artifact.visual_qa_state.passed === false ? "Visual QA found issues — see below." : undefined;
+    if (artifact.visual_qa_current === false) {
+      stageDetail = "This Visual QA was run on a different build — run visual QA again before approving.";
+    } else {
+      stageDetail = artifact.visual_qa_state.passed === false ? "Visual QA found issues — see below." : undefined;
+    }
   } else if (activeDraft && (activeDraft.status === "ready" || activeDraft.status === "approved" || activeDraft.status === "published")) {
     stage = "BUILDING";
     stageDetail = "Build succeeded — run visual QA to see a real preview.";
