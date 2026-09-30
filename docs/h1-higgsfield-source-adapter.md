@@ -1,5 +1,8 @@
 # H1 — GWA Platform Adapter proof of concept (Higgsfield export → WebsiteArtifact)
 
+> **Superseded by H2** (`docs/h2-higgsfield-universal-adapter.md`): `mapping.py` and `mappings/nexo_reformas.py` are replaced by the `higgsfield-tanstack-static` family adapter and the reviewed Nexo overlay; `scripts/h1_higgsfield_adapter.py` / `scripts/h1_preview_qa.py` are now `scripts/h2_source_adapter.py` / `scripts/h2_e2e_qa.py`. The H1–H1.2 decisions below still hold.
+
+
 Status: **proof of concept, local only.** Nothing is published, uploaded or
 enabled; the generative feature gate is unchanged.
 

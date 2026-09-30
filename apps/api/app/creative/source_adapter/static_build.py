@@ -14,7 +14,8 @@ Two zones, mirroring R4.2 (docs/v0.2-generative-website-architecture.md):
    network, cleared environment, empty root with read-only system dirs,
    Node.js and the bun binary, the workspace as the only writable path,
    wall/CPU/memory/file limits. This is where the exported code executes
-   (its postinstall check and its own `bun run build`).
+   (the adapter's BuildSpec steps: e.g. its postinstall check and its own
+   `bun run build`).
 """
 
 import json
@@ -149,18 +150,22 @@ def sandbox_env(toolchain: Toolchain) -> dict[str, str]:
 
 
 def build_in_sandbox(
-    app: Path, toolchain: Toolchain, runner: SandboxRunner, *, limits: SandboxLimits = BUILD_LIMITS
+    app: Path,
+    toolchain: Toolchain,
+    runner: SandboxRunner,
+    *,
+    steps: tuple[tuple[str, tuple[str, ...]], ...],
+    output_dir: str = "dist/client",
+    limits: SandboxLimits = BUILD_LIMITS,
 ) -> Path:
-    """Runs the export's own install check and `bun run build` in the R4
-    sandbox; returns the static client output directory."""
+    """Runs the adapter's build steps (H2: from its BuildSpec — the export's
+    own install check and `bun run build`) in the R4 sandbox; returns the
+    static output directory."""
     binds = ((str(toolchain.bun.parent), _BUN_IN_SANDBOX),)
     env = sandbox_env(toolchain)
-    steps = [("bun run build", ["bun", "run", "build"])]
-    if (app / "scripts/verify-install.mjs").exists():
-        steps.insert(0, ("postinstall check", ["node", "scripts/verify-install.mjs"]))
     for step, argv in steps:
-        runner.run(argv, workspace=app, env=env, limits=limits, step=step, ro_binds=binds)
-    client = app / "dist" / "client"
+        runner.run(list(argv), workspace=app, env=env, limits=limits, step=step, ro_binds=binds)
+    client = app / output_dir
     if not (client / "index.html").is_file():
-        raise StaticBuildError("the build produced no static dist/client/index.html (prerender did not run)")
+        raise StaticBuildError(f"the build produced no static {output_dir}/index.html (prerender did not run)")
     return client

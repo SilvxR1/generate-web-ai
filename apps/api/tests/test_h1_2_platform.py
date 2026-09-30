@@ -16,24 +16,24 @@ from app.creative.frontend_engine.build import (
     inject_platform_runtime,
 )
 from app.creative.frontend_engine.legal_pages import legal_owner_input_required, legal_page_content
-from app.creative.source_adapter.mapping import BusinessTruthGapError, SiteContext
-from app.creative.source_adapter.mappings import nexo_reformas as nexo
-from app.domain.business_config import BusinessConfig, BusinessProfile
-from app.domain.business_config.business_profile import ContactInfo, Location, ServiceOffering
+from app.creative.source_adapter import platform_files as pf
+from app.creative.source_adapter.fixtures import nexo_reformas_business_config
+from app.creative.source_adapter.overlays.nexo_reformas import OVERLAY as NEXO_OVERLAY
+from app.domain.business_config import BusinessConfig
+from app.domain.business_config.business_profile import ContactInfo
 from app.domain.business_truth import FactSource, LogoTruth, derive_business_truth
-from app.domain.enums import BusinessVertical
 from app.publishing.qa_evidence import QA_EVIDENCE_VERSION, evidence_is_current, visual_qa_evidence
 from app.qa.truth_contract import validate_truth_contract
 
-SITE = SiteContext(origin="https://nexo-reformas.example", locale="es")
+ORIGIN = "https://nexo-reformas.example"
 
 
 def _truth(config: BusinessConfig | None = None):
-    return derive_business_truth(business_config=config or nexo.h1_fixture_business_config())
+    return derive_business_truth(business_config=config or nexo_reformas_business_config())
 
 
 def _with_profile(**update: object) -> BusinessConfig:
-    config = nexo.h1_fixture_business_config()
+    config = nexo_reformas_business_config()
     return config.model_copy(update={"business_profile": config.business_profile.model_copy(update=update)})
 
 
@@ -175,30 +175,12 @@ def test_offline_qa_stubs_only_the_exact_font_and_style_origins_the_csp_authoriz
     assert _csp_authorized_origins(None) == frozenset()
 
 
-# --- Nexo mapping: BusinessTruth, SEO, OG image, readiness ---------------------------------------------
-
-
-def test_every_service_the_site_presents_must_exist_in_business_truth():
-    config = nexo.h1_fixture_business_config()
-    services = [s for s in config.business_profile.services if s.id != "pintura"]
-    with pytest.raises(BusinessTruthGapError, match="pintura"):
-        nexo.new_files(_truth(_with_profile(services=services)), SITE)
-
-
-def test_service_names_come_from_business_truth():
-    config = nexo.h1_fixture_business_config()
-    renamed = [
-        s.model_copy(update={"name": "Baños completos"}) if s.id == "bano" else s
-        for s in config.business_profile.services
-    ]
-    files = nexo.new_files(_truth(_with_profile(services=renamed)), SITE)
-    business = next(f for f in files if f.path == "src/platform/business.ts")
-    assert '"bano": "Baños completos"' in business.content  # type: ignore[union-attr]
+# --- Platform integration content (H2: shared by every export of the family) ---------------------------
 
 
 def test_structured_data_contains_only_business_truth_facts():
-    truth = _truth()
-    data = nexo._json_ld(truth, SITE, nexo._services(truth))
+    data = pf.json_ld(_truth(), ORIGIN)
+    assert data["@type"] == "HomeAndConstructionBusiness"  # from the vertical, not from the export
     assert data["name"] == "Nexo Reformas" and data["url"] == "https://nexo-reformas.example/"
     assert data["areaServed"] == [{"@type": "City", "name": "Valencia"}]
     assert [o["itemOffered"]["name"] for o in data["makesOffer"]] == ["Reforma integral", "Cocina", "Baño", "Pintura"]
@@ -209,47 +191,57 @@ def test_structured_data_contains_only_business_truth_facts():
 
 def test_structured_data_includes_contact_facts_only_when_business_truth_has_them():
     truth = _truth(_with_profile(contact=ContactInfo(phone="+34 600 000 000")))
-    data = nexo._json_ld(truth, SITE, nexo._services(truth))
+    data = pf.json_ld(truth, ORIGIN)
     assert data["telephone"] == truth.contact.phone and "email" not in data
 
 
-def test_the_open_graph_image_is_owned_deterministic_and_1200x630(tmp_path):
-    poster = tmp_path / "public/assets/world/nexo-06-poster.png"
-    poster.parent.mkdir(parents=True)
-    Image.new("RGB", (1920, 1080), (30, 60, 50)).save(poster)
-    first, second = nexo.derived_files(tmp_path), nexo.derived_files(tmp_path)
-    assert first[0].path == "public/og-image.jpg" and first[0].content == second[0].content
-    with Image.open(io.BytesIO(first[0].content)) as image:
+def test_the_business_module_cannot_close_its_script_element():
+    config = nexo_reformas_business_config()
+    hostile = config.model_copy(
+        update={"business_profile": config.business_profile.model_copy(update={"name": "A</script>B"})}
+    )
+    module = pf.business_module(_truth(hostile), ORIGIN)
+    assert "</script>" not in module.split("SITE_JSONLD", 1)[1]
+
+
+def test_the_open_graph_image_is_owned_deterministic_and_1200x630():
+    buffer = io.BytesIO()
+    Image.new("RGB", (1920, 1080), (30, 60, 50)).save(buffer, format="PNG")
+    first, second = pf.derive_og_image(buffer.getvalue()), pf.derive_og_image(buffer.getvalue())
+    assert first == second
+    with Image.open(io.BytesIO(first)) as image:
         assert image.size == (1200, 630) and image.format == "JPEG"
-    [og] = nexo.json_sets(_truth(), SITE)
-    assert og.key == "og_image_url" and og.value == "https://nexo-reformas.example/og-image.jpg"
 
 
 def test_readiness_blocks_launch_on_missing_legal_identity_and_asks_the_owner_to_confirm_claims():
-    codes = [(f.code, f.severity) for f in nexo.readiness(_truth())]
+    findings = pf.readiness(
+        _truth(),
+        has_generated_icons=True,
+        third_party_services=("cabinet-grotesk",),
+        owner_review_claims=NEXO_OVERLAY.owner_review_claims,
+        unverified_claims=[],
+    )
+    codes = [(f["code"], f["severity"]) for f in findings]
     assert codes.count(("legal_identity_missing", "launch_blocker")) == 4
     assert ("logo_not_provided", "info") in codes and ("favicon_from_generated_mark", "owner_review") in codes
-    assert ("form_only_contact", "info") in codes
-    assert sum(1 for code, _ in codes if code == "claim_needs_owner_confirmation") == len(nexo.OWNER_REVIEW_CLAIMS)
-
-
-def test_the_legal_content_module_is_spanish_and_canonical():
-    files = {f.path: f for f in nexo.new_files(_truth(), SITE)}
-    legal = json.loads(files["src/platform/legal-content.json"].content)  # type: ignore[arg-type]
-    assert legal["lang"] == "es" and legal["pages"]["terms"]["title"] == "Aviso legal"
-    assert "canonical" in files["src/components/nexo/legal-page.tsx"].content  # type: ignore[operator]
-    assert "Aviso legal" in files["src/components/nexo/legal-links.tsx"].content  # type: ignore[operator]
-
-
-def test_an_unrelated_business_cannot_be_mapped_onto_this_export():
-    other = BusinessConfig(
-        business_profile=BusinessProfile(
-            name="Otra",
-            slug="otra",
-            industry=BusinessVertical.HOME_RENOVATION,
-            location=Location(city="Madrid", country="ES"),
-            services=[ServiceOffering(id="fontaneria", name="Fontanería", description="x")],
-        )
+    assert ("form_only_contact", "info") in codes and ("third_party_font_service", "owner_review") in codes
+    assert sum(1 for code, _ in codes if code == "claim_needs_owner_confirmation") == len(
+        NEXO_OVERLAY.owner_review_claims
     )
-    with pytest.raises(BusinessTruthGapError):
-        nexo.new_files(_truth(other), SITE)
+
+
+def test_the_legal_content_is_in_the_site_language_and_discloses_third_parties():
+    legal = json.loads(pf.legal_content_json(_truth(), "es", ("Fontshare (prueba)",)))
+    assert legal["lang"] == "es" and legal["pages"]["terms"]["title"] == "Aviso legal"
+    assert legal["pages"]["privacy"]["metaTitle"] == "Política de privacidad — Nexo Reformas"
+    assert any("Fontshare (prueba)" in p for p in legal["pages"]["cookies"]["paragraphs"])
+    english = json.loads(pf.legal_content_json(_truth(), "en", ()))
+    assert english["lang"] == "en" and english["pages"]["privacy"]["title"] != legal["pages"]["privacy"]["title"]
+    assert "Aviso legal" in pf.legal_links_tsx("es", None, "nx-mono") and 'className="nx-mono"' in pf.legal_links_tsx(
+        "es", None, "nx-mono"
+    )
+
+
+def test_the_legal_page_heads_are_canonical():
+    for tsx in (pf.default_legal_page_tsx("en"), NEXO_OVERLAY.legal.page_tsx):  # type: ignore[union-attr]
+        assert tsx is not None and 'rel: "canonical"' in tsx and "lang={legal.lang}" in tsx
