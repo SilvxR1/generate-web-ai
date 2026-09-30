@@ -48,16 +48,64 @@ alongside any lead form, so the origin is added whenever one is
 configured, not per feature. Never a wildcard, never a scheme-only source.
 """
 
+from dataclasses import dataclass
+from urllib.parse import urlsplit
+
 from app.publishing.public_origin import canonical_public_origin
+
+
+@dataclass(frozen=True)
+class CspExtensions:
+    """H1: trusted, per-SOURCE-FAMILY additions to the site CSP — a constant
+    chosen by platform code for a kind of source (e.g. an exported
+    Higgsfield/TanStack site), never read from a candidate build's own
+    output. Every field defaults to "no change", so the default policy is
+    byte-for-byte what it has always been.
+
+    - `media_blob`: adds `media-src 'self' blob:` — for sites that play
+      same-origin video through object URLs they create themselves. A
+      `blob:` URL can only be minted by script the policy already allows;
+      `script-src` is untouched.
+    - `style_origins` / `font_origins`: exact https origins added to
+      `style-src` / `font-src` (e.g. a licensed webfont CSS API). Never a
+      wildcard, a path or a scheme-only source.
+    """
+
+    media_blob: bool = False
+    style_origins: tuple[str, ...] = ()
+    font_origins: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        for origin in (*self.style_origins, *self.font_origins):
+            parts = urlsplit(origin)
+            if (
+                parts.scheme != "https"
+                or not parts.hostname
+                or "*" in origin
+                or parts.path not in ("", "/")
+                or parts.query
+                or parts.fragment
+            ):
+                raise ValueError(f"CSP extension origin must be an exact https origin: {origin!r}")
+
+
+def _origins(values: tuple[str, ...]) -> str:
+    return "".join(f" https://{urlsplit(value).netloc}" for value in values)
+
 
 # `connect-src` sits between these two groups (built per site, below), in
 # the same position it always had.
-_CSP_DIRECTIVES_BEFORE_CONNECT = (
-    "default-src 'self'; "
-    "img-src 'self' data: https:; "
-    "style-src 'self' 'unsafe-inline'; "
-    "font-src 'self' https://fonts.gstatic.com data:"
-)
+def _csp_directives_before_connect(extensions: CspExtensions) -> str:
+    media = "media-src 'self' blob:; " if extensions.media_blob else ""
+    return (
+        "default-src 'self'; "
+        "img-src 'self' data: https:; "
+        f"{media}"
+        f"style-src 'self' 'unsafe-inline'{_origins(extensions.style_origins)}; "
+        f"font-src 'self' https://fonts.gstatic.com{_origins(extensions.font_origins)} data:"
+    )
+
+
 _CSP_DIRECTIVES_AFTER_CONNECT = "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 
 _OTHER_HEADER_LINES = [
@@ -70,7 +118,10 @@ _OTHER_HEADER_LINES = [
 
 
 def generate_headers_file(
-    *, script_hashes: frozenset[str] = frozenset(), public_api_origin: str | None = None
+    *,
+    script_hashes: frozenset[str] = frozenset(),
+    public_api_origin: str | None = None,
+    csp_extensions: CspExtensions | None = None,
 ) -> bytes:
     """Cloudflare Pages' `_headers` file format: a path pattern line
     followed by indented `Header: value` lines. `/*` applies to every
@@ -80,12 +131,15 @@ def generate_headers_file(
     (no `sha256-` prefix, no quotes) of every inline `<script>` this
     specific build actually contains — see app.publishing.build's
     extraction of them. `public_api_origin` is the API origin rendered
-    into this build's runtime config (see the module docstring)."""
+    into this build's runtime config (see the module docstring).
+    `csp_extensions` is a trusted per-source-family policy (see
+    CspExtensions); None leaves the policy unchanged."""
     script_src_sources = ["'self'", *(f"'sha256-{digest}'" for digest in sorted(script_hashes))]
     api_origin = canonical_public_origin(public_api_origin)
     connect_src_sources = ["'self'", *([api_origin] if api_origin else [])]
+    directives = _csp_directives_before_connect(csp_extensions or CspExtensions())
     csp = (
-        f"script-src {' '.join(script_src_sources)}; {_CSP_DIRECTIVES_BEFORE_CONNECT}; "
+        f"script-src {' '.join(script_src_sources)}; {directives}; "
         f"connect-src {' '.join(connect_src_sources)}; {_CSP_DIRECTIVES_AFTER_CONNECT}"
     )
     lines = ["/*", f"  Content-Security-Policy: {csp}", *(f"  {line}" for line in _OTHER_HEADER_LINES)]

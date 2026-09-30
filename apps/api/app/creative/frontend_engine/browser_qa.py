@@ -119,7 +119,10 @@ def _check_viewport(page, *, name: str, base_url: str) -> list[BrowserQAFinding]
     page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
     try:
-        page.goto(f"{base_url}/index.html", wait_until="networkidle", timeout=15000)
+        # "/" — the URL a visitor loads (static hosts serve index.html for it
+        # and redirect /index.html to it). A client-side router (H1: TanStack
+        # Start prerendered pages) treats /index.html as a different route.
+        page.goto(f"{base_url}/", wait_until="networkidle", timeout=15000)
         findings.append(BrowserQAFinding(name, "page_loads", True))
     except Exception as exc:  # noqa: BLE001 - a navigation failure is itself the finding
         findings.append(BrowserQAFinding(name, "page_loads", False, str(exc)))
