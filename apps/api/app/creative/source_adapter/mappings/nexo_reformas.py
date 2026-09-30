@@ -32,17 +32,19 @@ from app.domain.business_config.business_profile import Location, ServiceOfferin
 from app.domain.business_config.lead_management import LeadManagementConfig
 from app.domain.business_truth import BusinessTruth
 from app.domain.enums import BusinessVertical
+from app.publishing.csp_policy import SourceFamily
 from app.publishing.security_headers import CspExtensions
 
 EXPORT_ZIP_SHA256 = "f3fbc3e76caf53f8df4ae6d6819be7afcd24190af396172cd0ca68de31e0ea8f"
 # The same SDK file every generative workspace receives (workspace.py).
 _PLATFORM_SDK_TEMPLATE = Path(frontend_engine.__file__).parent / "templates" / "platform_sdk.ts"
 
-# Trusted CSP for this source: the scroll-scrub engine plays same-origin clips
+# What this source needs (validated against its family policy by
+# app.publishing.csp_policy.validate_requested — fail closed): the scroll-scrub engine plays same-origin clips
 # through blob: object URLs (source family: Higgsfield animated website);
 # Cabinet Grotesk is served by Fontshare's own CSS API (site-specific; its
 # licence text for self-hosting could not be verified — see the H1 report).
-CSP_EXTENSIONS = CspExtensions(
+CSP_REQUIREMENTS = CspExtensions(
     media_blob=True,
     style_origins=("https://api.fontshare.com",),
     font_origins=("https://cdn.fontshare.com",),
@@ -487,7 +489,8 @@ def h1_fixture_business_config() -> BusinessConfig:
 MAPPING = SourceMapping(
     name="higgsfield-supercomputer/nexo-reformas",
     export_zip_sha256=EXPORT_ZIP_SHA256,
-    csp_extensions=CSP_EXTENSIONS,
+    source_family=SourceFamily.HIGGSFIELD_TANSTACK,
+    csp_requirements=CSP_REQUIREMENTS,
     added_dependencies=ADDED_DEPENDENCIES,
     removed_files=REMOVED_BACKEND,
     patches=PATCHES,

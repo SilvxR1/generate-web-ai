@@ -28,6 +28,7 @@ from app.creative.frontend_engine.workspace import (
     write_manifest,
 )
 from app.domain.enums import GenerationFailureKind
+from app.publishing.csp_policy import SourceFamily, UnsupportedCspRequirementError, policy_for
 from app.worker.protocol import (
     MAX_SOURCE_ARCHIVE_BYTES,
     ExecutionRequest,
@@ -86,6 +87,21 @@ def execute(
     except (ProtocolError, UnicodeDecodeError, ValueError) as exc:
         return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, f"invalid execution request: {exc}")
 
+    # H1.1: build with the job's trusted source-family CSP, so the headers
+    # Visual QA serves below are the ones trusted intake re-derives. This
+    # host builds GWA Astro sources only; any other family fails closed.
+    try:
+        csp_extensions = policy_for(request.source_family)
+    except UnsupportedCspRequirementError as exc:
+        return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, str(exc), **metadata)
+    if request.source_family != SourceFamily.GWA_ASTRO:
+        return _failed(
+            request,
+            GenerationFailureKind.CANDIDATE_REJECTED,
+            f"source family {request.source_family!r} is not buildable by this execution host",
+            **metadata,
+        )
+
     workspace = allocate_workspace()
     try:
         try:
@@ -107,6 +123,7 @@ def execute(
                 api_base_url=request.api_base_url,
                 runner=runner,
                 prepared_dependencies=prepared_dependencies,
+                csp_extensions=csp_extensions,
             )
         except GenerativeBuildError as exc:
             return _failed(request, _build_failure_kind(str(exc)), str(exc), **metadata)
@@ -114,6 +131,9 @@ def execute(
     finally:
         cleanup_workspace(workspace)
 
+    # The exact policy Visual QA serves the site with (browser_qa applies the
+    # artifact's own `_headers`); trusted intake requires the same bytes.
+    metadata["headers_sha256"] = sha256_hex(artifact.files["_headers"])
     report: VisualQAReport | None = None
     if request.run_visual_qa:
         started = time.monotonic()

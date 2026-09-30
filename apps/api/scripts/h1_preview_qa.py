@@ -35,12 +35,14 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from PIL import Image, ImageChops  # noqa: E402
 
-from app.creative.frontend_engine.browser_qa import run_browser_qa  # noqa: E402
+from app.creative.frontend_engine.browser_qa import parse_headers_file, run_browser_qa  # noqa: E402
+from app.creative.frontend_engine.build import artifact_headers  # noqa: E402
 from app.creative.source_adapter.mappings.nexo_reformas import h1_fixture_business_config  # noqa: E402
 from app.creative.source_adapter.preview import serve_artifact  # noqa: E402
 from app.domain.business_truth import derive_business_truth  # noqa: E402
 from app.leads.spam import is_spam  # noqa: E402
 from app.publishing.artifact_store import artifact_sha256, pack_artifact, unpack_artifact  # noqa: E402
+from app.publishing.csp_policy import policy_for  # noqa: E402
 from app.qa.platform_contract import validate_platform_contract  # noqa: E402
 from app.qa.truth_contract import validate_truth_contract  # noqa: E402
 from app.schemas.analytics import AnalyticsEventCreateRequest, AnalyticsEventCreateResponse  # noqa: E402
@@ -148,6 +150,15 @@ def main() -> None:  # noqa: C901 — a linear QA script
     truth = validate_truth_contract(artifact.files, business_truth=derive_business_truth(business_config=config))
     check(results, "platform_contract_passes", platform.passed, [f.rule for f in platform.findings])
     check(results, "truth_contract_passes", truth.passed, [f.rule for f in truth.findings])
+    # H1.1: trusted intake re-derives `_headers` from the job's family; it must
+    # reproduce the stored bytes exactly (else the candidate would be rejected).
+    rederived = artifact_headers(
+        {k: v for k, v in artifact.files.items() if k != "_headers"},
+        api_base_url=f"http://127.0.0.1:{API_PORT}",
+        csp_extensions=policy_for(report["source_family"]),
+    )
+    check(results, "intake_rederivation_equals_stored_headers", rederived == artifact.files["_headers"])
+    stored_csp = dict(parse_headers_file(artifact.files["_headers"]))["Content-Security-Policy"]
     server_files = [p for p in artifact.files if p.endswith("server.js") or p.startswith("server/")]
     check(results, "no_server_bundle_in_artifact", not server_files, server_files)
 
@@ -183,6 +194,8 @@ def main() -> None:  # noqa: C901 — a linear QA script
         response = page.goto(base + "/", wait_until="networkidle")
         page.wait_for_timeout(1500)
         check(results, "homepage_loads", response is not None and response.status == 200)
+        served_csp = response.headers.get("content-security-policy") if response is not None else None
+        check(results, "served_csp_equals_stored_headers", served_csp == stored_csp, served_csp)
         check(
             results, "document_title", page.title() == "Nexo Reformas | Reformas de vivienda en Valencia", page.title()
         )
@@ -507,6 +520,16 @@ def main() -> None:  # noqa: C901 — a linear QA script
 
     # --- GWA's existing browser QA, unchanged (it does not apply _headers) ---
     existing = run_browser_qa(artifact.files)
+    for viewport in ("desktop", "tablet", "mobile", "desktop-reduced-motion"):
+        gwa = {f.check: f for f in existing.findings if f.viewport == viewport}
+        for name in ("artifact_csp_applied", "no_csp_violations", "no_failed_resources", "no_uncaught_page_errors"):
+            finding = gwa.get(name)
+            check(
+                results,
+                f"gwa_browser_qa_{viewport}_{name}",
+                finding is not None and finding.passed,
+                finding.detail if finding else "missing",
+            )
     api.should_exit = True
 
     summary = {

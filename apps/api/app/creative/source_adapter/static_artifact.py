@@ -5,9 +5,9 @@ engine uses (app.creative.frontend_engine.build):
 - collect_candidate_files — bounded, regular files only, no symlinks;
 - inject_platform_runtime — server-controlled `platform-config` + the
   platform consent banner, into every page;
-- `_headers` — generate_headers_file with the inline-script hashes of the
-  final HTML, the public API origin and the source family's trusted
-  CspExtensions.
+- `_headers` — artifact_headers (the single derivation shared with the
+  generative build and trusted intake): inline-script hashes of the final
+  HTML, the public API origin and the source family's trusted policy.
 
 robots.txt and sitemap.xml are platform-owned (like `_headers`): any file of
 that name in the build output is discarded and regenerated from the site's
@@ -18,10 +18,10 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 from xml.sax.saxutils import escape
 
-from app.creative.frontend_engine.build import collect_candidate_files, inject_platform_runtime, inline_script_hashes
+from app.creative.frontend_engine.build import artifact_headers, collect_candidate_files, inject_platform_runtime
 from app.creative.source_adapter.records import AdapterError
 from app.publishing.publisher import WebsiteArtifact
-from app.publishing.security_headers import CspExtensions, generate_headers_file
+from app.publishing.security_headers import CspExtensions
 
 PLATFORM_OWNED_FILES = frozenset({"_headers", "robots.txt", "sitemap.xml"})
 
@@ -67,7 +67,6 @@ def assemble_static_artifact(
 ) -> WebsiteArtifact:
     candidate = collect_candidate_files(client_dir)
     files: dict[str, bytes] = {}
-    html_texts: list[str] = []
     for relative, data in sorted(candidate.items()):
         if relative in PLATFORM_OWNED_FILES:
             continue
@@ -75,7 +74,6 @@ def assemble_static_artifact(
             html = inject_platform_runtime(
                 data.decode("utf-8", errors="ignore"), business_id=business_id, api_base_url=api_base_url
             )
-            html_texts.append(html)
             files[relative] = html.encode("utf-8")
         else:
             files[relative] = data
@@ -84,7 +82,5 @@ def assemble_static_artifact(
     html_paths = [p for p in files if p.endswith(".html")]
     files["robots.txt"] = robots_txt(site_origin)
     files["sitemap.xml"] = sitemap_xml(site_origin, html_paths)
-    files["_headers"] = generate_headers_file(
-        script_hashes=inline_script_hashes(html_texts), public_api_origin=api_base_url, csp_extensions=csp_extensions
-    )
+    files["_headers"] = artifact_headers(files, api_base_url=api_base_url, csp_extensions=csp_extensions)
     return WebsiteArtifact(files=files, entry_point="index.html")

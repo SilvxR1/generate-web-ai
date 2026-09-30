@@ -17,25 +17,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from urllib.parse import unquote, urlsplit
 
+from app.creative.frontend_engine.browser_qa import parse_headers_file
 from app.publishing.publisher import WebsiteArtifact
 
 _EXTRA_TYPES = {".woff2": "font/woff2", ".woff": "font/woff", ".webmanifest": "application/manifest+json"}
-
-
-def parse_headers_file(content: bytes) -> list[tuple[str, str]]:
-    """The `/*` rules of a Cloudflare Pages `_headers` file."""
-    headers: list[tuple[str, str]] = []
-    in_all = False
-    for line in content.decode("utf-8").splitlines():
-        if not line.strip():
-            continue
-        if not line.startswith((" ", "\t")):
-            in_all = line.strip() == "/*"
-            continue
-        if in_all and ":" in line:
-            name, value = line.strip().split(":", 1)
-            headers.append((name.strip(), value.strip()))
-    return headers
 
 
 def resolve_path(files: dict[str, bytes], url_path: str) -> str | None:

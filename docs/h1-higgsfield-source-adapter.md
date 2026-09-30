@@ -75,11 +75,8 @@ Shared-code changes (each default-neutral, tested in `tests/test_h1_platform_ext
 
 ## Known limitations / required before a real customer
 
-- **Intake must pass the source-family CSP.** `worker/intake.py` does not yet
-  pass `csp_extensions`; without it the stored artifact loses
-  `media-src blob:` + Fontshare and silently degrades (contracts cannot see CSP).
-- **Visual QA must apply `_headers`.** `browser_qa` drops them, so a CSP that
-  breaks the site passes QA. `preview.serve_artifact` shows the approach.
+- ~~Intake must pass the source-family CSP~~ and ~~Visual QA must apply
+  `_headers`~~ — **closed by H1.1** (see below).
 - **Build is not bit-reproducible**: TanStack writes `updatedAt` timestamps
   into the dehydrated state (5 files differ between builds). Packaging is
   deterministic and Build Once stores the built bytes, so identity holds.
@@ -97,6 +94,76 @@ Shared-code changes (each default-neutral, tested in `tests/test_h1_platform_ext
 - **R4 for this family** needs bun (bound read-only), ~1–1.5 GB RAM for `tsc`,
   and a per-family prepared-dependency set (455 MB `node_modules`).
 - Supercomputer generation is still manual (separate automation gap).
+
+## H1.1 — source-family CSP propagation and artifact-faithful Visual QA
+
+**Invariant:** the `_headers` Visual QA serves the site with are byte-for-byte
+the `_headers` that are stored, previewed and published.
+
+### Policy (`app/publishing/csp_policy.py`)
+
+| Source family | Additions to the GWA baseline |
+|---|---|
+| `gwa-astro` (default; deterministic + generative Astro) | none |
+| `higgsfield-tanstack-static` (H1 Higgsfield exports) | `media-src 'self' blob:`; `style-src` + `https://api.fontshare.com`; `font-src` + `https://cdn.fontshare.com` |
+
+- Hard platform allowlist (`PERMITTED_*`): a family policy outside it fails at
+  import. `script-src`, `connect-src`, `img-src` and every non-CSP header are
+  never changed by a family.
+- `CspExtensions` accepts only exact `https://host` origins, so
+  `'unsafe-inline'`, `'unsafe-eval'`, `*`, `https://*.x`, `https:`, `blob:`,
+  `data:` and paths cannot be expressed as an origin.
+- Unknown family, or a source requesting more than its family policy
+  (`validate_requested`): `UnsupportedCspRequirementError` — fail closed.
+
+### Propagation
+
+1. `generation_jobs.source_family` (migration `d2b7e4a9c1f3`, NOT NULL, default
+   `gwa-astro`): chosen by trusted code at enqueue; `submit_job` validates it;
+   an idempotency key cannot switch family.
+2. `ExecutionRequest.source_family` → the execution host builds with
+   `policy_for(family)`. The host builds GWA Astro sources only; any other
+   family is rejected explicitly (`CANDIDATE_REJECTED`), never built with the
+   wrong policy. The host records `headers_sha256` of what QA served.
+3. One derivation, `frontend_engine.build.artifact_headers(files, api_base_url,
+   csp_extensions)`, used by the build, trusted intake and the source adapter.
+4. Intake (`worker/intake.accept_result`) re-derives from the **trusted job
+   row** and **rejects** a candidate whose `_headers` differ (its QA evidence
+   would describe a different policy); `judge_generative_candidate` then
+   stores exactly those bytes.
+5. Preview and production (`CloudflarePagesPreviewPublisher` /
+   `CloudflarePagesPublisher`) materialize the stored artifact byte-for-byte;
+   `wrangler pages deploy` applies its `_headers`.
+
+### Visual QA (`frontend_engine/browser_qa.py`, stdlib-only)
+
+Serves the artifact with its own `_headers` (never serving the file), loads
+`/`, and adds findings `artifact_csp_applied`, `no_csp_violations`
+(`securitypolicyviolation` events) and `no_failed_resources` (same-origin
+4xx/5xx and failed requests). The sandboxed QA now stages `_headers` too.
+
+### Acceptance (Nexo, local, real export)
+
+- Intake re-derivation from `higgsfield-tanstack-static` == stored `_headers`;
+  the CSP served on `/` == stored `_headers`.
+- GWA browser QA on desktop/tablet/mobile/reduced-motion: CSP applied, 0 CSP
+  violations, 0 failed resources, no page errors.
+- 6/6 journey videos play from `blob:`; Cabinet Grotesk (Fontshare), Inter Tight
+  and IBM Plex Mono load; PlatformContract and TruthContract: 0 findings.
+- Visual diff vs the original export unchanged (0.00% at 19/20 positions).
+- Remaining findings are pre-existing: 12 px mobile overflow (Higgsfield design);
+  `no_broken_images` on `loading="lazy"` posters (browser QA does not scroll).
+
+### Still open (H1.2)
+
+- The execution host cannot build `higgsfield-tanstack-static` sources yet
+  (bun toolchain + adapter in the worker); today they are built by the local
+  adapter only.
+- The worker path persists no Visual QA evidence row
+  (`_record_visual_qa` finds no `GenerativeWebsiteArtifact` row) — pre-existing.
+- Sandboxed (network-less) Visual QA cannot load Fontshare; font checks for
+  that family need an allowed-origin fetch or offline font fixtures.
+- `no_broken_images` false positive for lazy images.
 
 ## Reproduce
 

@@ -70,7 +70,7 @@ from app.creative.frontend_engine.templates import ASTRO_CONFIG, TSCONFIG, build
 from app.creative.frontend_engine.workspace import allocate_workspace, cleanup_workspace
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact
-from app.publishing.security_headers import generate_headers_file
+from app.publishing.security_headers import CspExtensions, generate_headers_file
 
 logger = logging.getLogger(__name__)
 
@@ -328,8 +328,11 @@ def build_generative_workspace(
     api_base_url: str | None = None,
     runner: SandboxRunner | None = None,
     prepared_dependencies: Path | None = None,
+    csp_extensions: CspExtensions | None = None,
 ) -> WebsiteArtifact:
-    """`prepared_dependencies` (R4.2, the execution host): a node_modules
+    """`csp_extensions` (H1.1): the job's trusted source-family policy
+    (app.publishing.csp_policy); None = the GWA baseline.
+    `prepared_dependencies` (R4.2, the execution host): a node_modules
     tree installed ONCE by trusted code from the vetted lockfile
     (app.creative.frontend_engine.dependencies) and mounted READ-ONLY into
     the build zone — no per-job install, no registry access at job time,
@@ -379,12 +382,10 @@ def build_generative_workspace(
         shutil.rmtree(toolchain_dir, ignore_errors=True)
 
     files: dict[str, bytes] = {}
-    html_texts: list[str] = []
     for relative, data in collect_candidate_files(workspace / "dist").items():
         if relative.endswith(".html"):
             html = data.decode("utf-8", errors="ignore")
             injected = inject_platform_runtime(html, business_id=business_id, api_base_url=api_base_url)
-            html_texts.append(injected)
             files[relative] = injected.encode("utf-8")
         else:
             files[relative] = data
@@ -394,11 +395,23 @@ def build_generative_workspace(
 
     # The same api_base_url injected into every page's platform-config
     # above, so connect-src allows exactly what the SDK calls (A8.3.4-P0.2).
-    files["_headers"] = generate_headers_file(
-        script_hashes=inline_script_hashes(html_texts), public_api_origin=api_base_url
-    )
+    files["_headers"] = artifact_headers(files, api_base_url=api_base_url, csp_extensions=csp_extensions)
 
     return WebsiteArtifact(files=files, entry_point="index.html")
+
+
+def artifact_headers(
+    files: dict[str, bytes], *, api_base_url: str | None, csp_extensions: CspExtensions | None = None
+) -> bytes:
+    """THE `_headers` of a built site (H1.1): derived only from its final HTML
+    (inline-script hashes), the public API origin and the trusted
+    source-family CSP additions. The build, the trusted intake and the
+    source adapter all call this, so the policy Visual QA exercises is
+    byte-for-byte the policy that is stored, previewed and published."""
+    html = [data.decode("utf-8", errors="ignore") for name, data in files.items() if name.endswith(".html")]
+    return generate_headers_file(
+        script_hashes=inline_script_hashes(html), public_api_origin=api_base_url, csp_extensions=csp_extensions
+    )
 
 
 def _tail(text: str, limit: int = 2000) -> str:

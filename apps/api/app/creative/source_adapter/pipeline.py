@@ -24,7 +24,7 @@ from pathlib import Path
 
 from app.creative.frontend_engine.sandbox import SandboxRunner, detect_runner
 from app.creative.source_adapter.cleanup import portability_cleanup
-from app.creative.source_adapter.mapping import SourceMapping, apply_mapping
+from app.creative.source_adapter.mapping import SourceMapping, apply_mapping, resolved_csp
 from app.creative.source_adapter.records import AdapterError, sha256_hex
 from app.creative.source_adapter.snapshot import snapshot_export
 from app.creative.source_adapter.static_artifact import assemble_static_artifact
@@ -70,6 +70,7 @@ def adapt_export(
 ) -> dict:
     """Runs the pipeline into `work_root` (must not exist) and returns the
     report (also written to work_root/h1-report.json)."""
+    csp_extensions = resolved_csp(mapping)  # H1.1: fail closed before any work
     if work_root.exists():
         raise AdapterError(f"work root already exists: {work_root}")
     work_root.mkdir(parents=True)
@@ -104,7 +105,7 @@ def adapt_export(
         business_id=business_id,
         api_base_url=api_base_url,
         site_origin=site_origin,
-        csp_extensions=mapping.csp_extensions,
+        csp_extensions=csp_extensions,
     )
     platform = validate_platform_contract(artifact.files, business_config=business_config)
     truth_result = validate_truth_contract(artifact.files, business_truth=truth)
@@ -136,6 +137,8 @@ def adapt_export(
             "visible": [{"path": c.path, "visible": c.visible} for c in changes if c.visible],
         },
         "unbound_content": list(mapping.unbound_content),
+        "source_family": mapping.source_family,
+        "headers_sha256": sha256_hex(artifact.files["_headers"]),
         "adapted_lockfile_sha256": sha256_hex((app / "bun.lock").read_bytes()),
         "install_seconds": install_seconds,
         "build": {"seconds": build_seconds, "runner": runner.name, "limits_enforced": runner.limits_enforced()},

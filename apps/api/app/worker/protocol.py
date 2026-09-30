@@ -63,6 +63,10 @@ class ExecutionRequest(BaseModel):
     attempt: int
     business_id: uuid.UUID
     api_base_url: str | None = None
+    # H1.1: the job's trusted source family (app.publishing.csp_policy); the
+    # host builds with exactly this policy so its Visual QA exercises the CSP
+    # that trusted intake re-derives and stores.
+    source_family: str = Field(default="gwa-astro", max_length=64)
     source_archive: str  # base64 tar.gz: src/ and public/ only
     source_sha256: str = Field(min_length=64, max_length=64)
     offline_assets: dict[str, str] = Field(default_factory=dict)  # url -> base64 bytes

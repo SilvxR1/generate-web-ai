@@ -31,6 +31,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.generation_job import GenerationJob
 from app.domain.enums import GenerationFailureKind, GenerationJobStatus
+from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, parse_family
 
 DEFAULT_LEASE = timedelta(minutes=15)
 _MAX_ERROR_CHARS = 2000
@@ -72,14 +73,22 @@ def submit_job(
     source_key: str | None = None,
     source_sha256: str | None = None,
     api_base_url: str | None = None,
+    source_family: str = DEFAULT_SOURCE_FAMILY,
 ) -> GenerationJob:
+    # H1.1: fail closed before anything is stored — an unknown family has no
+    # CSP policy (raises UnsupportedCspRequirementError).
+    family = parse_family(source_family)
     existing = session.scalar(
         select(GenerationJob).where(
             GenerationJob.tenant_id == tenant_id, GenerationJob.idempotency_key == idempotency_key
         )
     )
     if existing is not None:
-        if existing.business_id != business_id or existing.input_sha256 != input_sha256:
+        if (
+            existing.business_id != business_id
+            or existing.input_sha256 != input_sha256
+            or existing.source_family != family.value
+        ):
             raise GenerationJobError("idempotency key already used for a different generation request")
         return existing
     job = GenerationJob(
@@ -93,6 +102,7 @@ def submit_job(
         source_key=source_key,
         source_sha256=source_sha256,
         api_base_url=api_base_url,
+        source_family=family.value,
     )
     session.add(job)
     session.flush()

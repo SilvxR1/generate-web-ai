@@ -19,11 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.creative import generation_jobs as jobs
+from app.creative.frontend_engine.build import artifact_headers
 from app.db.models.generation_job import GenerationJob
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
 from app.domain.business_truth import BusinessTruth
 from app.domain.enums import GenerationFailureKind, GenerationJobStatus, WebsiteDraftStatus
+from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, UnsupportedCspRequirementError, parse_family, policy_for
 from app.publishing.drafts import _visual_qa_assets, judge_generative_candidate
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
 from app.repositories.website_draft import WebsiteDraftRepository
@@ -69,9 +71,13 @@ def enqueue_generative_build(
     input_sha256: str,
     artifact_storage: PrivateArtifactStorage,
     api_base_url: str | None,
+    source_family: str = DEFAULT_SOURCE_FAMILY,
 ) -> GenerationJob:
     """Trusted side, after the provider produced the source: store the
-    source privately and queue the build for the execution host."""
+    source privately and queue the build for the execution host.
+    `source_family` (H1.1) selects the site's CSP additions; an unknown
+    family fails here, before anything is stored."""
+    parse_family(source_family)
     archive = pack_files(source_files)
     key = source_storage_key(
         tenant_id=draft.tenant_id, business_id=draft.business_id, job_key=sha256_hex(idempotency_key.encode())[:32]
@@ -87,6 +93,7 @@ def enqueue_generative_build(
         source_key=key,
         source_sha256=sha256_hex(archive),
         api_base_url=api_base_url,
+        source_family=source_family,
     )
 
 
@@ -135,6 +142,7 @@ def claim_next(
         attempt=job.attempts,
         business_id=job.business_id,
         api_base_url=job.api_base_url,
+        source_family=job.source_family,
         source_archive=b64(archive),
         source_sha256=job.source_sha256,
         offline_assets={url: b64(data) for url, data in assets.items()},
@@ -183,7 +191,19 @@ def accept_result(
         files = unpack_candidate(archive, expected_sha256=result.candidate_sha256)
         if "index.html" not in files:
             raise ProtocolError("candidate has no index.html")
-    except ProtocolError as exc:
+        # H1.1: the policy comes from the TRUSTED job row, never the host.
+        csp_extensions = policy_for(job.source_family)
+        expected_headers = artifact_headers(
+            {name: data for name, data in files.items() if name != "_headers"},
+            api_base_url=job.api_base_url,
+            csp_extensions=csp_extensions,
+        )
+        # The host's Visual QA served the candidate's own `_headers`; it is
+        # evidence about the STORED site only if those are the exact bytes
+        # trusted code derives. Anything else is rejected, never repaired.
+        if files.get("_headers") != expected_headers:
+            raise ProtocolError("candidate security headers differ from the trusted policy for this job")
+    except (ProtocolError, UnsupportedCspRequirementError) as exc:
         draft.build_error = f"Candidate rejected: {exc}"
         _fail(job, draft, GenerationFailureKind.CANDIDATE_REJECTED, str(exc))
         return job
@@ -195,19 +215,27 @@ def accept_result(
         business_truth=business_truth,
         artifact_storage=artifact_storage,
         api_base_url=job.api_base_url,
+        csp_extensions=csp_extensions,
     )
     if gate is not None:
         _fail(job, draft, _GATE_FAILURE[gate], draft.build_error or gate)
         return job
 
-    _record_visual_qa(session, draft=draft, result=result, asset_storage=asset_storage)
+    _record_visual_qa(
+        session, draft=draft, result=result, asset_storage=asset_storage, headers_sha256=sha256_hex(expected_headers)
+    )
     jobs.succeed(job)
     logger.info("generation job succeeded job_id=%s draft_id=%s", job.id, draft.id)
     return job
 
 
 def _record_visual_qa(
-    session: Session, *, draft: WebsiteDraft, result: ExecutionResult, asset_storage: StorageProvider
+    session: Session,
+    *,
+    draft: WebsiteDraft,
+    result: ExecutionResult,
+    asset_storage: StorageProvider,
+    headers_sha256: str,
 ) -> None:
     """Advisory evidence only (Visual QA never changes draft status):
     findings are stored as data, screenshots only if they are bounded PNGs."""
@@ -228,6 +256,9 @@ def _record_visual_qa(
         keys[name[:40]] = key
     row.visual_qa_state = {
         "passed": bool(report.passed),
+        # H1.1: the `_headers` the evidence was produced under — equal to the
+        # stored artifact's by construction (accept_result rejects otherwise).
+        "headers_sha256": headers_sha256,
         "findings": [
             {
                 "viewport": str(f.get("viewport", ""))[:50],
