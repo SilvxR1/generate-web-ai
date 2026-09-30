@@ -159,6 +159,21 @@ if (isBrowser) {
 
 // --- Lead submission ---------------------------------------------------
 
+/** H1.2: one additional form field, labelled as the visitor saw it. */
+export interface LeadDetail {
+  key: string;
+  label: string;
+  value: string;
+}
+
+export interface SubmitLeadOptions {
+  /** The form's additional fields (service, surface area, ...), never lost. */
+  details?: LeadDetail[];
+  /** Reuse across a visitor's retries of the same submission: the API
+   * stores at most one lead per (business, submissionId). */
+  submissionId?: string;
+}
+
 export interface PublicLeadPayload {
   name?: string;
   email?: string;
@@ -169,6 +184,16 @@ export interface PublicLeadPayload {
   consent: boolean;
   company_website: string;
   rendered_at?: string;
+  details?: LeadDetail[];
+  submission_id?: string;
+}
+
+function newSubmissionId(): string | undefined {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return undefined; // older browser: the lead still submits, only without retry dedupe
+  }
 }
 
 function cleanString(value: string | undefined): string | undefined {
@@ -179,9 +204,16 @@ function cleanString(value: string | undefined): string | undefined {
 /** Submits a lead to the real, public, tenant-scoped Lead API — the same
  * wire contract apps/site-builder's LeadSubmission.astro already uses.
  * Returns true only on a real 2xx response; never simulates success. */
-export async function submitLead(fields: Record<string, string>, serviceLabel?: string): Promise<boolean> {
+export async function submitLead(
+  fields: Record<string, string>,
+  serviceLabel?: string,
+  options: SubmitLeadOptions = {},
+): Promise<boolean> {
   const url = apiUrl("/leads");
   if (!url) return false;
+  const details = (options.details ?? [])
+    .map((detail) => ({ ...detail, value: detail.value.trim() }))
+    .filter((detail) => detail.value.length > 0);
 
   const subject = cleanString(fields.subject) ?? cleanString(serviceLabel) ?? cleanString(fields.service);
   const payload: PublicLeadPayload = {
@@ -194,14 +226,26 @@ export async function submitLead(fields: Record<string, string>, serviceLabel?: 
     consent: fields.consent === "true" || fields.consent === "on",
     company_website: fields[HONEYPOT_FIELD_NAME] ?? "",
     rendered_at: cleanString(fields[TIMING_FIELD_NAME]),
+    ...(details.length > 0 ? { details } : {}),
+    submission_id: options.submissionId ?? newSubmissionId(),
   };
 
-  try {
-    const response = await fetch(url, {
+  const post = () =>
+    fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+  try {
+    let response: Response;
+    try {
+      response = await post();
+    } catch {
+      // H1.2: one retry after a NETWORK failure only (never after an HTTP
+      // answer), with the same submission_id — the API deduplicates it.
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      response = await post();
+    }
     if (response.ok) {
       trackEvent("lead_submitted");
       // A literal event-name string (not a renameable identifier)

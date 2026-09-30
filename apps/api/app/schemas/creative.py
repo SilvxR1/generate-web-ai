@@ -372,5 +372,9 @@ class GenerativeArtifactRead(BaseModel):
     # never has to know how StorageProvider lays out its keys. Empty
     # until Visual QA has actually run (same as screenshot_keys).
     screenshot_urls: dict[str, str] = Field(default_factory=dict)
+    # H1.2: True only when `visual_qa_state` names THIS draft's current
+    # artifact identity (app.publishing.qa_evidence) — the approval flow
+    # never relies on evidence produced for different content.
+    visual_qa_current: bool = False
     generated_at: datetime
     duration_ms: int | None

@@ -69,6 +69,9 @@ def dispatch_lead_to_workflow(
         "source": lead.source,
         "source_url": lead.source_url,
         "consent": lead.consent_given,
+        # H1.2: the site form's additional fields ([] when there are none) —
+        # additive, so existing workflows that ignore it are unaffected.
+        "details": lead.details or [],
     }
     client = http_client or httpx.Client(timeout=_DISPATCH_TIMEOUT_SECONDS)
     try:

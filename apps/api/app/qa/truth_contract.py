@@ -168,6 +168,9 @@ class _Extractor(HTMLParser):
         self.quote_buf: list[str] = []
         self.cite_depth = 0
         self.cite_buf: list[str] = []
+        # H1.2: class/id of each enclosing <a> — a brand link's image is the
+        # site's logo even when nothing in the image itself says "logo".
+        self.anchor_hints: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         a = {k: (v or "") for k, v in attrs}
@@ -179,9 +182,15 @@ class _Extractor(HTMLParser):
             self.skip += 1
         if tag == "a" and a.get("href"):
             self.page.hrefs.append(a["href"].strip())
+        if tag == "a":
+            self.anchor_hints.append(f"{a.get('class', '')} {a.get('id', '')}")
         if tag == "img":
             hints = " ".join([a.get("alt", ""), a.get("class", ""), a.get("id", ""), *a])
-            self.page.images.append(_Image(a.get("src", "").strip(), a.get("alt", ""), "logo" in hints.lower()))
+            # "brand" only from class/id (the image's own or its enclosing
+            # link's), never from alt text ("brand-new kitchen").
+            brand = " ".join([a.get("class", ""), a.get("id", ""), *self.anchor_hints]).lower()
+            logo_hint = "logo" in hints.lower() or "brand" in brand
+            self.page.images.append(_Image(a.get("src", "").strip(), a.get("alt", ""), logo_hint))
         if tag == "meta" and a.get("name", "").lower() == "description" and a.get("content"):
             self.page.text.append(a["content"])
         for attr in ("alt", "title", "aria-label"):
@@ -195,6 +204,8 @@ class _Extractor(HTMLParser):
             self.cite_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self.anchor_hints:
+            self.anchor_hints.pop()
         if tag in _SKIP_TAGS and self.skip:
             self.skip -= 1
         if tag == "script":

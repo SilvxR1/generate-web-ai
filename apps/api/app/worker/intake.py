@@ -27,6 +27,7 @@ from app.domain.business_truth import BusinessTruth
 from app.domain.enums import GenerationFailureKind, GenerationJobStatus, WebsiteDraftStatus
 from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, UnsupportedCspRequirementError, parse_family, policy_for
 from app.publishing.drafts import _visual_qa_assets, judge_generative_candidate
+from app.publishing.qa_evidence import visual_qa_evidence
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
 from app.repositories.website_draft import WebsiteDraftRepository
 from app.storage import StorageProvider, generate_storage_key
@@ -254,12 +255,15 @@ def _record_visual_qa(
         key = generate_storage_key(business_id=str(draft.business_id), original_filename=f"{name[:40]}.png")
         asset_storage.save(storage_key=key, content=png)
         keys[name[:40]] = key
-    row.visual_qa_state = {
-        "passed": bool(report.passed),
-        # H1.1: the `_headers` the evidence was produced under — equal to the
-        # stored artifact's by construction (accept_result rejects otherwise).
-        "headers_sha256": headers_sha256,
-        "findings": [
+    # H1.2: bound to the READY draft's artifact identity (judge stored it) and
+    # the `_headers` the host's QA served — equal to the stored artifact's by
+    # construction (accept_result rejects any other candidate).
+    row.visual_qa_state = visual_qa_evidence(
+        passed=bool(report.passed),
+        artifact_sha256=draft.artifact_sha256,
+        headers_sha256=headers_sha256,
+        source="execution-host",
+        findings=[
             {
                 "viewport": str(f.get("viewport", ""))[:50],
                 "check": str(f.get("check", ""))[:80],
@@ -268,7 +272,7 @@ def _record_visual_qa(
             }
             for f in report.findings[:100]
         ],
-    }
+    )
     row.screenshot_keys = keys
 
 

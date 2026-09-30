@@ -61,11 +61,100 @@ import Layout from "../layouts/Layout.astro";
 """
 
 
-def legal_page_content(business_truth: BusinessTruth) -> dict[str, tuple[str, list[str]]]:
+NOT_PROVIDED_ES = "no facilitado"
+LEGAL_LOCALES = ("en", "es")
+
+
+def legal_owner_input_required(business_truth: BusinessTruth) -> list[str]:
+    """H1.2: the legal identity data a published site states, missing from
+    BusinessTruth — rendered as "not provided" and reported to the owner.
+    A page existing is never treated as legal compliance."""
+    legal = business_truth.legal
+    missing = []
+    if not legal.legal_name:
+        missing.append("legal.legal_name")
+    if not legal.tax_id:
+        missing.append("legal.tax_id")
+    if legal.registered_address is None:
+        missing.append("legal.registered_address")
+    if not (legal.privacy_contact_email or business_truth.contact.email):
+        missing.append("legal.privacy_contact_email")
+    return missing
+
+
+def _legal_page_content_es(
+    business_truth: BusinessTruth, third_parties: tuple[str, ...]
+) -> dict[str, tuple[str, list[str]]]:
+    name = business_truth.identity.name
+    legal = business_truth.legal
+
+    def given(value: str | None) -> str:
+        return value if value else NOT_PROVIDED_ES
+
+    address = NOT_PROVIDED_ES if legal.registered_address is None else _address(legal.registered_address)
+    email = legal.privacy_contact_email or business_truth.contact.email or NOT_PROVIDED_ES
+    processors = (
+        ", ".join(legal.data_processors)
+        if legal.data_processors
+        else "No se han indicado encargados del tratamiento para este negocio."
+    )
+    identity = [
+        f"Razón social: {given(legal.legal_name)}.",
+        f"NIF: {given(legal.tax_id)}.",
+        f"Domicilio: {address}.",
+        f"Datos registrales: {given(legal.registration_number)}.",
+    ]
+    return {
+        "privacy": (
+            "Política de privacidad",
+            [
+                f"Este sitio web lo gestiona {name}.",
+                *identity,
+                "Los datos que envías a través del formulario de contacto se utilizan para responder a tu "
+                "solicitud y, solo si das tu consentimiento, para analítica.",
+                f"Encargados del tratamiento: {processors}",
+                f"Contacto para cuestiones de privacidad y para ejercer tus derechos: {email}.",
+            ],
+        ),
+        "terms": (
+            "Aviso legal",
+            [
+                f"Titular de este sitio web: {name}.",
+                *identity,
+                f"Contacto: {email}.",
+                "Al usar este sitio aceptas utilizarlo de forma lícita y no hacer un uso indebido del formulario "
+                "de contacto.",
+            ],
+        ),
+        "cookies": (
+            "Política de cookies",
+            [
+                "Este sitio guarda tu elección sobre cookies en el almacenamiento local del navegador (clave "
+                "«gwa-consent»), necesario para recordar tu decisión.",
+                "La analítica del sitio solo se activa si la aceptas en el aviso de cookies; sin tu consentimiento "
+                "no se envía ningún evento de analítica.",
+                "Puedes cambiar o retirar tu consentimiento en cualquier momento desde «Preferencias de cookies», "
+                "al pie de cada página.",
+                *(f"Servicio de terceros: {service}" for service in third_parties),
+            ],
+        ),
+    }
+
+
+def legal_page_content(
+    business_truth: BusinessTruth, *, locale: str = "en", third_parties: tuple[str, ...] = ()
+) -> dict[str, tuple[str, list[str]]]:
     """{slug: (title, paragraphs)} for privacy/terms/cookies as PLAIN,
     unescaped text — the single source of the legal wording. Rendered by
     build_legal_pages (Astro) and by app.creative.source_adapter, which
-    renders the same wording inside an exported site's own framework."""
+    renders the same wording inside an exported site's own framework.
+    `locale` (H1.2): "en" (default, unchanged) or "es". `third_parties`:
+    trusted descriptions of third-party services the site's source family
+    loads (disclosed on the cookie page)."""
+    if locale not in LEGAL_LOCALES:
+        raise ValueError(f"no legal wording for locale {locale!r}")
+    if locale == "es":
+        return _legal_page_content_es(business_truth, third_parties)
     name = business_truth.identity.name
     legal = business_truth.legal
     privacy_email = legal.privacy_contact_email or business_truth.contact.email or NOT_PROVIDED
@@ -104,6 +193,7 @@ def legal_page_content(business_truth: BusinessTruth) -> dict[str, tuple[str, li
             [
                 "Necessary cookies are always on. Everything else (analytics, marketing, preferences) stays "
                 "off unless you explicitly choose to allow it via the cookie banner.",
+                *(f"Third-party service: {service}" for service in third_parties),
             ],
         ),
     }

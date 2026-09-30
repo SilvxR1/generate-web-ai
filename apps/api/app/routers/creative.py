@@ -76,6 +76,7 @@ from app.publishing.drafts import (
     run_visual_qa_for_draft,
 )
 from app.publishing.publisher import PreviewPublisher, WebsitePublisher
+from app.publishing.qa_evidence import evidence_is_current
 from app.publishing.service import WebsitePublishError, WebsiteStateResult
 from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.business_review import BusinessReviewRepository
@@ -894,8 +895,12 @@ def get_website_draft(
 
 def _artifact_read(artifact_row, storage: StorageProvider) -> GenerativeArtifactRead:
     read = GenerativeArtifactRead.model_validate(artifact_row)
+    current = evidence_is_current(artifact_row.visual_qa_state, artifact_row.website_draft.artifact_sha256)
     return read.model_copy(
-        update={"screenshot_urls": {name: storage.url_path(key) for name, key in artifact_row.screenshot_keys.items()}}
+        update={
+            "screenshot_urls": {name: storage.url_path(key) for name, key in artifact_row.screenshot_keys.items()},
+            "visual_qa_current": current,
+        }
     )
 
 

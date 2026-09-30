@@ -70,3 +70,9 @@ class LeadRepository(TenantScopedRepository[Lead]):
         not just a tenant boundary."""
         stmt = select(Lead).where(Lead.id == lead_id, Lead.tenant_id == tenant_id, Lead.business_id == business_id)
         return self.session.scalars(stmt).first()
+
+    def get_by_client_submission(self, business_id: UUID, submission_id: UUID) -> Lead | None:
+        """H1.2: the lead an earlier attempt of the same client submission
+        created for this business (public idempotency; never cross-business)."""
+        stmt = select(Lead).where(Lead.business_id == business_id, Lead.client_submission_id == submission_id)
+        return self.session.scalars(stmt).first()
