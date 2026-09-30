@@ -48,6 +48,12 @@ class GenerationJob(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base
     source_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     api_base_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # H1.1: the job's source family (app.publishing.csp_policy.SourceFamily),
+    # chosen by trusted code at enqueue — the only input that selects the
+    # site's CSP additions. Never taken from the execution host.
+    source_family: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="gwa-astro", server_default="gwa-astro"
+    )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

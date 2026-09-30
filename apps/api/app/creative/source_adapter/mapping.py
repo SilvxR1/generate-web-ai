@@ -28,6 +28,7 @@ from app.creative.source_adapter.records import (
     write_new_file,
 )
 from app.domain.business_truth import BusinessTruth
+from app.publishing.csp_policy import validate_requested
 from app.publishing.security_headers import CspExtensions
 
 
@@ -35,7 +36,11 @@ from app.publishing.security_headers import CspExtensions
 class SourceMapping:
     name: str
     export_zip_sha256: str
-    csp_extensions: CspExtensions
+    # H1.1: the trusted family (app.publishing.csp_policy) and what THIS
+    # source says it needs; resolved_csp() accepts it only inside the family
+    # policy and returns that policy (fail closed otherwise).
+    source_family: str
+    csp_requirements: CspExtensions
     added_dependencies: dict[str, str]
     removed_files: tuple[str, ...]
     patches: tuple[SourcePatch, ...]
@@ -44,6 +49,11 @@ class SourceMapping:
     truth_values: Callable[[BusinessTruth], dict[str, str]]
     unbound_content: tuple[str, ...] = ()
     json_fields: tuple[JsonFieldPatch, ...] = ()
+
+
+def resolved_csp(mapping: SourceMapping) -> CspExtensions:
+    """The single CSP policy the artifact's `_headers` are derived from."""
+    return validate_requested(mapping.source_family, mapping.csp_requirements)
 
 
 def _add_dependencies(app: Path, dependencies: dict[str, str]) -> ChangeRecord:

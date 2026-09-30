@@ -15,6 +15,7 @@ Nothing here proves any production host; see the R4.1 acceptance procedure.
 No provider, no production, no external network.
 """
 
+import hashlib
 import http.server
 import io
 import os
@@ -29,6 +30,7 @@ from pathlib import Path
 import pytest
 import sqlalchemy as sa
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.creative import generation_jobs as jobs
@@ -308,7 +310,7 @@ def stores(tmp_path):
     )
 
 
-def _queued(session, tenant, business, stores, source=None):
+def _queued(session, tenant, business, stores, source=None, source_family="gwa-astro"):
     draft = WebsiteDraft(
         tenant_id=tenant.id,
         business_id=business.id,
@@ -326,6 +328,7 @@ def _queued(session, tenant, business, stores, source=None):
         input_sha256="a" * 64,
         artifact_storage=stores[0],
         api_base_url=_r2.API,
+        source_family=source_family,
     )
     session.flush()
     return draft, job
@@ -361,9 +364,10 @@ def test_claim_sends_only_the_jobs_own_build_input(session, tenant, business, st
     assert request.job_id == job.id and job.status is GenerationJobStatus.RUNNING
     verify_job_token(token, job_id=job.id, attempt=1, signing_key="k")
     assert set(ExecutionRequest.model_fields) == {
-        "protocol_version", "job_id", "attempt", "business_id", "api_base_url",
+        "protocol_version", "job_id", "attempt", "business_id", "api_base_url", "source_family",
         "source_archive", "source_sha256", "offline_assets", "run_visual_qa",
     }  # fmt: skip
+    assert request.source_family == job.source_family == "gwa-astro"  # H1.1: from the trusted job row
     assert intake.claim_next(session, artifact_storage=stores[0], asset_storage=stores[1], signing_key="k") is None
 
 
@@ -390,13 +394,62 @@ def test_a_malicious_host_cannot_bypass_the_truth_contract(session, tenant, busi
 
 
 def test_security_headers_are_never_taken_from_the_host(session, tenant, business, stores, executed):
+    # H1.1: stricter than re-deriving and accepting — the host's Visual QA ran
+    # under the forged policy, so its evidence says nothing about the stored
+    # site. The candidate is rejected and nothing is stored.
     forged = _forged(executed[1], _headers=b"/*\n  Content-Security-Policy: default-src *\n")
     draft, job = _queued(session, tenant, business, stores)
     jobs.claim(session, tenant_id=tenant.id, job_id=job.id)
     _accept(session, job, _as_result_for(job, executed[1], **forged), stores)
-    assert draft.status is WebsiteDraftStatus.READY
+    assert job.failure_kind is GenerationFailureKind.CANDIDATE_REJECTED
+    assert "security headers" in (job.error or "")
+    assert draft.status is WebsiteDraftStatus.BUILD_FAILED and draft.artifact_key is None
+
+
+def test_h1_1_the_trusted_job_family_governs_the_csp_not_the_candidate(session, tenant, business, stores, executed):
+    # A baseline (gwa-astro) candidate is honest for a gwa-astro job, but a
+    # job whose trusted family is Higgsfield expects different headers.
+    draft, job = _queued(session, tenant, business, stores, source_family="higgsfield-tanstack-static")
+    jobs.claim(session, tenant_id=tenant.id, job_id=job.id)
+    _accept(session, job, _as_result_for(job, executed[1]), stores)
+    assert job.failure_kind is GenerationFailureKind.CANDIDATE_REJECTED
+    assert draft.status is WebsiteDraftStatus.BUILD_FAILED and draft.artifact_key is None
+
+
+def test_h1_1_stored_headers_are_the_headers_visual_qa_exercised(session, tenant, business, stores, executed):
+    draft, job = _queued(session, tenant, business, stores)
+    jobs.claim(session, tenant_id=tenant.id, job_id=job.id)
+    _accept(session, job, _as_result_for(job, executed[1]), stores)
+    assert draft.status is WebsiteDraftStatus.READY, job.error
     stored = unpack_artifact(stores[0].load(draft.artifact_key))
-    assert b"default-src *" not in stored.files["_headers"]
+    candidate = _candidate(executed[1])
+    assert stored.files["_headers"] == candidate["_headers"]  # byte-for-byte, nothing re-derived differently
+    # The host recorded the hash of the `_headers` its sandboxed Visual QA served:
+    assert executed[1].metadata["headers_sha256"] == hashlib.sha256(stored.files["_headers"]).hexdigest()
+
+
+def test_h1_1_an_unknown_source_family_is_refused_before_anything_is_stored(session, tenant, business, stores):
+    from app.db.models.generation_job import GenerationJob
+    from app.publishing.csp_policy import UnsupportedCspRequirementError
+
+    before = session.scalar(select(func.count()).select_from(GenerationJob))
+    with pytest.raises(UnsupportedCspRequirementError):
+        _queued(session, tenant, business, stores, source_family="anything-goes")
+    assert session.scalar(select(func.count()).select_from(GenerationJob)) == before
+
+
+def test_h1_1_an_idempotency_key_cannot_switch_source_family(session, tenant, business):
+    key = f"job-{uuid.uuid4()}"
+    jobs.submit_job(session, tenant_id=tenant.id, business_id=business.id, idempotency_key=key, input_sha256="b" * 64)
+    with pytest.raises(jobs.GenerationJobError):
+        jobs.submit_job(
+            session,
+            tenant_id=tenant.id,
+            business_id=business.id,
+            idempotency_key=key,
+            input_sha256="b" * 64,
+            source_family="higgsfield-tanstack-static",
+        )
 
 
 def test_a_tampered_candidate_is_rejected_and_never_stored(session, tenant, business, stores, executed):
@@ -528,4 +581,5 @@ def test_r4_1_migration_is_additive_reversible_and_the_single_head(tmp_path):
     alembic("downgrade", "a4d2e8f1c7b3")
     assert "source_key" not in columns()
     alembic("upgrade", "head")
-    assert alembic("heads").split() == ["c8f4a1d6e2b9", "(head)"]
+    # H1.1 (d2b7e4a9c1f3, generation_jobs.source_family) now follows R4.1.
+    assert alembic("heads").split() == ["d2b7e4a9c1f3", "(head)"]

@@ -55,7 +55,7 @@ from sqlalchemy.orm import Session
 from app.creative.director_orchestrator import domain_from_row
 from app.creative.errors import CreativeProviderError
 from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError
-from app.creative.frontend_engine.build import inline_script_hashes, rebuild_from_archive
+from app.creative.frontend_engine.build import artifact_headers, rebuild_from_archive
 from app.creative.frontend_engine.engine import FrontendEngineer
 from app.creative.frontend_engine.sandboxed_browser_qa import MAX_OFFLINE_ASSET_BYTES
 from app.creative.frontend_engine.visual_qa import run_visual_qa
@@ -77,7 +77,7 @@ from app.publishing.build import build_site
 from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
-from app.publishing.security_headers import CspExtensions, generate_headers_file
+from app.publishing.security_headers import CspExtensions
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.truth_contract import TruthContractResult, validate_truth_contract
@@ -648,10 +648,7 @@ def judge_generative_candidate(
     (H1, see security_headers.CspExtensions) — never read from the candidate.
     """
     files = {name: data for name, data in files.items() if name != "_headers"}
-    html = [data.decode("utf-8", errors="ignore") for name, data in files.items() if name.endswith(".html")]
-    files["_headers"] = generate_headers_file(
-        script_hashes=inline_script_hashes(html), public_api_origin=api_base_url, csp_extensions=csp_extensions
-    )
+    files["_headers"] = artifact_headers(files, api_base_url=api_base_url, csp_extensions=csp_extensions)
     artifact = WebsiteArtifact(files=files, entry_point="index.html")
 
     contract_result = validate_platform_contract(artifact.files, business_config=business_config)

@@ -83,14 +83,59 @@ class BrowserQAResult:
         return not self.failures
 
 
+HEADERS_FILE = "_headers"
+_CSP_VIOLATION_WATCH = (
+    "window.__gwaCspViolations = [];"
+    "document.addEventListener('securitypolicyviolation', e => window.__gwaCspViolations.push("
+    "e.effectiveDirective + ' ' + (e.blockedURI || 'inline')));"
+)
+
+
+def parse_headers_file(content: bytes) -> list[tuple[str, str]]:
+    """The `/*` rules of a Cloudflare Pages `_headers` file — the policy the
+    host applies to every route of the site."""
+    headers: list[tuple[str, str]] = []
+    in_all = False
+    for line in content.decode("utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        if not line.startswith((" ", "\t")):
+            in_all = line.strip() == "/*"
+            continue
+        if in_all and ":" in line:
+            name, value = line.strip().split(":", 1)
+            headers.append((name.strip(), value.strip()))
+    return headers
+
+
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
+    """H1.1: serves the site like its host does — the artifact's own
+    `_headers` (CSP included) on every response, and `_headers` itself is
+    never served as a file."""
+
+    site_headers: list[tuple[str, str]] = []
+
+    def send_head(self):  # overrides SimpleHTTPRequestHandler.send_head
+        if self.path.split("?", 1)[0].split("#", 1)[0].rstrip("/").endswith("/" + HEADERS_FILE):
+            self.send_error(404)
+            return None
+        return super().send_head()
+
+    def end_headers(self) -> None:
+        for name, value in self.site_headers:
+            self.send_header(name, value)
+        super().end_headers()
+
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002 - matches base class signature
         pass  # Never spam test/CI output with per-request access logs.
 
 
 @contextmanager
 def _serve_directory(directory: Path) -> Iterator[int]:
-    handler = functools.partial(_QuietHandler, directory=str(directory))
+    headers_file = directory / HEADERS_FILE
+    site_headers = parse_headers_file(headers_file.read_bytes()) if headers_file.is_file() else []
+    handler_class = type("_SiteHandler", (_QuietHandler,), {"site_headers": site_headers})
+    handler = functools.partial(handler_class, directory=str(directory))
     with socketserver.TCPServer(("127.0.0.1", 0), handler) as httpd:
         port = httpd.server_address[1]
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -103,30 +148,48 @@ def _serve_directory(directory: Path) -> Iterator[int]:
 
 
 def _write_files(root: Path, files: dict[str, bytes]) -> None:
+    # `_headers` is written too: _serve_directory applies it (never serves it),
+    # so Visual QA exercises the exact policy the host will apply (H1.1).
     for relative_path, content in files.items():
-        if relative_path == "_headers":
-            continue  # Cloudflare-specific, not a real file a browser would request.
         path = root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
 
 
-def _check_viewport(page, *, name: str, base_url: str) -> list[BrowserQAFinding]:
+def _check_viewport(page, *, name: str, base_url: str, expected_csp: str | None = None) -> list[BrowserQAFinding]:
     findings: list[BrowserQAFinding] = []
     console_errors: list[str] = []
     page.on("console", lambda msg: console_errors.append(msg.text) if msg.type == "error" else None)
     page_errors: list[str] = []
     page.on("pageerror", lambda exc: page_errors.append(str(exc)))
+    # H1.1: same-origin resources that failed (the implicit favicon probe is
+    # not a site resource).
+    failed: list[str] = []
+    page.on(
+        "response",
+        lambda r: failed.append(f"{r.status} {r.url}")
+        if r.status >= 400 and r.url.startswith(base_url) and not r.url.endswith("/favicon.ico")
+        else None,
+    )
+    page.on("requestfailed", lambda r: failed.append(f"failed {r.url}") if r.url.startswith(base_url) else None)
 
     try:
         # "/" — the URL a visitor loads (static hosts serve index.html for it
         # and redirect /index.html to it). A client-side router (H1: TanStack
         # Start prerendered pages) treats /index.html as a different route.
-        page.goto(f"{base_url}/", wait_until="networkidle", timeout=15000)
+        response = page.goto(f"{base_url}/", wait_until="networkidle", timeout=15000)
         findings.append(BrowserQAFinding(name, "page_loads", True))
     except Exception as exc:  # noqa: BLE001 - a navigation failure is itself the finding
         findings.append(BrowserQAFinding(name, "page_loads", False, str(exc)))
         return findings
+
+    # H1.1: the page ran under the artifact's OWN policy, and broke none of it.
+    if expected_csp is not None:
+        served = response.headers.get("content-security-policy") if response is not None else None
+        findings.append(BrowserQAFinding(name, "artifact_csp_applied", served == expected_csp, str(served)[:200]))
+    violations = page.evaluate("window.__gwaCspViolations || []")
+    findings.append(BrowserQAFinding(name, "no_csp_violations", not violations, "; ".join(violations)[:500]))
+    findings.append(BrowserQAFinding(name, "no_failed_resources", not failed, "; ".join(failed)[:500]))
 
     # No critical console/page errors.
     findings.append(
@@ -255,6 +318,8 @@ def run_browser_qa(
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         _write_files(root, files)
+        policy = dict(parse_headers_file(files[HEADERS_FILE])) if HEADERS_FILE in files else {}
+        expected_csp = policy.get("Content-Security-Policy")
         with _serve_directory(root) as port:
             base_url = f"http://127.0.0.1:{port}"
             with sync_playwright() as playwright:
@@ -265,13 +330,17 @@ def run_browser_qa(
                         f"Chromium could not be launched — real browser/Visual QA is unavailable: {exc}"
                     ) from exc
                 context = browser.new_context()
+                # H1.1: every CSP violation the artifact's own policy reports.
+                context.add_init_script(_CSP_VIOLATION_WATCH)
                 if offline_assets is not None:
                     context.route("**/*", _offline_router(base_url, offline_assets, result.blocked_requests))
                 try:
                     for name, width, height in viewports:
                         page = context.new_page()
                         page.set_viewport_size({"width": width, "height": height})
-                        result.findings.extend(_check_viewport(page, name=name, base_url=base_url))
+                        result.findings.extend(
+                            _check_viewport(page, name=name, base_url=base_url, expected_csp=expected_csp)
+                        )
                         if probe_script is not None:
                             page.wait_for_timeout(1500)
                             result.probes.append(page.evaluate(probe_script))
@@ -283,7 +352,12 @@ def run_browser_qa(
                     reduced_motion_page.set_viewport_size({"width": 1440, "height": 900})
                     reduced_motion_page.emulate_media(reduced_motion="reduce")
                     result.findings.extend(
-                        _check_viewport(reduced_motion_page, name="desktop-reduced-motion", base_url=base_url)
+                        _check_viewport(
+                            reduced_motion_page,
+                            name="desktop-reduced-motion",
+                            base_url=base_url,
+                            expected_csp=expected_csp,
+                        )
                     )
                     reduced_motion_page.close()
                 finally:
