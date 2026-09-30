@@ -256,6 +256,24 @@ def _inject_platform_consent(html: str) -> str:
     return html + PLATFORM_CONSENT_FRAGMENT  # No </body> (malformed AI output) — append rather than drop it.
 
 
+def inject_platform_runtime(html: str, *, business_id: str, api_base_url: str | None) -> str:
+    """The platform runtime every built page receives post-build: the
+    server-controlled `platform-config` and the platform consent banner.
+    Also used by app.creative.source_adapter for exported (non-Astro)
+    sources, so both paths inject exactly the same bytes."""
+    return _inject_platform_consent(_inject_platform_config(html, business_id=business_id, api_base_url=api_base_url))
+
+
+def _browser_script_text(body: str) -> str:
+    """The text a browser actually hashes for CSP `'sha256-…'`: after HTML
+    input-stream preprocessing (CRLF/CR -> LF) and tokenization (a U+0000
+    in script data is emitted as U+FFFD). Hashing the raw bytes instead
+    makes a script containing either never match (H1: TanStack Start's
+    dehydrated router state embeds U+0000 separators). Unchanged for
+    scripts without them — every Astro build."""
+    return body.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "�")
+
+
 def inline_script_hashes(html_files: list[str]) -> frozenset[str]:
     """Same CSP `script-src 'sha256-...'` computation as
     app.publishing.build._inline_script_hashes, duplicated (not
@@ -268,7 +286,7 @@ def inline_script_hashes(html_files: list[str]) -> frozenset[str]:
             body = match.group(1)
             if not body.strip():
                 continue
-            digest = hashlib.sha256(body.encode("utf-8")).digest()
+            digest = hashlib.sha256(_browser_script_text(body).encode("utf-8")).digest()
             hashes.add(base64.b64encode(digest).decode("ascii"))
     return frozenset(hashes)
 
@@ -365,9 +383,7 @@ def build_generative_workspace(
     for relative, data in collect_candidate_files(workspace / "dist").items():
         if relative.endswith(".html"):
             html = data.decode("utf-8", errors="ignore")
-            injected = _inject_platform_consent(
-                _inject_platform_config(html, business_id=business_id, api_base_url=api_base_url)
-            )
+            injected = inject_platform_runtime(html, business_id=business_id, api_base_url=api_base_url)
             html_texts.append(injected)
             files[relative] = injected.encode("utf-8")
         else:

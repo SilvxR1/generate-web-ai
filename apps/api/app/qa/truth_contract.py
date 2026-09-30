@@ -330,6 +330,9 @@ def _allow(truth: BusinessTruth) -> _Allow:
 _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 _PHONE_TEXT = re.compile(r"(?<![\w/#.-])\+?\(?\d[\d\s().-]{7,}\d(?![\w/])")
 _WA = re.compile(r"(?:wa\.me/|api\.whatsapp\.com/send\?phone=)(\d+)")
+# A string literal assigned to a `placeholder` prop/attribute in shipped JS
+# (compiled JSX `placeholder:"…"`, `placeholder="…"`, `.placeholder = "…"`).
+_PLACEHOLDER_VALUE = re.compile(r"""\bplaceholder\s*[:=]\s*(["'`])([^"'`\\\n]*)\1""")
 _SOCIAL = re.compile(
     r"^https?://(?:www\.)?(?:facebook\.com|instagram\.com|x\.com|twitter\.com|linkedin\.com|tiktok\.com|"
     r"youtube\.com|pinterest\.com)/",
@@ -771,6 +774,17 @@ def _check_assets(page: _Page, allow: _Allow, out: _Findings) -> None:
             )
 
 
+def _placeholder_only(email: str, source: str) -> bool:
+    """H1: True when EVERY occurrence of `email` in this JS file is the
+    literal value of a `placeholder` property/attribute — example input
+    text (e.g. `placeholder:"nombre@correo.com"` in compiled JSX), never a
+    contact destination the site publishes. Mirrors the HTML side, where
+    `placeholder` attributes are not visible text (see _Parser). One other
+    occurrence anywhere (a mailto:, a rendered string) keeps the finding."""
+    in_placeholders = sum(value.count(email) for _, value in _PLACEHOLDER_VALUE.findall(source))
+    return in_placeholders > 0 and in_placeholders == source.count(email)
+
+
 def _check_scripts(files: dict[str, bytes], allow: _Allow, out: _Findings) -> None:
     """Generated JS can insert content after this static check runs; only
     literal contact destinations shipped in JS are detectable here."""
@@ -779,7 +793,7 @@ def _check_scripts(files: dict[str, bytes], allow: _Allow, out: _Findings) -> No
             continue
         source = files[path].decode("utf-8", errors="ignore")
         for email in _EMAIL.findall(source):
-            if email.lower() not in allow.emails:
+            if email.lower() not in allow.emails and not _placeholder_only(email, source):
                 out.add(
                     "truth.contact.email_unauthorized",
                     TruthCategory.CONTACT,

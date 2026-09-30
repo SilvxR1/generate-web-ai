@@ -77,7 +77,7 @@ from app.publishing.build import build_site
 from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
-from app.publishing.security_headers import generate_headers_file
+from app.publishing.security_headers import CspExtensions, generate_headers_file
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.truth_contract import TruthContractResult, validate_truth_contract
@@ -634,6 +634,7 @@ def judge_generative_candidate(
     business_truth: BusinessTruth,
     artifact_storage: PrivateArtifactStorage,
     api_base_url: str | None,
+    csp_extensions: CspExtensions | None = None,
 ) -> str | None:
     """v0.2 R4.1: the trusted verdict on a candidate returned by an isolated
     execution host — the same gates, in the same order and with the same
@@ -643,10 +644,14 @@ def judge_generative_candidate(
 
     The candidate's own `_headers` (CSP) is discarded and re-derived here
     from its HTML: security headers are never taken from the untrusted host.
+    `csp_extensions` is the caller's trusted per-source-family CSP policy
+    (H1, see security_headers.CspExtensions) — never read from the candidate.
     """
     files = {name: data for name, data in files.items() if name != "_headers"}
     html = [data.decode("utf-8", errors="ignore") for name, data in files.items() if name.endswith(".html")]
-    files["_headers"] = generate_headers_file(script_hashes=inline_script_hashes(html), public_api_origin=api_base_url)
+    files["_headers"] = generate_headers_file(
+        script_hashes=inline_script_hashes(html), public_api_origin=api_base_url, csp_extensions=csp_extensions
+    )
     artifact = WebsiteArtifact(files=files, entry_point="index.html")
 
     contract_result = validate_platform_contract(artifact.files, business_config=business_config)

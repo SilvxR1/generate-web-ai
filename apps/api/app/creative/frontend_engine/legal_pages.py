@@ -61,12 +61,11 @@ import Layout from "../layouts/Layout.astro";
 """
 
 
-def build_legal_pages(business_truth: BusinessTruth) -> dict[str, str]:
-    """Returns {relative_astro_page_path: content} for /privacy, /terms,
-    /cookies — written into the workspace by the same engine code path
-    that writes the AI's own manifest, at fixed paths the AI's manifest
-    is never allowed to touch (workspace.py rejects any AI-submitted
-    file whose path collides, since these are always written last)."""
+def legal_page_content(business_truth: BusinessTruth) -> dict[str, tuple[str, list[str]]]:
+    """{slug: (title, paragraphs)} for privacy/terms/cookies as PLAIN,
+    unescaped text — the single source of the legal wording. Rendered by
+    build_legal_pages (Astro) and by app.creative.source_adapter, which
+    renders the same wording inside an exported site's own framework."""
     name = business_truth.identity.name
     legal = business_truth.legal
     privacy_email = legal.privacy_contact_email or business_truth.contact.email or NOT_PROVIDED
@@ -77,9 +76,8 @@ def build_legal_pages(business_truth: BusinessTruth) -> dict[str, str]:
     )
 
     return {
-        "src/pages/privacy.astro": _page(
+        "privacy": (
             "Privacy Policy",
-            name,
             [
                 f"This website is operated by {name}.",
                 f"Legal name: {_or_missing(legal.legal_name)}.",
@@ -92,9 +90,8 @@ def build_legal_pages(business_truth: BusinessTruth) -> dict[str, str]:
                 f"Contact for privacy questions: {privacy_email}.",
             ],
         ),
-        "src/pages/terms.astro": _page(
+        "terms": (
             "Terms of Service",
-            name,
             [
                 f"These terms govern use of this website operated by {name} "
                 f"(legal name: {_or_missing(legal.legal_name)}). By using this site you agree to use it "
@@ -102,12 +99,24 @@ def build_legal_pages(business_truth: BusinessTruth) -> dict[str, str]:
                 f"Questions about these terms can be sent to {privacy_email}.",
             ],
         ),
-        "src/pages/cookies.astro": _page(
+        "cookies": (
             "Cookie Policy",
-            name,
             [
                 "Necessary cookies are always on. Everything else (analytics, marketing, preferences) stays "
                 "off unless you explicitly choose to allow it via the cookie banner.",
             ],
         ),
+    }
+
+
+def build_legal_pages(business_truth: BusinessTruth) -> dict[str, str]:
+    """Returns {relative_astro_page_path: content} for /privacy, /terms,
+    /cookies — written into the workspace by the same engine code path
+    that writes the AI's own manifest, at fixed paths the AI's manifest
+    is never allowed to touch (workspace.py rejects any AI-submitted
+    file whose path collides, since these are always written last)."""
+    name = business_truth.identity.name
+    return {
+        f"src/pages/{slug}.astro": _page(title, name, paragraphs)
+        for slug, (title, paragraphs) in legal_page_content(business_truth).items()
     }
