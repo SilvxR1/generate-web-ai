@@ -9,7 +9,6 @@ stored bytes. Intake-level tests (job family, stored == exercised) live
 with the R4.1 fixtures in tests/test_v0_2_r4_1_execution_host.py.
 """
 
-import dataclasses
 import urllib.error
 import urllib.request
 import uuid
@@ -19,8 +18,7 @@ import pytest
 
 from app.creative.frontend_engine.browser_qa import _serve_directory, _write_files, parse_headers_file, run_browser_qa
 from app.creative.frontend_engine.build import artifact_headers, inline_script_hashes
-from app.creative.source_adapter.mapping import resolved_csp
-from app.creative.source_adapter.mappings.nexo_reformas import MAPPING
+from app.creative.source_adapter.adapters.higgsfield_tanstack import ADAPTER as HIGGSFIELD_ADAPTER
 from app.domain.enums import GenerationFailureKind
 from app.publishing.cloudflare.engine import (
     CloudflarePagesPreviewPublisher,
@@ -270,13 +268,20 @@ def test_preview_and_production_deploy_the_stored_headers_byte_for_byte(monkeypa
 # --- The Higgsfield source adapter ---------------------------------------------------------
 
 
-def test_the_nexo_mapping_resolves_to_its_family_policy():
-    assert resolved_csp(MAPPING) == policy_for(HIGGSFIELD)
+def test_the_higgsfield_adapter_resolves_to_its_family_policy():
+    # H2: a source-family adapter states what a source needs; the family policy
+    # is what `_headers` is derived from (validate_requested, fail closed).
+    assert HIGGSFIELD_ADAPTER.family == HIGGSFIELD
+    everything = CspExtensions(
+        media_blob=True, style_origins=("https://api.fontshare.com",), font_origins=("https://cdn.fontshare.com",)
+    )
+    assert validate_requested(HIGGSFIELD_ADAPTER.family, everything) == policy_for(HIGGSFIELD)
+    assert validate_requested(HIGGSFIELD_ADAPTER.family, CspExtensions()) == policy_for(HIGGSFIELD)
 
 
-def test_an_adapter_mapping_that_over_reaches_fails_closed():
-    greedy = dataclasses.replace(MAPPING, csp_requirements=CspExtensions(style_origins=("https://fonts.googleapis.com",)))
+def test_an_adapter_request_that_over_reaches_fails_closed():
+    greedy = CspExtensions(style_origins=("https://fonts.googleapis.com",))
     with pytest.raises(UnsupportedCspRequirementError):
-        resolved_csp(greedy)
+        validate_requested(HIGGSFIELD_ADAPTER.family, greedy)
     with pytest.raises(UnsupportedCspRequirementError):
-        resolved_csp(dataclasses.replace(MAPPING, source_family="gwa-astro"))
+        validate_requested("gwa-astro", CspExtensions(media_blob=True))

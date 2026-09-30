@@ -152,7 +152,15 @@ def _reachable(edges: dict[str, set[str]], roots: list[str]) -> set[str]:
     return seen
 
 
-def _clean_css(app: Path, unavailable: list[str], modules: list[str], kept: set[str]) -> list[ChangeRecord]:
+@dataclass(frozen=True)
+class CssEdit:
+    path: str
+    before: str
+    after: str
+    dropped: tuple[str, ...]
+
+
+def _css_edits(app: Path, unavailable: list[str], modules: list[str], kept: set[str]) -> list[CssEdit]:
     """A component directory is DEAD when it holds source modules but none of
     them is reachable from the public site. Its stylesheets are left alone
     (nothing imports them any more); live stylesheets drop their imports of
@@ -160,7 +168,7 @@ def _clean_css(app: Path, unavailable: list[str], modules: list[str], kept: set[
     `@apply` utilities only the unavailable package defined)."""
     kept_dirs = {str(PurePosixPath(m).parent) for m in kept}
     dead_dirs = {str(PurePosixPath(m).parent) for m in modules} - kept_dirs
-    changes = []
+    edits = []
     for css in sorted(app.glob("src/**/*.css")):
         relative = css.relative_to(app).as_posix()
         css_dir = PurePosixPath(relative).parent
@@ -189,66 +197,76 @@ def _clean_css(app: Path, unavailable: list[str], modules: list[str], kept: set[
 
         cleaned = _CSS_SOURCE.sub(drop_source, _CSS_IMPORT.sub(drop_import, text))
         if dropped:
-            css.write_text(cleaned, encoding="utf-8")
-            changes.append(
-                ChangeRecord(
-                    relative,
-                    "cleanup-edit",
-                    "removed CSS references to unavailable packages/removed components: " + " | ".join(dropped),
-                    None,
-                    sha256_hex(text.encode()),
-                    sha256_hex(cleaned.encode()),
-                )
-            )
-    return changes
+            edits.append(CssEdit(relative, text, cleaned, tuple(dropped)))
+    return edits
 
 
-def _clean_package_json(app: Path, unavailable: list[str]) -> ChangeRecord:
-    path = app / "package.json"
-    raw = path.read_text(encoding="utf-8")
+def _cleaned_package_json(app: Path, unavailable: list[str]) -> tuple[str, str]:
+    raw = (app / "package.json").read_text(encoding="utf-8")
     package = json.loads(raw)
     for section in ("dependencies", "devDependencies"):
         for name in unavailable:
             package.get(section, {}).pop(name, None)
     if "workspaces" in package and not any(app.glob("packages/*/package.json")):
         package.pop("workspaces")
-    cleaned = json.dumps(package, indent=2, ensure_ascii=False) + "\n"
-    path.write_text(cleaned, encoding="utf-8")
-    return ChangeRecord(
-        "package.json",
-        "cleanup-edit",
-        "removed unavailable workspace dependencies: " + ", ".join(unavailable),
-        None,
-        sha256_hex(raw.encode()),
-        sha256_hex(cleaned.encode()),
+    return raw, json.dumps(package, indent=2, ensure_ascii=False) + "\n"
+
+
+@dataclass
+class CleanupAnalysis:
+    """What portability cleanup WOULD do, computed without touching `app`
+    (H2: the adaptation planner reads it from the read-only snapshot).
+    `live_modules` = source modules reachable from the kept routes/entries."""
+
+    unavailable_packages: list[str]
+    blocking: list[str]
+    removed_routes: list[str]
+    removed_modules: list[str]
+    live_modules: list[str]
+    css_edits: list[CssEdit]
+    package_json: tuple[str, str] | None  # (before, after)
+
+
+def analyze_cleanup(app: Path) -> CleanupAnalysis:
+    package = json.loads((app / "package.json").read_text(encoding="utf-8"))
+    unavailable = _unavailable_workspace_packages(app, package)
+    modules = _module_files(app)
+    edges, direct = _graph(app, modules, unavailable)
+    tainted = _tainted(edges, direct)
+    blocking = [m for m in (*_PROTECTED_ROUTES, *_ENTRY_FILES) if m in tainted]
+    routes = [m for m in modules if m.startswith("src/routes/")]
+    removed_routes = [r for r in routes if r in tainted]
+    roots = [r for r in routes if r not in tainted] + [e for e in _ENTRY_FILES if e in edges]
+    kept = _reachable(edges, roots)
+    if not unavailable:
+        return CleanupAnalysis([], [], [], [], sorted(kept), [], None)
+    return CleanupAnalysis(
+        unavailable_packages=unavailable,
+        blocking=blocking,
+        removed_routes=removed_routes,
+        removed_modules=sorted(m for m in tainted if m not in kept),
+        live_modules=sorted(kept),
+        css_edits=_css_edits(app, unavailable, modules, kept),
+        package_json=_cleaned_package_json(app, unavailable),
     )
 
 
 def portability_cleanup(app: Path) -> CleanupResult:
     """Applies the rule in the module docstring to the WORKING copy `app`."""
-    package = json.loads((app / "package.json").read_text(encoding="utf-8"))
-    unavailable = _unavailable_workspace_packages(app, package)
-    result = CleanupResult(unavailable_packages=unavailable)
-    if not unavailable:
+    analysis = analyze_cleanup(app)
+    result = CleanupResult(unavailable_packages=analysis.unavailable_packages)
+    if not analysis.unavailable_packages:
         return result
-
-    modules = _module_files(app)
-    edges, direct = _graph(app, modules, unavailable)
-    tainted = _tainted(edges, direct)
-
-    blocking = [m for m in (*_PROTECTED_ROUTES, *_ENTRY_FILES) if m in tainted]
-    if blocking:
+    if analysis.blocking:
         raise DesignCriticalDependencyError(
-            "the public site needs unavailable package(s) " + ", ".join(unavailable) + " via " + ", ".join(blocking)
+            "the public site needs unavailable package(s) "
+            + ", ".join(analysis.unavailable_packages)
+            + " via "
+            + ", ".join(analysis.blocking)
         )
-    routes = [m for m in modules if m.startswith("src/routes/")]
-    result.removed_routes = [r for r in routes if r in tainted]
-    roots = [r for r in routes if r not in tainted] + [e for e in _ENTRY_FILES if e in edges]
-    kept = _reachable(edges, roots)
-    removed = sorted(m for m in tainted if m not in kept)
-
-    for module in removed:
-        why = "route" if module in result.removed_routes else "module"
+    result.removed_routes = analysis.removed_routes
+    for module in analysis.removed_modules:
+        why = "route" if module in analysis.removed_routes else "module"
         result.changes.append(
             remove_file(
                 app,
@@ -257,6 +275,29 @@ def portability_cleanup(app: Path) -> CleanupResult:
                 reason=f"{why} depends on unavailable package(s) and is not reachable from the public site",
             )
         )
-    result.changes += _clean_css(app, unavailable, modules, kept)
-    result.changes.append(_clean_package_json(app, unavailable))
+    for edit in analysis.css_edits:
+        (app / edit.path).write_text(edit.after, encoding="utf-8")
+        result.changes.append(
+            ChangeRecord(
+                edit.path,
+                "cleanup-edit",
+                "removed CSS references to unavailable packages/removed components: " + " | ".join(edit.dropped),
+                None,
+                sha256_hex(edit.before.encode()),
+                sha256_hex(edit.after.encode()),
+            )
+        )
+    assert analysis.package_json is not None
+    before, after = analysis.package_json
+    (app / "package.json").write_text(after, encoding="utf-8")
+    result.changes.append(
+        ChangeRecord(
+            "package.json",
+            "cleanup-edit",
+            "removed unavailable workspace dependencies: " + ", ".join(analysis.unavailable_packages),
+            None,
+            sha256_hex(before.encode()),
+            sha256_hex(after.encode()),
+        )
+    )
     return result

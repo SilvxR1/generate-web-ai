@@ -1,5 +1,5 @@
 """H1 source adapter — the reusable pieces, on small synthetic exports (the
-real Higgsfield ZIP is not in the repository; scripts/h1_higgsfield_adapter.py
+real Higgsfield ZIP is not in the repository; scripts/h2_source_adapter.py
 runs the real one locally)."""
 
 import json
