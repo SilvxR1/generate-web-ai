@@ -76,6 +76,13 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           bwrap --unshare-all --unshare-user --ro-bind /usr /usr --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind-try /bin /bin -- /usr/bin/true
 
+      # R5: a supervised source import (a Higgsfield TanStack/Vite export) is
+      # installed with `bun install --ignore-scripts` and built by the
+      # execution host's runner; the R5 tests run that real build once.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
       # app.publishing.build shells out to a real `pnpm exec astro build`
       # (see its own docstring: "no second renderer, no duplicated
       # blocks") — the site-builder integration tests exercise that real

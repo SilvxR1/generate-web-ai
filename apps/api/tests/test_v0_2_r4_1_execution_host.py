@@ -366,7 +366,11 @@ def test_claim_sends_only_the_jobs_own_build_input(session, tenant, business, st
     assert set(ExecutionRequest.model_fields) == {
         "protocol_version", "job_id", "attempt", "business_id", "api_base_url", "source_family",
         "source_archive", "source_sha256", "offline_assets", "run_visual_qa",
+        # R5: supervised-source fields — defaults/empty for a generative job
+        "job_kind", "trust_class", "adaptation_plan", "plan_sha256", "site_origin",
     }  # fmt: skip
+    assert request.adaptation_plan is None and request.plan_sha256 is None and request.site_origin is None
+    assert request.job_kind.value == "generative" and request.trust_class.value == "untrusted_generated"
     assert request.source_family == job.source_family == "gwa-astro"  # H1.1: from the trusted job row
     assert intake.claim_next(session, artifact_storage=stores[0], asset_storage=stores[1], signing_key="k") is None
 
@@ -582,5 +586,6 @@ def test_r4_1_migration_is_additive_reversible_and_the_single_head(tmp_path):
     assert "source_key" not in columns()
     alembic("upgrade", "head")
     # H1.1 (d2b7e4a9c1f3, generation_jobs.source_family) and H1.2
-    # (e5c1a7b3d9f2, leads.details/client_submission_id) now follow R4.1.
-    assert alembic("heads").split() == ["e5c1a7b3d9f2", "(head)"]
+    # (e5c1a7b3d9f2, leads.details/client_submission_id) and R5
+    # (a7d3f1c5e8b2, supervised source imports) now follow R4.1.
+    assert alembic("heads").split() == ["a7d3f1c5e8b2", "(head)"]

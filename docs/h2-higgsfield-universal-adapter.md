@@ -110,9 +110,9 @@ Family rules (`higgsfield-tanstack-static`): `package_manager_unsupported`,
 `build_config_unrecognized`, `prerender_already_configured`,
 `root_document_unrecognized`, `index_route_unrecognized`,
 `index_head_unsupported`, `font_not_self_hostable`,
-`form_transport_imports_more`, `server_module_still_imported` — blockers;
-`build_step_unrecognized`, `no_lead_form`, `form_displays_server_identifier`,
-`legal_links_placement` — review; `third_party_font_service`,
+`form_transport_imports_more`, `server_module_still_imported`, `form_displays_server_identifier` (R5:
+blocker — only a reviewed overlay fix resolves it) — blockers;
+`build_step_unrecognized`, `no_lead_form`, `legal_links_placement` — review; `third_party_font_service`,
 `generated_brand_mark` — info. Forms/facts/claims add
 `form_without_contact_field`, `form_transport_unmappable`,
 `form_detail_keys_collide`, `form_too_many_details`,

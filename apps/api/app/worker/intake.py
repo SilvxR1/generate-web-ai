@@ -11,20 +11,29 @@ inline path. The host can never mark READY, approve, publish or deploy;
 Build Once / Promote is unchanged (what is stored here is what publishes).
 """
 
+import json
 import logging
+import re
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.creative import business_inputs, source_imports
 from app.creative import generation_jobs as jobs
 from app.creative.frontend_engine.build import artifact_headers
 from app.db.models.generation_job import GenerationJob
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
 from app.domain.business_truth import BusinessTruth
-from app.domain.enums import GenerationFailureKind, GenerationJobStatus, WebsiteDraftStatus
+from app.domain.enums import (
+    GenerationFailureKind,
+    GenerationJobKind,
+    GenerationJobStatus,
+    JobTrustClass,
+    WebsiteDraftStatus,
+)
 from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, UnsupportedCspRequirementError, parse_family, policy_for
 from app.publishing.drafts import _visual_qa_assets, judge_generative_candidate
 from app.publishing.qa_evidence import visual_qa_evidence
@@ -120,13 +129,27 @@ def expire_lost(session: Session, *, now: datetime | None = None) -> int:
     return len(lost)
 
 
+# R5: which jobs each worker isolation may run. AI-generated code only ever
+# runs in the bubblewrap sandbox; a supervised-process worker (no sandbox)
+# only receives operator-imported, owner-reviewed sources.
+TRUST_CLASSES_FOR_ISOLATION: dict[str, frozenset[JobTrustClass]] = {
+    "bubblewrap": frozenset({JobTrustClass.UNTRUSTED_GENERATED, JobTrustClass.SUPERVISED_SOURCE}),
+    "supervised-process": frozenset({JobTrustClass.SUPERVISED_SOURCE}),
+}
+
+
 def claim_next(
-    session: Session, *, artifact_storage: PrivateArtifactStorage, asset_storage: StorageProvider, signing_key: str
+    session: Session,
+    *,
+    artifact_storage: PrivateArtifactStorage,
+    asset_storage: StorageProvider,
+    signing_key: str,
+    isolation: str = "bubblewrap",
 ) -> tuple[ExecutionRequest, str] | None:
-    """Claims the oldest queued job and returns ONLY its build input plus a
-    job-scoped result token. A source that fails its integrity check fails
-    the job here — it is never sent out."""
-    candidate = jobs.next_queued_job_id(session)
+    """Claims the oldest queued job the worker's isolation may run and
+    returns ONLY its build input plus a job-scoped result token. A source
+    that fails its integrity check fails the job here — it is never sent out."""
+    candidate = jobs.next_queued_job_id(session, trust_classes=TRUST_CLASSES_FOR_ISOLATION[isolation])
     if candidate is None:
         return None
     tenant_id, job_id = candidate
@@ -137,6 +160,13 @@ def claim_next(
     if sha256_hex(archive) != job.source_sha256:
         jobs.fail(job, kind=GenerationFailureKind.CANDIDATE_REJECTED, error="stored source failed its integrity check")
         return None
+    token = issue_job_token(job_id=job.id, attempt=job.attempts, signing_key=signing_key)
+    if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
+        try:
+            return _source_adaptation_request(session, job, artifact_storage), token
+        except (IntakeError, source_imports.SourceImportError) as exc:
+            jobs.fail(job, kind=GenerationFailureKind.CANDIDATE_REJECTED, error=f"job input refused: {exc}")
+            return None
     assets = _visual_qa_assets(session, job.tenant_id, job.business_id, asset_storage)
     request = ExecutionRequest(
         job_id=job.id,
@@ -148,7 +178,45 @@ def claim_next(
         source_sha256=job.source_sha256,
         offline_assets={url: b64(data) for url, data in assets.items()},
     )
-    return request, issue_job_token(job_id=job.id, attempt=job.attempts, signing_key=signing_key)
+    return request, token
+
+
+def _source_adaptation_request(
+    session: Session, job: GenerationJob, artifact_storage: PrivateArtifactStorage
+) -> ExecutionRequest:
+    """R5: a supervised export's build input — identities, the exact stored
+    AdaptationPlan and where the site will live. The snapshot itself is
+    downloaded with the job token (download_source); no BusinessConfig, no
+    database URL, no storage or provider credential is ever sent."""
+    row = source_imports.import_for_job(session, job)
+    if row is None:
+        raise IntakeError("source-adaptation job has no source import")
+    plan = source_imports.load_plan(row, artifact_storage)
+    return ExecutionRequest(
+        job_id=job.id,
+        attempt=job.attempts,
+        business_id=job.business_id,
+        api_base_url=job.api_base_url,
+        source_family=job.source_family,
+        source_sha256=str(job.source_sha256),
+        job_kind=job.job_kind,
+        trust_class=job.trust_class,
+        adaptation_plan=plan.to_dict(include_binary=True),
+        plan_sha256=plan.plan_sha256,
+        site_origin=row.site_origin,
+    )
+
+
+def download_source(job: GenerationJob, artifact_storage: PrivateArtifactStorage) -> bytes:
+    """R5: the immutable snapshot of a RUNNING source-adaptation job, for the
+    worker holding that job's token — integrity-verified, never repaired."""
+    if job.status is not GenerationJobStatus.RUNNING or job.job_kind is not GenerationJobKind.SOURCE_ADAPTATION:
+        raise IntakeError("job has no downloadable source")
+    assert job.source_key is not None and job.source_sha256 is not None
+    data = artifact_storage.load(job.source_key)
+    if sha256_hex(data) != job.source_sha256:
+        raise IntakeError("stored source failed its integrity check")
+    return data
 
 
 def _fail(job: GenerationJob, draft: WebsiteDraft | None, kind: GenerationFailureKind, error: str) -> None:
@@ -158,7 +226,92 @@ def _fail(job: GenerationJob, draft: WebsiteDraft | None, kind: GenerationFailur
         draft.build_error = draft.build_error or f"Isolated build failed ({kind.value})."
 
 
+_PLATFORM_CONFIG = re.compile(r'<script type="application/json" id="platform-config">(.*?)</script>', re.S)
+
+
+def _json_or_none(text: str) -> object:
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+_FORBIDDEN_OUTPUT = re.compile(r"^(?:server|functions|_worker\.js|\.wrangler)(?:/|$)|\.(?:node|so|dylib|dll|exe)$")
+_EXECUTABLE_MAGIC = (b"\x7fELF", b"MZ", b"\xcf\xfa\xed\xfe", b"\xfe\xed\xfa\xcf", b"\xca\xfe\xba\xbe")
+
+
+def _check_source_candidate(
+    session: Session,
+    *,
+    job: GenerationJob,
+    result: ExecutionResult,
+    files: dict[str, bytes],
+    business_truth: BusinessTruth,
+    artifact_storage: PrivateArtifactStorage,
+) -> None:
+    """R5: a supervised export's candidate must be exactly what its job
+    asked for — the job's snapshot and plan identities, the plan's pages,
+    static files only — and still match the CURRENT BusinessTruth."""
+    row = source_imports.import_for_job(session, job)
+    if row is None:
+        raise ProtocolError("source-adaptation job has no source import")
+    if result.metadata.get("snapshot_sha256") != job.source_sha256:
+        raise ProtocolError("worker reported a different source snapshot than the job's")
+    if result.metadata.get("plan_sha256") != job.plan_sha256:
+        raise ProtocolError("worker reported a different adaptation plan than the job's")
+    try:
+        plan = source_imports.load_plan(row, artifact_storage)
+    except source_imports.SourceImportError as exc:
+        raise ProtocolError(str(exc)) from exc
+    if plan.plan_sha256 != job.plan_sha256:
+        raise ProtocolError("the import's plan changed after the build was queued")
+    if business_inputs.business_truth_sha256(business_truth) != plan.business_truth_sha256:
+        raise ProtocolError("BusinessTruth changed during the build; the candidate is stale")
+    missing = sorted(set(plan.build["expected_pages"]) - set(files))
+    if missing:
+        raise ProtocolError(f"candidate lacks the pages its plan promises: {missing}")
+    for name, data in files.items():
+        if _FORBIDDEN_OUTPUT.search(name) or data.startswith(_EXECUTABLE_MAGIC):
+            raise ProtocolError(f"candidate contains server or executable output ({name})")
+        if name.endswith(".html"):
+            # The runtime config every page carries must name THIS job's
+            # business and API origin (a candidate built for another tenant
+            # or business is never accepted).
+            configs = _PLATFORM_CONFIG.findall(data.decode("utf-8", errors="replace"))
+            expected = {"businessId": str(job.business_id), "apiBaseUrl": job.api_base_url}
+            if len(configs) != 1 or _json_or_none(configs[0]) != expected:
+                raise ProtocolError(f"{name}: the platform config is not this job's business/API origin")
+
+
 def accept_result(
+    session: Session,
+    *,
+    job: GenerationJob,
+    result: ExecutionResult,
+    business_config: BusinessConfig,
+    business_truth: BusinessTruth,
+    artifact_storage: PrivateArtifactStorage,
+    asset_storage: StorageProvider,
+) -> GenerationJob:
+    """Every outcome of a source-adaptation job is reflected on its import."""
+    try:
+        return _accept_result(
+            session,
+            job=job,
+            result=result,
+            business_config=business_config,
+            business_truth=business_truth,
+            artifact_storage=artifact_storage,
+            asset_storage=asset_storage,
+        )
+    finally:
+        if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
+            row = source_imports.import_for_job(session, job)
+            if row is not None:
+                source_imports.sync_from_job(session, row)
+
+
+def _accept_result(
     session: Session,
     *,
     job: GenerationJob,
@@ -204,6 +357,18 @@ def accept_result(
         # trusted code derives. Anything else is rejected, never repaired.
         if files.get("_headers") != expected_headers:
             raise ProtocolError("candidate security headers differ from the trusted policy for this job")
+        # R5: AI-generated code is only ever accepted from the sandbox.
+        if job.trust_class is JobTrustClass.UNTRUSTED_GENERATED and result.metadata.get("runner") != "bubblewrap":
+            raise ProtocolError("an untrusted generated build must come from the bubblewrap sandbox")
+        if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
+            _check_source_candidate(
+                session,
+                job=job,
+                result=result,
+                files=files,
+                business_truth=business_truth,
+                artifact_storage=artifact_storage,
+            )
     except (ProtocolError, UnsupportedCspRequirementError) as exc:
         draft.build_error = f"Candidate rejected: {exc}"
         _fail(job, draft, GenerationFailureKind.CANDIDATE_REJECTED, str(exc))
@@ -286,22 +451,9 @@ def load_business_inputs(
     session: Session, *, tenant_id: uuid.UUID, business_id: uuid.UUID
 ) -> tuple[BusinessConfig, BusinessTruth]:
     """Derived exactly like the generative route does (stored config,
-    available assets, visible reviews), tenant-scoped."""
-    from app.db.models.business import Business
-    from app.domain.business_truth import derive_business_truth
-    from app.domain.creative import build_creative_brief
-    from app.repositories.business_asset import BusinessAssetRepository
-    from app.repositories.business_review import BusinessReviewRepository
-
-    business = session.get(Business, business_id)
-    if business is None or business.tenant_id != tenant_id or business.config is None:
-        raise IntakeError("business has no configuration")
-    config = BusinessConfig.model_validate(business.config)
-    assets = BusinessAssetRepository(session).list_for_business(tenant_id, business_id)
-    brief = build_creative_brief(business_config=config, assets=assets)
-    truth = derive_business_truth(
-        business_config=config,
-        assets=brief.available_assets,
-        reviews=BusinessReviewRepository(session).list_for_business(tenant_id, business_id),
-    )
-    return config, truth
+    available assets, visible reviews), tenant-scoped
+    (app.creative.business_inputs)."""
+    try:
+        return business_inputs.load_business_inputs(session, tenant_id=tenant_id, business_id=business_id)
+    except business_inputs.BusinessInputsError as exc:
+        raise IntakeError(str(exc)) from exc

@@ -76,6 +76,8 @@ def execute(
     metadata: dict[str, object] = {"runner": runner.name, "limits_enforced": runner.limits_enforced()}
 
     try:
+        if request.source_archive is None:
+            raise ProtocolError("a generative request must carry its source archive")
         archive = unb64(request.source_archive, limit=MAX_SOURCE_ARCHIVE_BYTES)
         if sha256_hex(archive) != request.source_sha256:
             raise ProtocolError("source archive does not match its SHA-256")

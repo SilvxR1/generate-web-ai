@@ -30,7 +30,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db.models.generation_job import GenerationJob
-from app.domain.enums import GenerationFailureKind, GenerationJobStatus
+from app.domain.enums import GenerationFailureKind, GenerationJobKind, GenerationJobStatus, JobTrustClass
 from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, parse_family
 
 DEFAULT_LEASE = timedelta(minutes=15)
@@ -74,10 +74,16 @@ def submit_job(
     source_sha256: str | None = None,
     api_base_url: str | None = None,
     source_family: str = DEFAULT_SOURCE_FAMILY,
+    job_kind: GenerationJobKind = GenerationJobKind.GENERATIVE,
+    trust_class: JobTrustClass = JobTrustClass.UNTRUSTED_GENERATED,
+    plan_sha256: str | None = None,
 ) -> GenerationJob:
     # H1.1: fail closed before anything is stored — an unknown family has no
     # CSP policy (raises UnsupportedCspRequirementError).
     family = parse_family(source_family)
+    # R5: AI-generated code is never downgraded to the supervised tier.
+    if job_kind is GenerationJobKind.GENERATIVE and trust_class is not JobTrustClass.UNTRUSTED_GENERATED:
+        raise GenerationJobError("a generative job always requires the untrusted (sandboxed) trust class")
     existing = session.scalar(
         select(GenerationJob).where(
             GenerationJob.tenant_id == tenant_id, GenerationJob.idempotency_key == idempotency_key
@@ -88,6 +94,9 @@ def submit_job(
             existing.business_id != business_id
             or existing.input_sha256 != input_sha256
             or existing.source_family != family.value
+            or existing.job_kind is not job_kind
+            or existing.trust_class is not trust_class
+            or existing.plan_sha256 != plan_sha256
         ):
             raise GenerationJobError("idempotency key already used for a different generation request")
         return existing
@@ -103,6 +112,9 @@ def submit_job(
         source_sha256=source_sha256,
         api_base_url=api_base_url,
         source_family=family.value,
+        job_kind=job_kind,
+        trust_class=trust_class,
+        plan_sha256=plan_sha256,
     )
     session.add(job)
     session.flush()
@@ -138,16 +150,19 @@ def claim(
     return job
 
 
-def next_queued_job_id(session: Session) -> tuple[uuid.UUID, uuid.UUID] | None:
+def next_queued_job_id(
+    session: Session, *, trust_classes: frozenset[JobTrustClass] | None = None
+) -> tuple[uuid.UUID, uuid.UUID] | None:
     """(tenant_id, job_id) of the oldest QUEUED job with a build input —
     for the platform-level execution host, which serves every tenant but
-    only ever receives one job's own input at a time."""
-    row = session.execute(
-        select(GenerationJob.tenant_id, GenerationJob.id)
-        .where(GenerationJob.status == GenerationJobStatus.QUEUED, GenerationJob.source_key.is_not(None))
-        .order_by(GenerationJob.created_at, GenerationJob.id)
-        .limit(1)
-    ).first()
+    only ever receives one job's own input at a time. R5: `trust_classes`
+    limits the jobs to those the claiming worker's isolation may run."""
+    query = select(GenerationJob.tenant_id, GenerationJob.id).where(
+        GenerationJob.status == GenerationJobStatus.QUEUED, GenerationJob.source_key.is_not(None)
+    )
+    if trust_classes is not None:
+        query = query.where(GenerationJob.trust_class.in_(sorted(trust_classes)))
+    row = session.execute(query.order_by(GenerationJob.created_at, GenerationJob.id).limit(1)).first()
     return None if row is None else (row[0], row[1])
 
 

@@ -1069,3 +1069,39 @@ dd {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+
+/* R5 — supervised source imports */
+.source-import__stepper {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  padding: 0;
+  list-style: none;
+}
+.source-import__stepper li {
+  opacity: 0.55;
+}
+.source-import__stepper li[data-done="true"] {
+  opacity: 0.85;
+}
+.source-import__stepper li[aria-current="step"] {
+  font-weight: 600;
+  opacity: 1;
+}
+.source-import__section {
+  margin-top: 0.75rem;
+}
+.source-import__finding[data-severity="blocker"] strong {
+  color: #b42318;
+}
+.source-import__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+.source-import__raw {
+  max-height: 24rem;
+  overflow: auto;
+  font-size: 0.75rem;
+}

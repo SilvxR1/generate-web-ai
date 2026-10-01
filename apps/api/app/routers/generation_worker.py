@@ -1,6 +1,7 @@
 """v0.2 R4.1 — the two internal endpoints an isolated execution host uses.
 
     POST /internal/generation-worker/claim                  (worker credential)
+    GET  /internal/generation-worker/jobs/{job_id}/source   (job token; R5 supervised exports)
     POST /internal/generation-worker/jobs/{job_id}/result   (job token)
 
 Dormant unless BOTH generation_worker_token_sha256 and
@@ -24,7 +25,7 @@ from app.storage import StorageProvider
 from app.storage.private import PrivateArtifactStorage
 from app.worker import intake
 from app.worker.auth import WorkerAuthError, verify_job_token, verify_worker_token
-from app.worker.protocol import ExecutionResult
+from app.worker.protocol import ClaimRequest, ExecutionResult
 
 router = APIRouter(prefix="/internal/generation-worker", tags=["internal"], include_in_schema=False)
 
@@ -44,6 +45,7 @@ def _bearer(authorization: str | None) -> str | None:
 
 @router.post("/claim")
 def claim_job(
+    claim: ClaimRequest | None = None,
     authorization: Annotated[str | None, Header()] = None,
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
@@ -56,12 +58,41 @@ def claim_job(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED) from exc
     intake.expire_lost(session)  # a crashed worker's job fails here, never stays RUNNING/BUILDING
     claimed = intake.claim_next(
-        session, artifact_storage=artifact_storage, asset_storage=asset_storage, signing_key=signing_key
+        session,
+        artifact_storage=artifact_storage,
+        asset_storage=asset_storage,
+        signing_key=signing_key,
+        isolation=(claim or ClaimRequest()).isolation,
     )
     if claimed is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     request, job_token = claimed
     return {"request": request.model_dump(mode="json"), "job_token": job_token}
+
+
+@router.get("/jobs/{job_id}/source")
+def download_source(
+    job_id: uuid.UUID,
+    authorization: Annotated[str | None, Header()] = None,
+    session: Session = Depends(get_session),
+    artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
+) -> Response:
+    """R5: the immutable export snapshot of the caller's own RUNNING
+    source-adaptation job (job token only — one job, one attempt)."""
+    _, signing_key = _configured()
+    job = session.scalar(select(GenerationJob).where(GenerationJob.id == job_id))
+    try:
+        if job is None:
+            raise WorkerAuthError("unknown job")
+        verify_job_token(_bearer(authorization), job_id=job.id, attempt=job.attempts, signing_key=signing_key)
+    except WorkerAuthError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED) from exc
+    assert job is not None
+    try:
+        data = intake.download_source(job, artifact_storage)
+    except intake.IntakeError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return Response(content=data, media_type="application/zip")
 
 
 @router.post("/jobs/{job_id}/result", status_code=status.HTTP_204_NO_CONTENT)

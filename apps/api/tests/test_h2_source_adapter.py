@@ -492,3 +492,16 @@ def test_overlays_are_selected_only_by_snapshot_sha_and_every_resolution_is_back
         resolutions={"a:b": "done"},
         patches=(OverlayPatch("f", "x", "y", "r", resolves=("a:b",)),),
     )
+
+
+def test_a_form_that_displays_a_server_id_is_a_blocker_no_approval_can_fix(tmp_path):
+    """R5: the platform transport returns no id, so only a reviewed overlay
+    fix for that exact export can resolve this — never an approval."""
+    contact = _read("src/features/landing/Contact.tsx").replace(
+        "      await sendEnquiry({ data: values });\n      setState(\"done\");",
+        "      const result = await sendEnquiry({ data: values });\n      console.log(result.fields);\n"
+        "      setState(\"done\");",
+    )
+    report = _refused(tmp_path, {"src/features/landing/Contact.tsx": contact})
+    finding = next(f for f in report["findings"] if f["code"] == "form_displays_server_identifier")
+    assert finding["severity"] == "blocker" and finding["open"] and report["status"] == UNSUPPORTED

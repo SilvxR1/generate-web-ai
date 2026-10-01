@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # do not exist (404).
     generation_worker_token_sha256: str | None = None
     generation_worker_signing_key: str | None = None
+    # R5: operator-imported, owner-reviewed website exports (Higgsfield) —
+    # import, inspection, review, build on the execution host, preview,
+    # approve, publish. Separate from the generative gate above (which stays
+    # off); off by default everywhere. A build also needs the worker
+    # credentials above and a worker that accepts supervised sources.
+    supervised_source_imports_enabled: bool = False
+    supervised_source_max_bytes: int = 100 * 1024**2
 
     # Shared secret n8n sends back to /internal/leads and
     # /internal/notifications (see app.dependencies.verify_internal_automation_token)

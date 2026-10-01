@@ -219,6 +219,84 @@ class BubblewrapRunner(SandboxRunner):
                 raise SandboxError(f"{step} failed (exit {returncode}): {_tail(output)}")
 
 
+class SupervisedProcessRunner(SandboxRunner):
+    """R5 — NOT a sandbox. For operator-imported, owner-reviewed sources on
+    a worker host that cannot create namespaces (e.g. a plain container).
+
+    What it does enforce: a separate child process in its own session
+    (process-group kill on timeout), `cwd` = the job workspace, an
+    environment built ONLY from the caller's allowlist (the worker's own
+    credential is never passed), RLIMIT_CPU/FSIZE/NOFILE and a wall-clock
+    timeout. What it does NOT enforce, and says so in `limits_enforced`:
+    filesystem, network or PID isolation, a tmp size cap, a process-count
+    limit or memory (RLIMIT_AS breaks modern bundlers' thread pools — Vite's
+    Rolldown cannot start under it; memory is the worker container's limit). Its security rests on the
+    worker host holding no platform secret and having no publish authority
+    (the control plane re-validates every byte it returns) — and on the
+    source having been reviewed by a human. It is never used for
+    AI-generated code: the control plane only gives a supervised-process
+    worker SUPERVISED_SOURCE jobs, and rejects any untrusted result not
+    built by bubblewrap.
+    """
+
+    name = "supervised-process"
+
+    def limits_enforced(self, limits: SandboxLimits | None = None) -> dict[str, bool]:
+        return {
+            "wall_timeout": True,
+            "cpu": True,
+            "file_size": True,
+            "tmp_size": False,
+            "memory": False,
+            "process_count": False,
+            "filesystem_isolation": False,
+            "network_isolation": False,
+            "pid_isolation": False,
+        }
+
+    def run(
+        self,
+        argv: list[str],
+        *,
+        workspace: Path,
+        env: dict[str, str],
+        limits: SandboxLimits,
+        step: str,
+        ro_binds: tuple[tuple[str, str], ...] = (),
+    ) -> None:
+        # Sandbox mount points in PATH (e.g. /opt/bun/bin) map back to the
+        # host directories the caller would have bound.
+        path = env.get("PATH", _HOST_PATH)
+        for host, inside in ro_binds:
+            path = path.replace(inside, host)
+        child_env = {**env, "PATH": path}
+
+        def _limit() -> None:  # in the child, before exec
+            resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_file_bytes, limits.max_file_bytes))
+            resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
+
+        executable = shutil.which(argv[0], path=path) or argv[0]
+        with tempfile.TemporaryFile() as output:
+            process = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
+                [executable, *argv[1:]],
+                cwd=workspace,
+                stdin=subprocess.DEVNULL,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                env=child_env,
+                preexec_fn=_limit,  # noqa: PLW1509 — per-child rlimits
+                start_new_session=True,
+            )
+            try:
+                returncode = process.wait(timeout=limits.wall_timeout_seconds)
+            except subprocess.TimeoutExpired as exc:
+                _kill_tree(process)
+                raise SandboxError(f"{step} timed out after {limits.wall_timeout_seconds}s") from exc
+            if returncode != 0:
+                raise SandboxError(f"{step} failed (exit {returncode}): {_tail(output)}")
+
+
 def _launcher_env() -> dict[str, str]:
     """What bwrap/systemd-run themselves receive: a PATH and, for the cgroup
     scope, the user session bus location — never a platform secret. bwrap
