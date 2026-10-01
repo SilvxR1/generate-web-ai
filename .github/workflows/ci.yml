@@ -170,3 +170,40 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  worker-image:
+    # R5.1: the supervised build worker's container (apps/api/Dockerfile.worker)
+    # builds, passes its own startup preflight (Node, bun, Chromium launch,
+    # workspace) and refuses an inherited platform credential. The token is
+    # a random value generated in this step — never a real credential.
+    name: Build worker image (build + preflight)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the worker image
+        run: docker build -f apps/api/Dockerfile.worker -t gwa-build-worker:ci .
+
+      - name: Preflight passes with only an API URL and a worker token
+        run: |
+          export GWA_WORKER_TOKEN="$(openssl rand -hex 32)"
+          docker run --rm --cap-drop ALL --security-opt no-new-privileges \
+            -e GWA_API_BASE_URL=https://api.example.com -e GWA_WORKER_TOKEN \
+            gwa-build-worker:ci --preflight | tee preflight.json
+          grep -q '"ready": true' preflight.json
+
+      - name: An inherited platform credential refuses startup (exit 78)
+        run: |
+          export GWA_WORKER_TOKEN="$(openssl rand -hex 32)"
+          set +e
+          docker run --rm -e GWA_API_BASE_URL=https://api.example.com -e GWA_WORKER_TOKEN \
+            -e DATABASE_URL=postgresql://ci:not-a-secret@db.invalid/x gwa-build-worker:ci --once > refusal.log 2>&1
+          code=$?
+          set -e
+          cat refusal.log
+          test "$code" = "78"
+          grep -q DATABASE_URL refusal.log
+          ! grep -q not-a-secret refusal.log
+
+      - name: Image size
+        run: docker image inspect gwa-build-worker:ci --format '{{.Size}}'

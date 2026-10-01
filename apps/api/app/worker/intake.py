@@ -119,6 +119,9 @@ def expire_lost(session: Session, *, now: datetime | None = None) -> int:
         )
     ).all()
     for job in lost:
+        if jobs.requeue_lost(job, reason="lease expired"):
+            logger.warning("source job requeued after a lost attempt job_id=%s attempt=%s", job.id, job.attempts)
+            continue
         draft = (
             WebsiteDraftRepository(session).get_for_business(job.tenant_id, job.business_id, job.draft_id)
             if job.draft_id is not None
@@ -126,7 +129,17 @@ def expire_lost(session: Session, *, now: datetime | None = None) -> int:
         )
         _fail(job, draft, GenerationFailureKind.WORKER_LOST, "worker lease expired; not retried automatically")
         logger.warning("generation job lost job_id=%s attempt=%s", job.id, job.attempts)
+        _sync_import(session, job)  # a failed source job never leaves its import BUILDING
+    if lost:
+        session.flush()  # the claim that follows must see requeued/failed jobs (autoflush is off)
     return len(lost)
+
+
+def _sync_import(session: Session, job: GenerationJob) -> None:
+    if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
+        row = source_imports.import_for_job(session, job)
+        if row is not None:
+            source_imports.sync_from_job(session, row)
 
 
 # R5: which jobs each worker isolation may run. AI-generated code only ever
@@ -305,10 +318,7 @@ def accept_result(
             asset_storage=asset_storage,
         )
     finally:
-        if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
-            row = source_imports.import_for_job(session, job)
-            if row is not None:
-                source_imports.sync_from_job(session, row)
+        _sync_import(session, job)
 
 
 def _accept_result(
@@ -335,6 +345,14 @@ def _accept_result(
         return job
 
     if result.status == "failed":
+        # R5.1: a worker that is shutting down (SIGTERM during a Railway
+        # restart/deploy) reports WORKER_LOST for its own attempt; a source
+        # job then goes back to the queue instead of waiting for the lease.
+        if result.failure_kind is GenerationFailureKind.WORKER_LOST and jobs.requeue_lost(
+            job, reason=result.error or "worker stopped"
+        ):
+            logger.warning("source job released by its worker job_id=%s attempt=%s", job.id, job.attempts)
+            return job
         _fail(job, draft, result.failure_kind or GenerationFailureKind.BUILD, result.error or "execution failed")
         return job
 

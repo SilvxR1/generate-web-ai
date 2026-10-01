@@ -345,8 +345,12 @@ def run_browser_qa(
     capture_screenshots: bool = False,
     offline_assets: Mapping[str, bytes] | None = None,
     probe_script: str | None = None,
+    browser_env: Mapping[str, str] | None = None,
 ) -> BrowserQAResult:
-    """Runs the full check set at every viewport, plus one additional
+    """`browser_env` (R5.1, the build worker): Chromium's ENTIRE environment
+    — nothing inherited from the calling process.
+
+    Runs the full check set at every viewport, plus one additional
     pass with `prefers-reduced-motion: reduce` emulated at the desktop
     size — "reduced-motion fallback remains usable" means the page must
     still load and render real content with motion preferences off, not
@@ -377,7 +381,8 @@ def run_browser_qa(
             base_url = f"http://127.0.0.1:{port}"
             with sync_playwright() as playwright:
                 try:
-                    browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"])
+                    env: dict[str, str | float | bool] | None = dict(browser_env) if browser_env is not None else None
+                    browser = playwright.chromium.launch(headless=True, args=["--no-sandbox"], env=env)
                 except PlaywrightError as exc:
                     raise BrowserQAUnavailableError(
                         f"Chromium could not be launched — real browser/Visual QA is unavailable: {exc}"

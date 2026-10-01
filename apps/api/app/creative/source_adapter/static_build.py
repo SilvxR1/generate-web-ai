@@ -23,8 +23,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.creative.frontend_engine.sandbox import SandboxLimits, SandboxRunner
@@ -115,10 +116,72 @@ def _install_env(toolchain: Toolchain, home: Path) -> dict[str, str]:
     }
 
 
-def prepare_dependencies(app: Path, toolchain: Toolchain, *, frozen: bool) -> None:
+_LOCK_ENTRY = re.compile(r'^\s*"([^"]+)":\s*\["([^"]+)"(.*)$')
+_LOCK_INTEGRITY = re.compile(r'"(sha\d+-[A-Za-z0-9+/=]+)"\],?\s*$')
+
+
+def lock_entries(app: Path) -> dict[str, tuple[str, str | None]] | None:
+    """bun.lock's resolved packages: key -> (name@version, integrity).
+    `workspace:` entries are excluded (the plan's cleanup may prune them)."""
+    lock = app / "bun.lock"
+    if not lock.exists():
+        return None
+    text = lock.read_text(encoding="utf-8")
+    start = text.find('"packages"')
+    entries: dict[str, tuple[str, str | None]] = {}
+    for line in (text[start:] if start >= 0 else "").splitlines():
+        match = _LOCK_ENTRY.match(line)
+        if match is None or "@workspace:" in match.group(2):
+            continue
+        integrity = _LOCK_INTEGRITY.search(match.group(3))
+        entries[match.group(1)] = (match.group(2), integrity.group(1) if integrity else None)
+    return entries
+
+
+_EXACT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
+
+
+def planned_additions(app: Path, before: dict[str, tuple[str, str | None]]) -> dict[str, str]:
+    """Direct dependencies package.json declares that the export's lockfile
+    did not pin — the ones the reviewed plan added (e.g. self-hosted
+    @fontsource packages). Only EXACT versions qualify."""
+    package = json.loads((app / "package.json").read_text(encoding="utf-8"))
+    return {
+        name: spec
+        for section in ("dependencies", "devDependencies", "optionalDependencies")
+        for name, spec in package.get(section, {}).items()
+        if name not in before and isinstance(spec, str) and _EXACT_VERSION.match(spec)
+    }
+
+
+def check_lock_only_pruned(before: dict[str, tuple[str, str | None]] | None, app: Path) -> None:
+    """R5.1: the reviewed lockfile is authoritative. After install, every
+    resolved package (name@version + integrity) must be one the export's
+    own lockfile already pinned — install may PRUNE (packages the plan
+    removed; bun then re-hoists, so a pinned version may move to another
+    lock key), never upgrade or re-resolve. The only additions allowed are
+    the plan's own direct dependencies at their exact pinned version."""
+    if before is None:
+        return
+    pinned = set(before.values())
+    allowed = {f"{name}@{version}" for name, version in planned_additions(app, before).items()}
+    after = lock_entries(app) or {}
+    changed = sorted(key for key, value in after.items() if value not in pinned and value[0] not in allowed)
+    if changed:
+        raise StaticBuildError(
+            f"bun install changed the reviewed lockfile ({len(changed)} entries added or re-resolved, "
+            f"e.g. {changed[:3]}) — refusing to build"
+        )
+
+
+def prepare_dependencies(app: Path, toolchain: Toolchain, *, frozen: bool, timeout: float | None = None) -> None:
     validate_install_inputs(app, stale_workspaces_allowed=not frozen)
+    reviewed_lock = lock_entries(app)
+    seconds = min(INSTALL_TIMEOUT_SECONDS, timeout) if timeout is not None else INSTALL_TIMEOUT_SECONDS
+    if seconds <= 0:
+        raise StaticBuildError("no time left for bun install before the job deadline")
     argv = [str(toolchain.bun), "install", "--ignore-scripts", *(["--frozen-lockfile"] if frozen else [])]
-    with tempfile.TemporaryDirectory(prefix="gwa-bun-home-") as home:
+    with tempfile.TemporaryDirectory(prefix="gwa-bun-home-", dir=app.parent) as home:
         try:
             result = subprocess.run(  # noqa: S603 — fixed argv, no shell
                 argv,
@@ -126,15 +189,17 @@ def prepare_dependencies(app: Path, toolchain: Toolchain, *, frozen: bool) -> No
                 env=_install_env(toolchain, Path(home)),
                 capture_output=True,
                 text=True,
-                timeout=INSTALL_TIMEOUT_SECONDS,
+                timeout=seconds,
             )
         except subprocess.TimeoutExpired as exc:
-            raise StaticBuildError(f"bun install timed out after {INSTALL_TIMEOUT_SECONDS}s") from exc
+            reason = "hit the job deadline" if seconds < INSTALL_TIMEOUT_SECONDS else "timed out"
+            raise StaticBuildError(f"bun install {reason} after {int(seconds)}s") from exc
     if result.returncode != 0:
         raise StaticBuildError(f"bun install failed (exit {result.returncode}): {result.stderr[-2000:]}")
     # The lockfile bun just wrote is re-validated: a resolution may never
-    # introduce a non-registry source.
+    # introduce a non-registry source, nor anything the export did not pin.
     validate_install_inputs(app)
+    check_lock_only_pruned(reviewed_lock, app)
 
 
 def sandbox_env(toolchain: Toolchain) -> dict[str, str]:
@@ -157,14 +222,22 @@ def build_in_sandbox(
     steps: tuple[tuple[str, tuple[str, ...]], ...],
     output_dir: str = "dist/client",
     limits: SandboxLimits = BUILD_LIMITS,
+    deadline: float | None = None,
 ) -> Path:
     """Runs the adapter's build steps (H2: from its BuildSpec — the export's
     own install check and `bun run build`) in the R4 sandbox; returns the
-    static output directory."""
+    static output directory. `deadline` (time.monotonic()) bounds the whole
+    sequence: each step gets at most the time left (R5.1 job deadline)."""
     binds = ((str(toolchain.bun.parent), _BUN_IN_SANDBOX),)
     env = sandbox_env(toolchain)
     for step, argv in steps:
-        runner.run(list(argv), workspace=app, env=env, limits=limits, step=step, ro_binds=binds)
+        step_limits = limits
+        if deadline is not None:
+            left = int(deadline - time.monotonic())
+            if left <= 0:
+                raise StaticBuildError(f"no time left for {step} before the job deadline")
+            step_limits = replace(limits, wall_timeout_seconds=min(limits.wall_timeout_seconds, left))
+        runner.run(list(argv), workspace=app, env=env, limits=step_limits, step=step, ro_binds=binds)
     client = app / output_dir
     if not (client / "index.html").is_file():
         raise StaticBuildError(f"the build produced no static {output_dir}/index.html (prerender did not run)")

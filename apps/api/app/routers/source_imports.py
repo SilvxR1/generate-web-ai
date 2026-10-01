@@ -16,14 +16,17 @@ the `supervised_source_imports_enabled` server setting (off by default).
 """
 
 import json
+import re
 import uuid
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from app.config import settings
 from app.creative import source_imports as imports
@@ -258,6 +261,35 @@ def capability(
         api_base_url_configured=public_origin_problem(resolve_public_api_base_url()) is None,
         site_origin=imports.site_origin_for(session, tenant_id=tenant_id, business_id=business_id),
     )
+
+
+# Multipart overhead allowed on top of the archive limit (boundaries, part headers).
+_MULTIPART_SLACK_BYTES = 1024 * 1024
+_UPLOAD_PATH = re.compile(r"^/businesses/[^/]+/source-imports/?$")
+
+
+class SourceUploadLimitMiddleware:
+    """R5.1: refuse an oversized supervised upload from its Content-Length,
+    BEFORE the body is received. Starlette spools the whole multipart body
+    to disk before the route's own check runs, so without this a client
+    could stream far more than the limit into the API's temp storage. The
+    route's exact check (`supervised_source_max_bytes`) stays authoritative
+    for bodies without a Content-Length (chunked)."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["method"] == "POST" and _UPLOAD_PATH.match(scope["path"]):
+            length = dict(scope["headers"]).get(b"content-length", b"")
+            limit = settings.supervised_source_max_bytes + _MULTIPART_SLACK_BYTES
+            if length.isdigit() and int(length) > limit:
+                body = {
+                    "error": {"code": "source_too_large", "message": "The archive is larger than the import limit."}
+                }
+                await JSONResponse(body, status_code=413, headers={"Connection": "close"})(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 @router.post("", response_model=SourceImportRead, status_code=status.HTTP_201_CREATED)
