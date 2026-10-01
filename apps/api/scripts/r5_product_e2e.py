@@ -35,6 +35,8 @@ _PARSER.add_argument("--zip", type=Path)
 _PARSER.add_argument("--work-root", type=Path, required=True)
 _PARSER.add_argument("--isolation", choices=("supervised-process", "bubblewrap"), default="supervised-process")
 _PARSER.add_argument("--measure", action="store_true", help="wrap the worker in /usr/bin/time -v (peak RSS)")
+_PARSER.add_argument("--worker-image", help="R5.1: run the worker from this container image (docker, host network)")
+_PARSER.add_argument("--dns-audit", action="store_true", help="R5.1: log every DNS name the worker container resolves")
 ARGS = _PARSER.parse_args()
 WORK_ROOT = ARGS.work_root.resolve()
 E2E_DIR = WORK_ROOT / "e2e"
@@ -61,6 +63,7 @@ if str(API_ROOT) not in sys.path:
 import hashlib  # noqa: E402
 import io  # noqa: E402
 import json  # noqa: E402
+import re  # noqa: E402
 import secrets  # noqa: E402
 import subprocess  # noqa: E402
 import threading  # noqa: E402
@@ -230,8 +233,80 @@ def start_api() -> uvicorn.Server:
     raise RuntimeError("the local GWA API did not start")
 
 
+_METRICS = re.compile(r"source-adaptation job metrics (.*)$", re.M)
+
+
+def _job_metrics(log: str) -> dict[str, str]:
+    match = _METRICS.search(log)
+    return dict(item.split("=", 1) for item in match.group(1).split() if "=" in item) if match else {}
+
+
+def run_worker_container() -> dict:
+    """R5.1: one job in the REAL worker image. Its only configuration is
+    the API URL and the worker token; host networking only so it can reach
+    this throwaway local API on 127.0.0.1 (production uses HTTPS)."""
+    name = f"gwa-r51-worker-{secrets.token_hex(4)}"
+    audit_dir = WORK_ROOT / "dns-audit"
+    command = ["docker", "run", "--rm", "--name", name, "--network", "host", "--cap-drop", "ALL"]
+    command += ["-e", f"GWA_API_BASE_URL={API}", "-e", "GWA_WORKER_TOKEN", "-e", "GWA_WORKER_ID=r5-1-container"]
+    if ARGS.dns_audit:
+        audit_dir.mkdir(exist_ok=True)
+        audit_dir.chmod(0o777)  # the harness runs as container root WITHOUT CAP_DAC_OVERRIDE
+        (audit_dir / "dns.log").unlink(missing_ok=True)
+        command += ["--user", "root", "--cap-add", "NET_BIND_SERVICE", "--cap-add", "SETUID", "--cap-add", "SETGID"]
+        command += ["-v", f"{API_ROOT / 'scripts' / 'r5_1_dns_audit.py'}:/audit-bin/dns_audit.py:ro"]
+        command += ["-v", f"{audit_dir}:/audit", "--entrypoint", "python3", ARGS.worker_image]
+        command += ["/audit-bin/dns_audit.py", "--once"]
+    else:
+        command += ["--security-opt", "no-new-privileges", ARGS.worker_image, "--once"]
+    peak = {"bytes": 0}
+    done = threading.Event()
+
+    def sample() -> None:  # the container's memory as Docker's cgroup accounting sees it
+        while not done.is_set():
+            out = subprocess.run(  # noqa: S603, S607
+                ["docker", "stats", "--no-stream", "--format", "{{.MemUsage}}", name],
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if out:
+                used = out.split("/")[0].strip()
+                units = {"KiB": 1024, "MiB": 1024**2, "GiB": 1024**3, "B": 1}
+                for unit, factor in units.items():
+                    if used.endswith(unit):
+                        peak["bytes"] = max(peak["bytes"], int(float(used[: -len(unit)]) * factor))
+                        break
+            done.wait(0.5)
+
+    sampler = threading.Thread(target=sample, daemon=True)
+    started = time.monotonic()
+    sampler.start()
+    proc = subprocess.run(  # noqa: S603
+        command,
+        env={"PATH": os.environ["PATH"], "GWA_WORKER_TOKEN": WORKER_TOKEN},
+        capture_output=True,
+        text=True,
+        timeout=1800,
+    )
+    done.set()
+    sampler.join()
+    result = {
+        "exit": proc.returncode,
+        "seconds": round(time.monotonic() - started, 1),
+        "container_peak_memory_mib": round(peak["bytes"] / 1024**2),
+        "job_metrics": _job_metrics(proc.stderr + proc.stdout),
+        "log_tail": (proc.stderr + proc.stdout)[-2500:],
+    }
+    if ARGS.dns_audit:
+        names = (audit_dir / "dns.log").read_text(encoding="utf-8").split("\n")
+        result["dns_names"] = sorted({line.split("\t")[0] for line in names if line.strip()})
+    return result
+
+
 def run_worker() -> dict:
     """One job on a SEPARATE worker process with a minimal environment."""
+    if ARGS.worker_image:
+        return run_worker_container()
     home = WORK_ROOT / "worker-home"
     home.mkdir(exist_ok=True)
     env = {
@@ -243,6 +318,7 @@ def run_worker() -> dict:
         "GWA_WORKER_ISOLATION": ARGS.isolation,
         "GWA_WORKER_ID": "r5-e2e",
         "GWA_DEPENDENCY_ROOT": str(home / "deps"),
+        "GWA_WORKER_WORK_ROOT": str(home / "work"),
         # Where the worker image ships Chromium for Visual QA (not a secret).
         "PLAYWRIGHT_BROWSERS_PATH": os.environ.get(
             "PLAYWRIGHT_BROWSERS_PATH", str(Path(os.environ.get("HOME", "/root")) / ".cache" / "ms-playwright")
@@ -268,6 +344,7 @@ def run_worker() -> dict:
         "seconds": round(time.monotonic() - started, 1),
         # largest single process's peak RSS (kB): a lower bound for the job
         "peak_rss_kb": int(peak) if peak else None,
+        "job_metrics": _job_metrics(proc.stderr),
         "log_tail": proc.stderr[-1500:],
     }
 

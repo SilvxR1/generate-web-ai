@@ -393,6 +393,9 @@ def test_the_worker_refuses_a_plain_http_control_plane(monkeypatch):
 
 def test_an_unavailable_control_plane_never_crashes_the_worker(monkeypatch, tmp_path):
     monkeypatch.setattr(worker_main, "selftest", lambda: 0)
+    monkeypatch.setattr(worker_main, "startup_preflight", lambda isolation: True)  # R5.1 (own tests)
+    monkeypatch.setattr(worker_main.worker_preflight, "forbidden_environment", lambda environ=None: [])
+    monkeypatch.setenv("GWA_WORKER_WORK_ROOT", str(tmp_path / "work"))
     monkeypatch.setattr(worker_main, "prepare_dependencies", lambda root: tmp_path)
     monkeypatch.setenv("GWA_WORKER_TOKEN", "t")
     client, _ = _mock_client([httpx.ConnectError("down")])
@@ -402,6 +405,9 @@ def test_an_unavailable_control_plane_never_crashes_the_worker(monkeypatch, tmp_
 
 def test_a_revoked_worker_credential_stops_the_worker(monkeypatch, tmp_path):
     monkeypatch.setattr(worker_main, "selftest", lambda: 0)
+    monkeypatch.setattr(worker_main, "startup_preflight", lambda isolation: True)  # R5.1 (own tests)
+    monkeypatch.setattr(worker_main.worker_preflight, "forbidden_environment", lambda environ=None: [])
+    monkeypatch.setenv("GWA_WORKER_WORK_ROOT", str(tmp_path / "work"))
     monkeypatch.setattr(worker_main, "prepare_dependencies", lambda root: tmp_path)
     monkeypatch.setenv("GWA_WORKER_TOKEN", "t")
     client, _ = _mock_client([401])

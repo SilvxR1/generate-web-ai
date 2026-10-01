@@ -16,6 +16,7 @@ from app.routers.generation_worker import router as generation_worker_router
 from app.routers.health import router as health_router
 from app.routers.internal_automation import router as internal_automation_router
 from app.routers.public import router as public_router
+from app.routers.source_imports import SourceUploadLimitMiddleware
 from app.routers.source_imports import router as source_imports_router
 from app.routers.website_health import router as website_health_router
 from app.security import SecurityHeadersMiddleware
@@ -32,6 +33,9 @@ def create_app() -> FastAPI:
     # app.security.headers.SecurityHeadersMiddleware's own docstring for
     # what's set and why HSTS is environment-gated.
     app.add_middleware(SecurityHeadersMiddleware, is_production=settings.environment == "production")
+    # R5.1: before CORS is added (so CORS still wraps the 413) — refuses an
+    # oversized supervised upload from its Content-Length, unread.
+    app.add_middleware(SourceUploadLimitMiddleware)
 
     app.add_middleware(
         CORSMiddleware,

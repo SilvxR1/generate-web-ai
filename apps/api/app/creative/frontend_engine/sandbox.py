@@ -38,6 +38,7 @@ import shutil
 import signal
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
@@ -215,6 +216,9 @@ class BubblewrapRunner(SandboxRunner):
             except subprocess.TimeoutExpired as exc:
                 _kill_tree(process)
                 raise SandboxError(f"{step} timed out after {limits.wall_timeout_seconds}s") from exc
+            except BaseException:
+                _kill_tree(process)  # worker shutdown: never leave the build running
+                raise
             if returncode != 0:
                 raise SandboxError(f"{step} failed (exit {returncode}): {_tail(output)}")
 
@@ -241,6 +245,11 @@ class SupervisedProcessRunner(SandboxRunner):
 
     name = "supervised-process"
 
+    def __init__(self) -> None:
+        # R5.1 telemetry: peak RSS (kB) of each finished step's process tree
+        # (wait4 rusage: the step and every descendant it waited for).
+        self.step_peak_rss_kb: dict[str, int] = {}
+
     def limits_enforced(self, limits: SandboxLimits | None = None) -> dict[str, bool]:
         return {
             "wall_timeout": True,
@@ -264,12 +273,18 @@ class SupervisedProcessRunner(SandboxRunner):
         step: str,
         ro_binds: tuple[tuple[str, str], ...] = (),
     ) -> None:
+        from app.worker.preflight import forbidden_environment  # noqa: PLC0415 — avoids an import cycle
+
+        # Defense in depth: the child environment is the caller's allowlist,
+        # never os.environ — and it may not carry a platform credential.
+        leaked = forbidden_environment(env) + [name for name in env if name.startswith("GWA_")]
+        if leaked:
+            raise SandboxError(f"{step}: refusing a child environment carrying {sorted(set(leaked))}")
         # Sandbox mount points in PATH (e.g. /opt/bun/bin) map back to the
         # host directories the caller would have bound.
         path = env.get("PATH", _HOST_PATH)
         for host, inside in ro_binds:
             path = path.replace(inside, host)
-        child_env = {**env, "PATH": path}
 
         def _limit() -> None:  # in the child, before exec
             resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds))
@@ -277,7 +292,14 @@ class SupervisedProcessRunner(SandboxRunner):
             resource.setrlimit(resource.RLIMIT_NOFILE, (limits.max_open_files, limits.max_open_files))
 
         executable = shutil.which(argv[0], path=path) or argv[0]
-        with tempfile.TemporaryFile() as output:
+        # A private HOME/TMPDIR per step, next to the job's workspace (never
+        # the host's shared /tmp, which other jobs' steps also see), removed
+        # with the step.
+        with (
+            tempfile.TemporaryDirectory(prefix="gwa-step-home-", dir=workspace.parent) as home,
+            tempfile.TemporaryFile() as output,
+        ):
+            child_env = {**env, "PATH": path, "HOME": home, "TMPDIR": home}
             process = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
                 [executable, *argv[1:]],
                 cwd=workspace,
@@ -289,12 +311,41 @@ class SupervisedProcessRunner(SandboxRunner):
                 start_new_session=True,
             )
             try:
-                returncode = process.wait(timeout=limits.wall_timeout_seconds)
+                returncode, peak_kb = _wait_with_rusage(process, timeout=limits.wall_timeout_seconds)
             except subprocess.TimeoutExpired as exc:
                 _kill_tree(process)
                 raise SandboxError(f"{step} timed out after {limits.wall_timeout_seconds}s") from exc
+            except BaseException:
+                _kill_tree(process)  # worker shutdown: never leave the build running
+                raise
+            finally:
+                _kill_group(process)  # descendants that outlived the step (daemons) die with it
+            self.step_peak_rss_kb[step] = peak_kb
             if returncode != 0:
                 raise SandboxError(f"{step} failed (exit {returncode}): {_tail(output)}")
+
+
+def _wait_with_rusage(process: "subprocess.Popen[bytes]", *, timeout: float) -> tuple[int, int]:
+    """Popen.wait with a timeout, but reaping through wait4 so the step's
+    peak RSS (kB, the process and its waited-for descendants) is known."""
+    deadline = time.monotonic() + timeout
+    delay = 0.01
+    while True:
+        pid, status, usage = os.wait4(process.pid, os.WNOHANG)
+        if pid == process.pid:
+            process.returncode = os.waitstatus_to_exitcode(status)
+            return process.returncode, int(usage.ru_maxrss)
+        if time.monotonic() >= deadline:
+            raise subprocess.TimeoutExpired(process.args, timeout)
+        time.sleep(delay)
+        delay = min(delay * 2, 0.25)
+
+
+def _kill_group(process: "subprocess.Popen[bytes]") -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 def _launcher_env() -> dict[str, str]:
@@ -312,11 +363,9 @@ def _tail(output: IO[bytes]) -> str:
 
 
 def _kill_tree(process: "subprocess.Popen[bytes]") -> None:
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    process.wait()
+    _kill_group(process)
+    if process.returncode is None:
+        process.wait()
 
 
 def _works(cmd: list[str]) -> bool:

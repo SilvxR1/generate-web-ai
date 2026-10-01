@@ -1,0 +1,69 @@
+# R5.1 — the supervised build worker (one Railway service, NOT the API).
+#
+#   docker build -f apps/api/Dockerfile.worker -t gwa-build-worker .   (monorepo root context)
+#
+# Runs `python -m app.worker` in supervised-process mode: it claims
+# source-adaptation jobs from the API over HTTPS, builds owner-reviewed
+# exports with bun/Vite, runs Chromium Visual QA and returns a candidate
+# the API re-validates. It is NOT a sandbox (no bubblewrap here — Railway
+# cannot create user namespaces): least privilege comes from holding no
+# platform credential, having no publish authority and an explicit child
+# environment. See docs/r5-1-railway-build-worker.md.
+#
+# Only what that path needs: Python + the app code (no tests, scripts,
+# migrations, .env or JS workspace), Node 24, bun, Chromium headless shell.
+# No Docker-in-Docker, no privileged requirement, runs as a non-root user.
+# Base images are pinned by digest.
+
+FROM node:24.19.0-bookworm-slim@sha256:a9f5f7c91a432850b2a8a7797adf5eadb6c733ceed61167806cee7ea7fbc29df AS node
+FROM oven/bun:1.4.2-debian@sha256:4f6e31d1a54d6a3dd312daef655fc998101b5043d52e12592ac293ef04b9bc73 AS bun
+
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58
+
+# Node is a single binary (glibc + libstdc++); bun likewise. npm, npx and
+# corepack are deliberately absent: dependency install is bun's
+# `install --ignore-scripts`, and nothing in the build path needs npm.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+
+ENV UV_FROZEN=1 \
+    UV_NO_DEV=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /srv/worker
+
+# Locked Python dependencies only (the same uv.lock the API uses).
+COPY apps/api/pyproject.toml apps/api/uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project \
+    && rm -rf /root/.cache
+
+# Chromium headless shell + its system libraries, baked in at build time
+# (never downloaded at runtime). libstdc++6 for node/bun.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 \
+    && .venv/bin/playwright install --with-deps --only-shell chromium \
+    && rm -rf /var/lib/apt/lists/* /root/.cache
+
+# The application code — and nothing else from the repository.
+COPY apps/api/app ./app
+
+RUN useradd --uid 10001 --create-home --home-dir /home/gwa --shell /usr/sbin/nologin gwa \
+    && mkdir -p /tmp/gwa-worker \
+    && chown gwa:gwa /tmp/gwa-worker \
+    && node --version && bun --version
+
+USER gwa
+# GPG_KEY: the Python base image's (public) release-signing key id; emptied
+# so the worker's credential-name denylist (`*_KEY`) has nothing to flag.
+ENV PATH=/srv/worker/.venv/bin:/usr/local/bin:/usr/bin:/bin \
+    HOME=/home/gwa \
+    GPG_KEY= \
+    GWA_WORKER_ISOLATION=supervised-process \
+    GWA_WORKER_WORK_ROOT=/tmp/gwa-worker \
+    GWA_WORKER_CONCURRENCY=1
+
+ENTRYPOINT ["python", "-m", "app.worker"]

@@ -16,14 +16,16 @@ approve or publish: the control plane re-validates everything it returns
 (app.worker.intake).
 """
 
+import hashlib
 import logging
+import resource
 import shutil
 import tempfile
 import time
 from pathlib import Path
 
 from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError, run_browser_qa
-from app.creative.frontend_engine.sandbox import SandboxError, SandboxRunner
+from app.creative.frontend_engine.sandbox import SandboxError, SandboxRunner, SupervisedProcessRunner
 from app.creative.frontend_engine.sandboxed_browser_qa import run_browser_qa_sandboxed
 from app.creative.source_adapter.pipeline import plan_csp
 from app.creative.source_adapter.plan import AdaptationPlan, PlanDriftError, apply_plan
@@ -33,9 +35,14 @@ from app.creative.source_adapter.static_artifact import assemble_static_artifact
 from app.creative.source_adapter.static_build import StaticBuildError, Toolchain, build_in_sandbox, prepare_dependencies
 from app.domain.enums import GenerationFailureKind, GenerationJobKind
 from app.publishing.csp_policy import UnsupportedCspRequirementError
+from app.worker.preflight import browser_env
 from app.worker.protocol import ExecutionRequest, ExecutionResult, VisualQAReport, b64, pack_files, sha256_hex
 
 logger = logging.getLogger(__name__)
+# R5.1: the whole job (install + build + assemble + QA) must finish well
+# inside the control plane's lease (generation_jobs.DEFAULT_LEASE, 15 min),
+# so a slow job fails as a resource limit instead of being presumed lost.
+JOB_DEADLINE_SECONDS = 12 * 60
 
 
 def _failed(request: ExecutionRequest, kind: GenerationFailureKind, error: str, **metadata: object) -> ExecutionResult:
@@ -54,19 +61,72 @@ def _make_writable(root: Path) -> None:
         path.chmod(0o755 if path.is_dir() else 0o644)
 
 
+def tree_digest(root: Path) -> str:
+    """SHA-256 over every file's relative path and bytes (the extracted
+    original snapshot must be byte-identical after install and build)."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file() and not p.is_symlink()):
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def _children_peak_rss_kb() -> int:
+    """High-water RSS (kB) of any terminated child of this worker process
+    so far (bun install, the Playwright driver/Chromium) — process-lifetime,
+    so a LOWER bound for the current job only when it rose during it."""
+    return int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
+
+
 def execute_source_adaptation(
     request: ExecutionRequest,
     source: bytes,
     *,
     runner: SandboxRunner,
     toolchain: Toolchain | None = None,
+    deadline_seconds: float = JOB_DEADLINE_SECONDS,
 ) -> ExecutionResult:
+    job_started = time.monotonic()
+    deadline = job_started + deadline_seconds
     metadata: dict[str, object] = {
         "runner": runner.name,
         "limits_enforced": runner.limits_enforced(),
         "snapshot_sha256": request.source_sha256,
         "plan_sha256": request.plan_sha256,
+        "source_bytes": len(source),
     }
+    result = _execute(request, source, runner=runner, toolchain=toolchain, deadline=deadline, metadata=metadata)
+    metadata["duration_ms"] = int((time.monotonic() - job_started) * 1000)
+    if isinstance(runner, SupervisedProcessRunner) and runner.step_peak_rss_kb:
+        metadata["build_peak_rss_kb"] = max(runner.step_peak_rss_kb.values())
+    metadata["children_peak_rss_kb_lifetime"] = _children_peak_rss_kb()
+    result.metadata = {**metadata, **result.metadata}
+    logger.info(
+        "source-adaptation job metrics job_id=%s attempt=%d status=%s failure=%s duration_ms=%s "
+        "source_bytes=%s source_files=%s artifact_bytes=%s artifact_files=%s build_peak_rss_kb=%s",
+        request.job_id,
+        request.attempt,
+        result.status,
+        result.failure_kind.value if result.failure_kind else "-",
+        metadata.get("duration_ms"),
+        metadata.get("source_bytes"),
+        metadata.get("source_files", "-"),
+        metadata.get("artifact_bytes", "-"),
+        metadata.get("artifact_files", "-"),
+        metadata.get("build_peak_rss_kb", "-"),
+    )
+    return result
+
+
+def _execute(
+    request: ExecutionRequest,
+    source: bytes,
+    *,
+    runner: SandboxRunner,
+    toolchain: Toolchain | None,
+    deadline: float,
+    metadata: dict[str, object],
+) -> ExecutionResult:
     if request.job_kind is not GenerationJobKind.SOURCE_ADAPTATION or request.adaptation_plan is None:
         return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, "not a source-adaptation request", **metadata)
     if sha256_hex(source) != request.source_sha256:
@@ -85,11 +145,16 @@ def execute_source_adaptation(
     if not request.site_origin:
         return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, "no site origin", **metadata)
 
+    # Everything of this job lives under ONE fresh directory (source copy,
+    # adapted tree, node_modules, step homes, build output), removed on
+    # success, failure, timeout or interruption.
     with tempfile.TemporaryDirectory(prefix="gwa-source-job-") as tmp:
         root = Path(tmp)
         (root / "source.zip").write_bytes(source)
         try:
             snapshot = snapshot_export(root / "source.zip", root / "original")
+            original_digest = tree_digest(snapshot.root)
+            metadata["source_files"] = sum(1 for p in snapshot.root.rglob("*") if p.is_file())
             shutil.copytree(snapshot.root, root / "adapted")
             _make_writable(root / "adapted")
             app = root / "adapted" / snapshot.app_dir
@@ -100,17 +165,30 @@ def execute_source_adaptation(
         started = time.monotonic()
         try:
             tools = toolchain or Toolchain.detect()
-            prepare_dependencies(app, tools, frozen=False)
+            prepare_dependencies(app, tools, frozen=False, timeout=deadline - time.monotonic())
             metadata["install_ms"] = int((time.monotonic() - started) * 1000)
             started = time.monotonic()
             steps = tuple((str(s["label"]), tuple(str(a) for a in s["argv"])) for s in plan.build["sandbox_steps"])
-            client = build_in_sandbox(app, tools, runner, steps=steps, output_dir=str(plan.build["output_dir"]))
+            client = build_in_sandbox(
+                app, tools, runner, steps=steps, output_dir=str(plan.build["output_dir"]), deadline=deadline
+            )
             metadata["build_ms"] = int((time.monotonic() - started) * 1000)
         except StaticBuildError as exc:
-            return _failed(request, GenerationFailureKind.BUILD, str(exc), **metadata)
+            limited = "deadline" in str(exc) or "timed out" in str(exc)
+            kind = GenerationFailureKind.RESOURCE_LIMIT if limited else GenerationFailureKind.BUILD
+            return _failed(request, kind, str(exc), **metadata)
         except SandboxError as exc:
             kind = GenerationFailureKind.RESOURCE_LIMIT if "timed out" in str(exc) else GenerationFailureKind.BUILD
             return _failed(request, kind, str(exc), **metadata)
+        if sha256_hex((root / "source.zip").read_bytes()) != request.source_sha256 or (
+            tree_digest(snapshot.root) != original_digest
+        ):
+            return _failed(
+                request,
+                GenerationFailureKind.CANDIDATE_REJECTED,
+                "the original snapshot changed during install/build — refusing the result",
+                **metadata,
+            )
 
         try:
             artifact = assemble_static_artifact(
@@ -123,6 +201,8 @@ def execute_source_adaptation(
             )
         except AdapterError as exc:
             return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, str(exc), **metadata)
+    metadata["artifact_files"] = len(artifact.files)
+    metadata["artifact_bytes"] = sum(len(data) for data in artifact.files.values())
     missing = sorted(set(plan.build["expected_pages"]) - set(artifact.files))
     if missing:
         return _failed(request, GenerationFailureKind.BUILD, f"pages missing from the build: {missing}", **metadata)
@@ -131,13 +211,20 @@ def execute_source_adaptation(
     report: VisualQAReport | None = None
     if request.run_visual_qa:
         started = time.monotonic()
+        if started >= deadline:
+            return _failed(
+                request, GenerationFailureKind.RESOURCE_LIMIT, "no time left for Visual QA before the job deadline"
+            )
         try:
             if runner.name == "bubblewrap":
                 qa = run_browser_qa_sandboxed(
                     artifact.files, offline_assets={}, capture_screenshots=True, runner=runner
                 )
             else:
-                qa = run_browser_qa(artifact.files, offline_assets={}, capture_screenshots=True)
+                with tempfile.TemporaryDirectory(prefix="gwa-qa-home-") as home:
+                    qa = run_browser_qa(
+                        artifact.files, offline_assets={}, capture_screenshots=True, browser_env=browser_env(Path(home))
+                    )
         except BrowserQAUnavailableError as exc:
             return _failed(request, GenerationFailureKind.SANDBOX_UNAVAILABLE, str(exc), **metadata)
         metadata["visual_qa_ms"] = int((time.monotonic() - started) * 1000)

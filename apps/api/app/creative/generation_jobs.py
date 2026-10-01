@@ -11,11 +11,18 @@ Explicit state machine over app.db.models.GenerationJob:
   re-used for a different request.
 - Single claim: `claim` is a conditional UPDATE (status = QUEUED), so two
   workers racing for a job cannot both run it.
-- Conservative retries: NONE automatic. A job may already have made a paid
-  provider call, and contract/drift/build failures are deterministic, so
-  every failure is terminal. A worker that disappears leaves an expired
-  lease; `expire_lost_jobs` marks it FAILED(worker_lost) — it is not
-  re-run. A deliberate retry is a new job with a new key.
+- Conservative retries: NONE automatic for generative jobs. A job may
+  already have made a paid provider call, and contract/drift/build
+  failures are deterministic, so every failure is terminal. A worker that
+  disappears leaves an expired lease; `expire_lost_jobs` marks it
+  FAILED(worker_lost) — it is not re-run. A deliberate retry is a new job
+  with a new key.
+- R5.1 exception: a SOURCE_ADAPTATION job (a supervised export: no
+  provider call, no cost, deterministic input) whose worker was LOST
+  (crash, restart, SIGTERM) goes back to QUEUED — `requeue_lost` — up to
+  MAX_SOURCE_ATTEMPTS claims. Each claim is a new attempt with a new job
+  token, so a late result from the lost attempt is refused (token and
+  attempt no longer match) and can never create a second artifact.
 - Tenant-scoped: every read filters by tenant_id.
 
 Not yet wired to the HTTP route: the generative route still runs
@@ -34,11 +41,15 @@ from app.domain.enums import GenerationFailureKind, GenerationJobKind, Generatio
 from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, parse_family
 
 DEFAULT_LEASE = timedelta(minutes=15)
+MAX_SOURCE_ATTEMPTS = 3
 _MAX_ERROR_CHARS = 2000
 
 TRANSITIONS: dict[GenerationJobStatus, frozenset[GenerationJobStatus]] = {
     GenerationJobStatus.QUEUED: frozenset({GenerationJobStatus.RUNNING, GenerationJobStatus.FAILED}),
-    GenerationJobStatus.RUNNING: frozenset({GenerationJobStatus.SUCCEEDED, GenerationJobStatus.FAILED}),
+    # RUNNING -> QUEUED only through requeue_lost (source-adaptation jobs).
+    GenerationJobStatus.RUNNING: frozenset(
+        {GenerationJobStatus.SUCCEEDED, GenerationJobStatus.FAILED, GenerationJobStatus.QUEUED}
+    ),
     GenerationJobStatus.SUCCEEDED: frozenset(),
     GenerationJobStatus.FAILED: frozenset(),
 }
@@ -180,6 +191,17 @@ def fail(job: GenerationJob, *, kind: GenerationFailureKind, error: str) -> None
     job.error = error[:_MAX_ERROR_CHARS]
     job.lease_expires_at = None
     job.finished_at = _now()
+
+
+def requeue_lost(job: GenerationJob, *, reason: str) -> bool:
+    """R5.1: a lost SOURCE_ADAPTATION attempt goes back to the queue while
+    attempts remain (True); anything else is not this function's to retry."""
+    if job.job_kind is not GenerationJobKind.SOURCE_ADAPTATION or job.attempts >= MAX_SOURCE_ATTEMPTS:
+        return False
+    _transition(job, GenerationJobStatus.QUEUED)
+    job.lease_expires_at = None
+    job.error = f"attempt {job.attempts} lost ({reason[:200]}); requeued"
+    return True
 
 
 def expire_lost_jobs(session: Session, *, now: datetime | None = None) -> int:
