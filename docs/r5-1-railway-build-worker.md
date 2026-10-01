@@ -299,14 +299,18 @@ real job. No pricing is implied.
    - the log shows `preflight passed` with `no_platform_credentials` ok;
    - the Variables tab holds only the three variables;
    - `python -m app.worker --preflight` reports ready.
-5. **Safe test job.** On an internal test business, set `SUPERVISED_SOURCE_IMPORTS_ENABLED=true` temporarily (API), upload the synthetic Lumen export and build it. Then confirm:
-   - the job is claimed, built and accepted;
-   - the import reaches `preview_ready`;
-   - QA evidence is current and passed;
-   - the preview serves the stored artifact.
-   - Do not approve or publish. Set the flag back to `false` if the pilot is not starting immediately.
+5. **Safe test job (R5.1.1 scoped access).** Keep `SUPERVISED_SOURCE_IMPORTS_ENABLED` OFF.
+   - Create one fictional canary business (synthetic Lumen) under an internal tenant.
+   - Set `SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS=<that business UUID>` on the API.
+   - Upload the synthetic Lumen export through the normal authenticated Studio/API routes, then build it.
+   - Then confirm:
+     - the job is claimed, built and accepted;
+     - the import reaches `preview_ready`;
+     - QA evidence is current and passed;
+     - the preview serves the stored artifact.
+   - Do not approve or publish. Remove the business from the allowlist when the canary is done.
 6. **Verify artifact intake.** Check the job metrics line, the stored artifact hash, and the Contract/QA states in Studio.
-7. **Enable** `SUPERVISED_SOURCE_IMPORTS_ENABLED=true` for the supervised pilot only.
+7. **Enable** for the supervised pilot only: preferably by allowlisting the pilot business in `SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS`; turn on `SUPERVISED_SOURCE_IMPORTS_ENABLED=true` only when every business should have access.
 8. **Supervised pilot:** one owner-reviewed export at a time, with operator review of every finding.
 
 **Immediate disable.** Set `SUPERVISED_SOURCE_IMPORTS_ENABLED=false` on
@@ -328,3 +332,42 @@ remove the service. The API and published sites do not depend on it.
   - Confirm the 5-minute upload window for real operator uploads.
 - **First real job.** Confirm peak memory and CPU against Railway's metrics.
 - **Unchanged from R5:** first-pilot BusinessTruth and legal inputs, and no Higgsfield automation.
+
+## 16. Scoped canary access (R5.1.1)
+
+`SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS`: exact canonical business UUIDs,
+separated by commas and/or whitespace. The default is empty, which means
+no business has scoped access.
+
+**When the capability is usable.** For a request about business X, the
+supervised-import capability is usable when the global flag is on, OR X
+is in the allowlist. Otherwise every lifecycle route answers 403
+`feature_not_available`, as before.
+
+**What the allowlist does not touch.** It never replaces any other check:
+
+- the session and CSRF;
+- `TenantAccess` for `X-Tenant-Id`;
+- the business belonging to that tenant;
+- rows filtered by tenant AND path business;
+- review, blockers, plan and snapshot identity;
+- the worker protocol;
+- the artifact gate, approval and publish.
+
+**One gate.** All seven lifecycle routes depend on
+`require_supervised_import_access`; a test asserts this.
+
+**Capability response.** `capability` returns `access`
+(`global` | `scoped` | `disabled`) for the caller's own authorized
+business. It never returns the allowlist.
+
+**Fail closed.** Any malformed entry (`*`, `all`, a prefix, braces, a URN,
+hex without hyphens, junk) disables scoped access for every business. The
+failure is logged without the configured values.
+
+**Removing an entry.** It closes all seven routes for that business
+immediately. A job already queued still completes its build; publishing
+always requires a human approval of the exact artifact.
+
+**Disable.** Clear `SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS` (and keep the
+global flag OFF).

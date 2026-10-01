@@ -1399,6 +1399,8 @@ export function runGenerativeVisualQa(
 
 export interface SourceImportCapability {
   enabled: boolean;
+  /** R5.1.1: "scoped" = only THIS business is allowlisted (supervised canary) while the global feature is off. */
+  access: "global" | "scoped" | "disabled";
   worker_configured: boolean;
   max_bytes: number;
   api_base_url_configured: boolean;

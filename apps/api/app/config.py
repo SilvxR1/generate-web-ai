@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # credentials above and a worker that accepts supervised sources.
     supervised_source_imports_enabled: bool = False
     supervised_source_max_bytes: int = 100 * 1024**2
+    # R5.1.1: scoped canary access while the global flag above stays OFF —
+    # exact canonical business UUIDs, separated by commas and/or whitespace.
+    # Empty (the default) = no business. Additive to authentication, tenant
+    # authorization and every R5 review/build/approve/publish gate, never a
+    # replacement for them. No wildcard: one malformed entry (e.g. `*`,
+    # `all`, a prefix) disables scoped access for EVERY business. Not a
+    # secret; never returned to clients (see app.creative.source_imports).
+    supervised_source_imports_business_ids: str = ""
 
     # Shared secret n8n sends back to /internal/leads and
     # /internal/notifications (see app.dependencies.verify_internal_automation_token)

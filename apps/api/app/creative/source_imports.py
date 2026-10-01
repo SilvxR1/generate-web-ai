@@ -18,15 +18,18 @@ reviewed OUTSIDE GWA (Higgsfield Supercomputer). Nothing here calls
 Higgsfield.
 """
 
+import functools
 import io
 import json
 import logging
+import re
 import tempfile
 import uuid
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -74,6 +77,46 @@ _REINSPECTABLE = frozenset(
         SourceImportStatus.BUILD_FAILED,
     }
 )
+# --- Access: global flag OR an explicitly allowlisted business (R5.1.1) ------------------
+
+SupervisedImportAccess = Literal["global", "scoped", "disabled"]
+_CANONICAL_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+@functools.lru_cache(maxsize=8)
+def parse_business_allowlist(raw: str) -> frozenset[uuid.UUID]:
+    """SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS -> exact business UUIDs.
+
+    Entries are separated by commas and/or whitespace; duplicates collapse.
+    Only the canonical hyphenated form is accepted (case-insensitive). Any
+    other entry — `*`, `all`, a prefix, braces, a URN — makes the WHOLE
+    allowlist empty (fail closed: a typo never grants partial access) and is
+    logged without echoing the configured values."""
+    ids: set[uuid.UUID] = set()
+    for token in (t for t in re.split(r"[\s,]+", raw.strip()) if t):
+        if not _CANONICAL_UUID.match(token.lower()):
+            logger.error(
+                "SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS has a malformed entry; "
+                "scoped supervised-import access is disabled for every business"
+            )
+            return frozenset()
+        ids.add(uuid.UUID(token))
+    return frozenset(ids)
+
+
+def supervised_import_access(business_id: uuid.UUID) -> SupervisedImportAccess:
+    """Whether the supervised-import capability may be used for this
+    business at all: "global" (the feature flag), "scoped" (this exact
+    business is allowlisted while the flag is off) or "disabled". Says
+    nothing about WHO may use it — callers enforce authentication and
+    tenant authorization first (app.routers.source_imports)."""
+    if settings.supervised_source_imports_enabled:
+        return "global"
+    if business_id in parse_business_allowlist(settings.supervised_source_imports_business_ids):
+        return "scoped"
+    return "disabled"
+
+
 _BUILDABLE = frozenset({SourceImportStatus.READY_TO_BUILD, SourceImportStatus.BUILD_FAILED})
 _TRUTH_SENSITIVE = _REINSPECTABLE - {SourceImportStatus.STALE}
 

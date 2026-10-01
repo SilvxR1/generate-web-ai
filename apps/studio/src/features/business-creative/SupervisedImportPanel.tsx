@@ -517,6 +517,12 @@ export function SupervisedImportPanel({
         anything it can't decide, builds it on the isolated build worker, validates it and lets you preview, approve
         and publish the exact result.
       </p>
+      {capability.access === "scoped" && (
+        <p className="banner banner--warning">
+          Canary access: supervised imports are enabled for this business only, while the feature stays off for
+          everyone else.
+        </p>
+      )}
       {!capability.worker_configured && (
         <p className="banner banner--warning">No build worker is configured: you can import and review, not build.</p>
       )}
