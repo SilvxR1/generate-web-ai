@@ -58,6 +58,16 @@ MARKER = "r5-1-marker-" + uuid.uuid4().hex
 API_ROOT = Path(__file__).resolve().parent.parent
 
 
+@pytest.fixture(autouse=True)
+def _worker_process_protection_stubbed(monkeypatch):
+    """R5.1.2: these tests drive the worker IN the pytest process; the real
+    non-dumpable protection is exercised in subprocesses by
+    tests/test_r5_1_2_worker_proc_isolation.py (never on pytest itself)."""
+    from app.worker import process_protection
+
+    monkeypatch.setattr(process_protection, "make_non_dumpable", lambda: None)
+    monkeypatch.setattr(process_protection, "is_non_dumpable", lambda: True)
+
 def _base_environ(**extra: str) -> dict[str, str]:
     return {
         "PATH": os.environ["PATH"],

@@ -248,6 +248,18 @@ def run_preflight(
     report = PreflightReport()
     add = report.checks.append
 
+    from app.worker.process_protection import is_non_dumpable  # noqa: PLC0415
+
+    protected = is_non_dumpable()
+    add(
+        Check(
+            "process_protection",
+            protected,
+            "non-dumpable: same-UID processes cannot read this process via procfs"
+            if protected
+            else "the process is dumpable (PR_SET_DUMPABLE not applied)",
+        )
+    )
     forbidden = forbidden_environment(environ)
     detail = f"forbidden variables present: {', '.join(forbidden)}" if forbidden else "none present"
     add(Check("no_platform_credentials", not forbidden, detail))

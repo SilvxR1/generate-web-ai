@@ -75,6 +75,17 @@ _TINY_PNG = bytes.fromhex(
 _DESKTOP = (("desktop", 1024, 768),)
 
 
+@pytest.fixture(autouse=True)
+def _worker_process_protection_stubbed(monkeypatch):
+    """R5.1.2: these tests drive the worker IN the pytest process; the real
+    non-dumpable protection is exercised in subprocesses by
+    tests/test_r5_1_2_worker_proc_isolation.py (never on pytest itself)."""
+    from app.worker import process_protection
+
+    monkeypatch.setattr(process_protection, "make_non_dumpable", lambda: None)
+    monkeypatch.setattr(process_protection, "is_non_dumpable", lambda: True)
+
+
 # --- Visual QA network isolation -----------------------------------------------------
 
 

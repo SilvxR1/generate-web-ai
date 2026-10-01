@@ -122,6 +122,16 @@ Forbidden variables are re-checked before every claim.
 | Chromium (Visual QA) | `PATH`, `HOME`, `TMPDIR`, `LANG`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, all private. |
 | Playwright driver | Inherits the worker's own environment, which by then no longer has the token or API URL. |
 
+> **Correction (R5.1.2).** R5.1 claimed this environment allowlist plus the
+> `os.environ` scrub kept the worker token away from build code. That was
+> incomplete: it only stopped a child from reading the token through its
+> OWN environment. On the real Railway worker (kernel Yama
+> `ptrace_scope=0`) a same-UID build could still read the worker's STARTUP
+> environment — and its memory — through `/proc/<worker-pid>/environ` and
+> `/proc/<worker-pid>/mem`. R5.1.2 (section 17) closes that with
+> `PR_SET_DUMPABLE=0`. The allowlist below is still enforced and still
+> correct; it was simply not sufficient on its own.
+
 **Measured inside the real container.** The Lumen export's own
 `vite.config.ts` reported its full environment:
 `CI, DO_NOT_TRACK, HOME, LANG, NODE, NODE_ENV, NO_COLOR, PATH, PWD, SHLVL, TMPDIR, _`
@@ -371,3 +381,66 @@ always requires a human approval of the exact artifact.
 
 **Disable.** Clear `SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS` (and keep the
 global flag OFF).
+
+## 17. Worker process isolation from same-UID builds (R5.1.2)
+
+**The defect.** In supervised-process mode the worker (PID 1 in its
+container) and everything it runs share UID 10001. R5.1 removed the token
+from `os.environ`, but the kernel keeps the process's original startup
+environment, and procfs exposes it. On Railway, where the kernel's Yama
+`ptrace_scope` is `0`, a same-UID process can read both
+`/proc/1/environ` and `/proc/1/mem`. Reproduced in production: a probe read
+the full 64-character `GWA_WORKER_TOKEN`. A malicious supervised export's
+build could therefore have stolen the claim credential and claimed (and
+downloaded the snapshot of) another queued supervised job.
+
+**The fix.** At the very start of `serve()` — before the readiness flag,
+the claim loop, or any job, and before `selftest()` spawns its probes — the
+worker calls `prctl(PR_SET_DUMPABLE, 0)` (`app/worker/process_protection.py`)
+and verifies it. The kernel then treats the worker as non-dumpable: its
+`/proc/<pid>/{environ,mem,maps,fd,...}` are owned by root and unreadable to
+same-UID processes without `CAP_SYS_PTRACE` (which the container drops), and
+ptrace attach is refused. The flag is not inherited across `execve`, so
+build children — which never receive a credential — are unaffected.
+
+- **Fail closed.** If the flag cannot be set and verified, `serve()`
+  returns `EX_CONFIG` (78) and the worker never claims. Preflight reports a
+  `process_protection` check, and it is re-checked before every claim.
+- **Defense in depth kept.** The `os.environ` scrub and the child-process
+  environment allowlist remain.
+
+**Regression evidence** (`tests/test_r5_1_2_worker_proc_isolation.py`, with
+`tests/r5_1_2_procfs_probe.py` run as real subprocesses that emulate
+`ptrace_scope=0`):
+
+| | worker `/proc/<pid>/environ` | worker `/proc/<pid>/mem` | any `/proc/<pid>/cmdline` |
+|---|---|---|---|
+| Control (no protection) | LEAKED | LEAKED | clean |
+| Fixed (non-dumpable) | PermissionError | PermissionError | clean |
+
+The control proves the probe reproduces the real defect (so it cannot pass
+trivially). Verified the same way **inside the real worker container image**
+as UID 10001: control leaked the worker's environ and memory at PID 1;
+with the fix both were `PermissionError`.
+
+**Credential-handling audit (R5.1.2):**
+- **argv / cmdline:** `/proc/<pid>/cmdline` stays world-readable even when
+  non-dumpable, so no credential may ever be an argument. The worker token
+  and the per-job token appear only in `Authorization: Bearer` headers;
+  neither is in the worker's, bun's, Node's or Chromium's command line.
+- **Per-job token:** lives only in memory and in those headers for the one
+  job and attempt. It is never in a child's argv or environment, never
+  written to disk, and (now) unreadable from the worker's memory by a
+  same-UID build.
+- **Filesystem / logs:** no credential is written to the workspace, HOME,
+  TMPDIR, the browser profile, the build output or the logs; no logger line
+  references a token, key or secret.
+
+**Remaining same-UID surface (NOT a sandbox).** `PR_SET_DUMPABLE=0` hides
+the worker's process internals; it does not isolate the filesystem, the
+network or the process list. A same-UID build still shares the filesystem
+and network, can see that the worker exists (`/proc/<pid>/cmdline`,
+`stat`), and can send it signals. The trust model is unchanged: only
+owner-reviewed exports, a worker with no platform credential and no publish
+authority, and full re-validation by the control plane. Full OS isolation
+would need the R4 sandbox, which Railway cannot run.
