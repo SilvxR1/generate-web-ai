@@ -334,10 +334,14 @@ class HiggsfieldTanstackAdapter:
                 out.append(
                     _finding(
                         "form_displays_server_identifier",
-                        "review",
+                        # R5: a blocker, not a review. Approving it cannot make the
+                        # code work (the platform transport returns no id, so the
+                        # export no longer type-checks); only a reviewed overlay fix
+                        # for this exact export resolves it.
+                        "blocker",
                         form["form_id"],
                         "the form shows a value the builder's server returned (e.g. a record id); the GWA "
-                        "Lead API returns none, and GWA never fabricates one",
+                        "Lead API returns none and GWA never fabricates one — needs a reviewed fix for this export",
                     )
                 )
             if transport["kind"] == "server-function" and transport["symbol"]:

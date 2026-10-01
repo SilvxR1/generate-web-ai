@@ -89,6 +89,9 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     # never safely go live).
     validation_issues: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # R5: the exact artifact identity the human approved. Publish refuses
+    # unless it equals `artifact_sha256` (NULL for drafts approved before R5).
+    approved_artifact_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Set only once this draft is actually published — which live Website
     # row it became, for traceability. SET NULL on delete (deleting the

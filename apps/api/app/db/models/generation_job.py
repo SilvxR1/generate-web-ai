@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.models.columns import str_enum
 from app.db.models.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
-from app.domain.enums import GenerationFailureKind, GenerationJobStatus
+from app.domain.enums import GenerationFailureKind, GenerationJobKind, GenerationJobStatus, JobTrustClass
 
 
 class GenerationJob(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
@@ -54,6 +54,21 @@ class GenerationJob(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base
     source_family: Mapped[str] = mapped_column(
         String(64), nullable=False, default="gwa-astro", server_default="gwa-astro"
     )
+    # R5: what the job is (an AI-generated source, or a supervised export +
+    # its AdaptationPlan) and which isolation its code requires. Both set by
+    # trusted code at enqueue; a worker only ever receives jobs its declared
+    # isolation may run (app.creative.generation_jobs.next_queued_job_id).
+    job_kind: Mapped[GenerationJobKind] = mapped_column(
+        str_enum(GenerationJobKind, 30), nullable=False, default=GenerationJobKind.GENERATIVE,
+        server_default=GenerationJobKind.GENERATIVE.value,
+    )
+    trust_class: Mapped[JobTrustClass] = mapped_column(
+        str_enum(JobTrustClass, 30), nullable=False, default=JobTrustClass.UNTRUSTED_GENERATED,
+        server_default=JobTrustClass.UNTRUSTED_GENERATED.value,
+    )
+    # R5: the AdaptationPlan a source-adaptation job must apply (its identity;
+    # the plan itself is in private storage, referenced by the SourceImport).
+    plan_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

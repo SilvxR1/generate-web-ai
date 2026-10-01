@@ -37,6 +37,7 @@ import { GenerativeWorkflowGate } from "./GenerativeWorkflowGate";
 import { GenerativeWorkflowPanel } from "./GenerativeWorkflowPanel";
 import { ProvidersPanel } from "./ProvidersPanel";
 import { ReviewsPanel } from "./ReviewsPanel";
+import { SupervisedImportPanel } from "./SupervisedImportPanel";
 import { WebsiteDraftsPanel } from "./WebsiteDraftsPanel";
 
 interface CreativeSectionProps {
@@ -281,6 +282,9 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
           })
         }
       />
+
+      <h3>Import a reviewed Higgsfield export (supervised)</h3>
+      <SupervisedImportPanel businessId={businessId} tenantId={tenantId} />
 
       <h3>Generate website with AI (experimental)</h3>
       <GenerativeWorkflowGate businessId={businessId} tenantId={tenantId}>

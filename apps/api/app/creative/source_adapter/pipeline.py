@@ -154,13 +154,18 @@ def plan_csp(plan: AdaptationPlan) -> CspExtensions:
 
 @dataclass
 class Planned:
-    """Everything decided before the source is mutated."""
+    """Everything decided before the source is mutated. `plan` is None when
+    the source cannot be planned (an open blocker, no family adapter)."""
 
     snapshot: SourceSnapshot
     manifest: SourceManifest
     supportability: Supportability
-    plan: AdaptationPlan
+    plan: AdaptationPlan | None
     truth: BusinessTruth
+
+    @property
+    def pending_reviews(self) -> list[Finding]:
+        return [f for f in self.supportability.open_findings() if f.severity == "review"]
 
 
 def plan_export(
@@ -174,7 +179,31 @@ def plan_export(
     """Snapshot -> inspect -> classify -> plan. Writes source-inventory.json,
     source-manifest.json, supportability.json and adaptation-plan.json into
     `work_root` (which must not exist). Never mutates, installs or builds;
-    raises PlanRefusedError (after writing the reports) when not adaptable."""
+    raises PlanRefusedError (after writing the reports) unless every finding
+    is resolved or approved."""
+    planned = inspect_export(zip_path, work_root, business_config, site_origin=site_origin, fact_ledger=fact_ledger)
+    if planned.plan is None or not planned.supportability.ready_to_adapt:
+        open_ids = [f.id for f in planned.supportability.open_findings()]
+        raise PlanRefusedError(f"{planned.supportability.status}: nothing was modified; open findings: {open_ids}")
+    return planned
+
+
+def inspect_export(
+    zip_path: Path,
+    work_root: Path,
+    business_config: BusinessConfig,
+    *,
+    site_origin: str,
+    fact_ledger: dict[str, str] | None = None,
+    allow_pending_review: bool = False,
+    business_truth: BusinessTruth | None = None,
+) -> Planned:
+    """Like plan_export, but never raises for supportability: the product
+    (R5) inspects every import and shows its findings. With
+    `allow_pending_review`, open REVIEW findings do not prevent the plan:
+    the result is the PROPOSED plan a human reviews (approvals are recorded
+    outside the plan and bound to its identity). An open BLOCKER never
+    produces a plan."""
     if work_root.exists():
         raise AdapterError(f"work root already exists: {work_root}")
     work_root.mkdir(parents=True)
@@ -184,7 +213,9 @@ def plan_export(
     manifest = inspect_source(app, snapshot_zip_sha256=snapshot.zip_sha256, app_dir=snapshot.app_dir)
     write_manifest(manifest, work_root / "source-manifest.json")
 
-    truth = derive_business_truth(business_config=business_config)
+    # R5: the product passes the SAME BusinessTruth trusted intake judges the
+    # built site against (config + assets + reviews); scripts derive it.
+    truth = business_truth or derive_business_truth(business_config=business_config)
     tree = VirtualTree.from_dir(app)
     adapter = select_adapter(manifest)
     overlay = overlay_for(snapshot.zip_sha256)
@@ -205,9 +236,10 @@ def plan_export(
         extra += [Finding(f["code"], f["severity"], f["subject"], f["detail"], "claims") for f in claims]
     supportability = classify(manifest, adapter, tree, extra, overlay)
     _write_json(work_root / "supportability.json", supportability.to_dict())
-    if adapter is None or facts is None or not supportability.ready_to_adapt:
-        open_ids = [f.id for f in supportability.open_findings()]
-        raise PlanRefusedError(f"{supportability.status}: nothing was modified; open findings: {open_ids}")
+    open_findings = supportability.open_findings()
+    blocked = any(f.severity == "blocker" for f in open_findings)
+    if adapter is None or facts is None or blocked or (open_findings and not allow_pending_review):
+        return Planned(snapshot, manifest, supportability, None, truth)
 
     requested = adapter.csp_requirements(manifest, tree)
     applied = validate_requested(adapter.family, requested)  # fail closed
@@ -290,6 +322,7 @@ def adapt_export(
     to work_root/report.json)."""
     planned = plan_export(zip_path, work_root, business_config, site_origin=site_origin, fact_ledger=fact_ledger)
     plan, snapshot, manifest = planned.plan, planned.snapshot, planned.manifest
+    assert plan is not None  # plan_export raises otherwise
     adapted_root = work_root / "adapted"
     shutil.copytree(snapshot.root, adapted_root)
     _make_writable(adapted_root)

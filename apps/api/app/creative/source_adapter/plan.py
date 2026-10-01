@@ -298,6 +298,18 @@ class AdaptationPlan:
         data["operations"] = ops
         return data
 
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AdaptationPlan":
+        """The inverse of to_dict(include_binary=True) — the worker rebuilds
+        the exact stored plan (its plan_sha256 must equal the job's)."""
+        values = {k: v for k, v in data.items() if k != "plan_sha256"}
+        operations = []
+        for entry in values.pop("operations"):
+            if entry.get("binary") and "content_b64" not in entry:
+                raise AdapterError(f"{entry.get('path')}: binary content missing from the serialized plan")
+            operations.append(Operation(**{k: v for k, v in entry.items() if k != "binary"}))
+        return cls(**values, operations=operations)
+
     @property
     def plan_sha256(self) -> str:
         """Identity of the plan: every operation (binary content by its

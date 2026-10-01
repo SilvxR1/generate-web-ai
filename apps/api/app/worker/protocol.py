@@ -23,7 +23,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.domain.enums import GenerationFailureKind
+from app.domain.enums import GenerationFailureKind, GenerationJobKind, JobTrustClass
 
 PROTOCOL_VERSION: Literal["1"] = "1"
 MAX_SOURCE_ARCHIVE_BYTES = 5 * 1024**2
@@ -33,6 +33,10 @@ MAX_CANDIDATE_ARCHIVE_BYTES = 60 * 1024**2
 MAX_CANDIDATE_FILES = 2000
 MAX_CANDIDATE_FILE_BYTES = 25 * 1024**2
 MAX_CANDIDATE_TOTAL_BYTES = 100 * 1024**2
+# R5: a supervised export snapshot is downloaded separately (job token), never
+# embedded in the claim; bounded like the upload limit.
+MAX_EXPORT_SNAPSHOT_BYTES = 100 * 1024**2
+MAX_PLAN_JSON_BYTES = 8 * 1024**2
 SOURCE_ROOTS = ("src/", "public/")
 
 
@@ -67,10 +71,28 @@ class ExecutionRequest(BaseModel):
     # host builds with exactly this policy so its Visual QA exercises the CSP
     # that trusted intake re-derives and stores.
     source_family: str = Field(default="gwa-astro", max_length=64)
-    source_archive: str  # base64 tar.gz: src/ and public/ only
+    # base64 tar.gz of src/ and public/ (generative jobs only; a supervised
+    # export snapshot is fetched separately with the job token, R5)
+    source_archive: str | None = None
     source_sha256: str = Field(min_length=64, max_length=64)
     offline_assets: dict[str, str] = Field(default_factory=dict)  # url -> base64 bytes
     run_visual_qa: bool = True
+    # R5: what to do and with which isolation (set by trusted code). A
+    # source-adaptation job carries the exact stored AdaptationPlan (its
+    # identity is `plan_sha256`) and the site's canonical origin; the worker
+    # applies it to the snapshot, builds, assembles and QA's the artifact.
+    job_kind: GenerationJobKind = GenerationJobKind.GENERATIVE
+    trust_class: JobTrustClass = JobTrustClass.UNTRUSTED_GENERATED
+    adaptation_plan: dict[str, object] | None = None
+    plan_sha256: str | None = Field(default=None, min_length=64, max_length=64)
+    site_origin: str | None = Field(default=None, max_length=2048)
+
+
+class ClaimRequest(BaseModel):
+    """R5: the isolation the claiming worker provides. A `supervised-process`
+    worker (no sandbox) is only ever given SUPERVISED_SOURCE jobs."""
+
+    isolation: Literal["bubblewrap", "supervised-process"] = "bubblewrap"
 
 
 class VisualQAReport(BaseModel):

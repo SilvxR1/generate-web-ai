@@ -222,6 +222,13 @@ def _require_approved(
             code="website_draft_not_approved",
             status_code=409,
         )
+    if draft.approved_artifact_sha256 is not None and draft.approved_artifact_sha256 != draft.artifact_sha256:
+        raise WebsiteDraftError(
+            "The approval was given for a different artifact; approve this one first.",
+            code="website_draft_approval_mismatch",
+            status_code=409,
+        )
+    _require_source_gate(session, draft)
     return draft
 
 
@@ -449,9 +456,23 @@ def approve_website_draft(*, session: Session, tenant_id: UUID, business_id: UUI
             code="website_draft_not_ready",
             status_code=409,
         )
+    _require_source_gate(session, draft)
     draft.status = WebsiteDraftStatus.APPROVED
     draft.approved_at = datetime.now(UTC)
+    # R5: the approval names the exact artifact; publish refuses any other.
+    draft.approved_artifact_sha256 = draft.artifact_sha256
     return draft
+
+
+def _require_source_gate(session: Session, draft: WebsiteDraft) -> None:
+    """R5: a draft built from a supervised source import may only be approved
+    or published while its BusinessTruth is unchanged and its Visual QA is
+    current and passing for THIS exact artifact."""
+    from app.creative.source_imports import artifact_gate  # local: avoids an import cycle at startup
+
+    gate = artifact_gate(session, draft)
+    if not gate.ok:
+        raise WebsiteDraftError(" ".join(gate.problems), code="website_draft_artifact_gate", status_code=409)
 
 
 def publish_website_draft(

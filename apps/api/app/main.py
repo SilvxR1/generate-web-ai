@@ -16,6 +16,7 @@ from app.routers.generation_worker import router as generation_worker_router
 from app.routers.health import router as health_router
 from app.routers.internal_automation import router as internal_automation_router
 from app.routers.public import router as public_router
+from app.routers.source_imports import router as source_imports_router
 from app.routers.website_health import router as website_health_router
 from app.security import SecurityHeadersMiddleware
 from app.security.public_cors import PublicEndpointCORSMiddleware
@@ -51,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(businesses_router)
     app.include_router(business_summaries_router)
     app.include_router(creative_router)
+    app.include_router(source_imports_router)
     app.include_router(internal_automation_router)
     app.include_router(generation_worker_router)
     app.include_router(public_router)

@@ -1394,3 +1394,186 @@ export function runGenerativeVisualQa(
     tenantId,
   );
 }
+
+// --- R5: supervised source imports (operator-uploaded Higgsfield exports) ---
+
+export interface SourceImportCapability {
+  enabled: boolean;
+  worker_configured: boolean;
+  max_bytes: number;
+  api_base_url_configured: boolean;
+  site_origin: string | null;
+  supervised_only: boolean;
+}
+
+export type SourceImportStatus =
+  | "blocked"
+  | "needs_review"
+  | "rejected"
+  | "ready_to_build"
+  | "building"
+  | "build_failed"
+  | "preview_ready"
+  | "stale";
+
+export interface SourceFinding {
+  id: string;
+  code: string;
+  severity: "blocker" | "review" | "info";
+  subject: string;
+  detail: string;
+  source: string;
+  resolution: string | null;
+  approval: string | null;
+  open: boolean;
+}
+
+export interface SourceImportSummary {
+  id: string;
+  status: SourceImportStatus;
+  stage: string;
+  original_filename: string;
+  zip_sha256: string;
+  zip_size: number;
+  source_family: string | null;
+  adapter: string | null;
+  supportability: string | null;
+  plan_sha256: string | null;
+  created_at: string;
+}
+
+export interface SourceReviewDecision {
+  finding_id: string;
+  decision: "approved" | "rejected";
+  rationale: string;
+  actor_email: string;
+  snapshot_sha256: string;
+  plan_sha256: string;
+  created_at: string;
+}
+
+export interface SourceDraftState {
+  id: string;
+  status: WebsiteDraftStatus;
+  artifact_sha256: string | null;
+  approved_artifact_sha256: string | null;
+  build_error: string | null;
+  preview_url: string | null;
+  visual_qa_current: boolean;
+  visual_qa_passed: boolean | null;
+  gate_problems: string[];
+}
+
+export interface SourceInspection {
+  manifest?: {
+    framework?: { dependencies?: Record<string, string>; router?: string | null };
+    package_manager?: string | null;
+    build_command?: string | null;
+    files?: number;
+    routes?: string[];
+    forms?: string[];
+    images?: number;
+    videos?: number;
+    fonts?: string[];
+    analytics?: string[];
+  };
+  supportability?: { status: string; adapter: string | null; counts: Record<string, number> };
+  findings?: SourceFinding[];
+  security?: { code: string; path: string; detail: string; live: boolean }[];
+  external_origins?: { origin: string; context: string; client_live: boolean }[];
+  forms?: { form_id: string; fields: { name: string; role: string; label: string; required: boolean }[] }[];
+  fact_bindings?: { field: string; literal: string; value: string; changes_text: boolean }[];
+  build?: { toolchain: string; sandbox_steps: { label: string; argv: string[] }[]; expected_pages: string[] } | null;
+  plan?: {
+    plan_sha256: string;
+    operations: number;
+    files_changed: number;
+    by_category: Record<string, number>;
+    visible: { op: string; path: string; visible: string }[];
+  } | null;
+  readiness?: { code: string; severity: string; detail: string }[];
+}
+
+export interface SourceImport extends SourceImportSummary {
+  manifest_sha256: string | null;
+  business_truth_sha256: string | null;
+  business_truth_current: boolean;
+  site_origin: string;
+  api_base_url: string;
+  inspection: SourceInspection;
+  open_reviews: string[];
+  decisions: SourceReviewDecision[];
+  job_status: string | null;
+  job_failure: string | null;
+  error: string | null;
+  draft: SourceDraftState | null;
+}
+
+const sourceImports = (businessId: string) => `/businesses/${businessId}/source-imports`;
+
+export function getSourceImportCapability(businessId: string, tenantId: string): Promise<SourceImportCapability> {
+  return requestJson(`${sourceImports(businessId)}/capability`, { method: "GET" }, tenantId);
+}
+
+export function listSourceImports(businessId: string, tenantId: string): Promise<SourceImportSummary[]> {
+  return requestJson(sourceImports(businessId), { method: "GET" }, tenantId);
+}
+
+export function getSourceImport(businessId: string, importId: string, tenantId: string): Promise<SourceImport> {
+  return requestJson(`${sourceImports(businessId)}/${importId}`, { method: "GET" }, tenantId);
+}
+
+export function getSourceImportDiagnostics(businessId: string, importId: string, tenantId: string): Promise<unknown> {
+  return requestJson(`${sourceImports(businessId)}/${importId}/diagnostics`, { method: "GET" }, tenantId);
+}
+
+export function uploadSourceImport(businessId: string, file: File, tenantId: string): Promise<SourceImport> {
+  const form = new FormData();
+  form.set("file", file);
+  return fetch(`${API_URL}${sourceImports(businessId)}`, {
+    method: "POST",
+    credentials: "include",
+    headers: multipartHeaders(tenantId),
+    body: form,
+  })
+    .catch((cause: unknown) => {
+      throw new NetworkError(cause);
+    })
+    .then(async (response) => {
+      if (!response.ok) {
+        let body: { error?: { code?: string; message?: string; details?: unknown } } = {};
+        try {
+          body = await response.json();
+        } catch {
+          // Non-JSON error body — fall through to the generic message.
+        }
+        throw new ApiError(body.error?.message ?? `Request failed with status ${response.status}.`, {
+          code: body.error?.code ?? "http_error",
+          status: response.status,
+          details: body.error?.details,
+        });
+      }
+      return response.json() as Promise<SourceImport>;
+    });
+}
+
+export function decideSourceFinding(
+  businessId: string,
+  importId: string,
+  decision: { finding_id: string; decision: "approved" | "rejected"; rationale: string },
+  tenantId: string,
+): Promise<SourceImport> {
+  return requestJson(
+    `${sourceImports(businessId)}/${importId}/decisions`,
+    { method: "POST", body: JSON.stringify(decision) },
+    tenantId,
+  );
+}
+
+export function reinspectSourceImport(businessId: string, importId: string, tenantId: string): Promise<SourceImport> {
+  return requestJson(`${sourceImports(businessId)}/${importId}/reinspect`, { method: "POST" }, tenantId);
+}
+
+export function buildSourceImport(businessId: string, importId: string, tenantId: string): Promise<SourceImport> {
+  return requestJson(`${sourceImports(businessId)}/${importId}/build`, { method: "POST" }, tenantId);
+}

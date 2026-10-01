@@ -481,3 +481,41 @@ class GenerationFailureKind(StrEnum):
     PLATFORM_CONTRACT = "platform_contract"
     TRUTH_CONTRACT = "truth_contract"
     WORKER_LOST = "worker_lost"
+
+
+class SourceImportStatus(StrEnum):
+    """R5: a supervised source import's lifecycle (app.creative.source_imports).
+    Inspection is synchronous (static; nothing executes), so an import is
+    born BLOCKED, NEEDS_REVIEW or READY_TO_BUILD. The WebsiteDraft it builds
+    carries the rest of the lifecycle (READY -> APPROVED -> PUBLISHED)."""
+
+    BLOCKED = "blocked"  # an open blocker: nothing can build until the source/BusinessTruth changes
+    NEEDS_REVIEW = "needs_review"  # review findings await an authorized decision
+    REJECTED = "rejected"  # an operator rejected a review finding
+    READY_TO_BUILD = "ready_to_build"  # supported, or every review finding approved for THIS plan
+    BUILDING = "building"  # a source-adaptation job is queued/running on the worker
+    BUILD_FAILED = "build_failed"  # the worker or trusted intake refused the candidate
+    PREVIEW_READY = "preview_ready"  # an immutable artifact passed intake (its draft is READY)
+    STALE = "stale"  # BusinessTruth changed since the plan: re-inspect (approvals do not carry over)
+
+
+class ReviewDecisionKind(StrEnum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class GenerationJobKind(StrEnum):
+    """R5: what a queued job asks the execution host to do."""
+
+    GENERATIVE = "generative"  # an AI-generated GWA Astro source (untrusted)
+    SOURCE_ADAPTATION = "source_adaptation"  # a supervised exported source + its AdaptationPlan
+
+
+class JobTrustClass(StrEnum):
+    """R5: which isolation a job's code requires. AI-generated code requires
+    the bubblewrap sandbox; an operator-imported, owner-reviewed export may
+    also run on a `supervised-process` worker (separate process, no platform
+    secret, no publish authority — NOT a sandbox)."""
+
+    UNTRUSTED_GENERATED = "untrusted_generated"
+    SUPERVISED_SOURCE = "supervised_source"
