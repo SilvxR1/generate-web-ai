@@ -21,6 +21,9 @@ Configuration (the host's ONLY configuration — no platform secret):
     worker token            $CREDENTIALS_DIRECTORY/worker-token (systemd
                             LoadCredential=), else GWA_WORKER_TOKEN
 
+R5.1.2 startup: before anything else the worker makes itself non-dumpable
+(app.worker.process_protection) and refuses to start if it cannot.
+
 R5.1 startup: `serve` runs the full preflight (app.worker.preflight) and
 refuses to start (EX_CONFIG) on any failure — a forbidden platform
 credential in the environment, a missing/short token, a bad API URL, a
@@ -64,6 +67,7 @@ from app.creative.frontend_engine.dependencies import DependencyPreparationError
 from app.creative.frontend_engine.sandbox import SandboxError, SupervisedProcessRunner, detect_runner
 from app.domain.enums import GenerationFailureKind, GenerationJobKind
 from app.worker import preflight as worker_preflight
+from app.worker import process_protection
 from app.worker.executor import execute
 from app.worker.protocol import MAX_EXPORT_SNAPSHOT_BYTES, ExecutionRequest, ExecutionResult
 from app.worker.source_executor import JOB_DEADLINE_SECONDS, execute_source_adaptation
@@ -292,6 +296,8 @@ def run_once(
     state: WorkerState = STATE,
 ) -> bool:
     """Claims and processes at most one job. Returns False when idle."""
+    if not process_protection.is_non_dumpable():  # R5.1.2: re-checked before EVERY claim
+        raise WorkerConfigError("the worker process is dumpable: same-UID builds could read its credentials")
     forbidden = worker_preflight.forbidden_environment()
     if forbidden:  # re-checked before EVERY claim, not only at start
         raise WorkerConfigError(f"forbidden platform credentials in the environment: {', '.join(forbidden)}")
@@ -387,6 +393,14 @@ def _client(token: str, base: str | None = None) -> httpx.Client:
 
 
 def serve(*, once: bool, state: WorkerState = STATE) -> int:
+    # R5.1.2: FIRST, before any child process exists (selftest already spawns
+    # some): same-UID processes must not read this process's startup
+    # environment or memory through procfs. No protection, no worker.
+    try:
+        process_protection.make_non_dumpable()
+    except process_protection.ProcessProtectionError as exc:
+        logger.error("worker not started: process protection unavailable (%s)", exc)
+        return EX_CONFIG
     if selftest() != 0:
         return EX_CONFIG  # fail closed: never claim work this host cannot isolate
     worker_id = os.environ.get("GWA_WORKER_ID") or socket.gethostname()
@@ -458,6 +472,10 @@ def main(argv: list[str] | None = None) -> int:
         except WorkerConfigError as exc:
             print(json.dumps({"ready": False, "reason": str(exc)}))
             return 1
+        try:
+            process_protection.make_non_dumpable()
+        except process_protection.ProcessProtectionError:
+            pass  # reported as a failed check below
         report = worker_preflight.run_preflight(isolation=mode, work_root=work_root())
         print(report.to_json())
         return 0 if report.ok else 1
