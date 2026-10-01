@@ -8,6 +8,7 @@ import { SupervisedImportPanel, type SourceImportApi } from "./SupervisedImportP
 
 const capability: SourceImportCapability = {
   enabled: true,
+  access: "global",
   worker_configured: true,
   max_bytes: 100 * 1024 * 1024,
   api_base_url_configured: true,
@@ -82,9 +83,19 @@ async function openImport(client: SourceImportApi) {
 
 describe("SupervisedImportPanel", () => {
   it("presents a supervised import, never AI generation, and is off when the server says so", async () => {
-    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={api({ capability: vi.fn().mockResolvedValue({ ...capability, enabled: false }) })} />);
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={api({ capability: vi.fn().mockResolvedValue({ ...capability, enabled: false, access: "disabled" }) })} />);
     expect(await screen.findByText(/not enabled on this server/)).toBeTruthy();
     expect(screen.queryByText(/Generate with Higgsfield/i)).toBeNull();
+  });
+
+  it("marks scoped canary access for this business, and shows no canary note when globally enabled", async () => {
+    const scoped = api({ capability: vi.fn().mockResolvedValue({ ...capability, access: "scoped" }) });
+    const { unmount } = render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={scoped} />);
+    expect(await screen.findByText(/Canary access: supervised imports are enabled for this business only/)).toBeTruthy();
+    unmount();
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={api()} />);
+    expect(await screen.findByText(/Supervised import: upload a website ZIP/)).toBeTruthy();
+    expect(screen.queryByText(/Canary access/)).toBeNull();
   });
 
   it("explains the supervised workflow and uploads a ZIP", async () => {

@@ -52,6 +52,10 @@ router = APIRouter(prefix="/businesses/{business_id}/source-imports", tags=["sou
 
 class SourceImportCapability(BaseModel):
     enabled: bool
+    # R5.1.1: "global" (feature flag), "scoped" (THIS business is allowlisted
+    # for a supervised canary while the flag is off) or "disabled". The
+    # allowlist itself is never returned.
+    access: Literal["global", "scoped", "disabled"]
     worker_configured: bool
     max_bytes: int
     api_base_url_configured: bool
@@ -119,9 +123,25 @@ class DecisionRequest(BaseModel):
 # --- Helpers ----------------------------------------------------------------------------
 
 
-def _require_enabled() -> None:
-    if not settings.supervised_source_imports_enabled:
+def require_supervised_import_access(
+    business_id: uuid.UUID,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> uuid.UUID:
+    """THE gate of every supervised-import lifecycle route (R5.1.1).
+
+    1. authentication + tenant authorization: `get_current_tenant_id` (the
+       session cookie and a TenantAccess grant for X-Tenant-Id) — unchanged;
+    2. feature availability for THIS path business: the global flag, or the
+       business explicitly allowlisted (scoped canary) — else 403;
+    3. the business belongs to the caller's tenant — else 404.
+    Returns the authorized tenant id. Routes then load rows filtered by
+    BOTH tenant and this business id, so an import of another business can
+    never be reached through an allowlisted business's path."""
+    if imports.supervised_import_access(business_id) == "disabled":
         raise AppError("This feature is not available.", code="feature_not_available", status_code=403)
+    _business(session, tenant_id, business_id)
+    return tenant_id
 
 
 def _business(session: Session, tenant_id: uuid.UUID, business_id: uuid.UUID) -> None:
@@ -254,8 +274,10 @@ def capability(
     session: Session = Depends(get_session),
 ) -> SourceImportCapability:
     _business(session, tenant_id, business_id)
+    access = imports.supervised_import_access(business_id)
     return SourceImportCapability(
-        enabled=settings.supervised_source_imports_enabled,
+        enabled=access != "disabled",
+        access=access,
         worker_configured=imports.worker_configured(),
         max_bytes=settings.supervised_source_max_bytes,
         api_base_url_configured=public_origin_problem(resolve_public_api_base_url()) is None,
@@ -296,13 +318,11 @@ class SourceUploadLimitMiddleware:
 async def create_source_import(
     business_id: uuid.UUID,
     file: UploadFile = File(...),
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> SourceImportRead:
-    _require_enabled()
-    _business(session, tenant_id, business_id)
     data = await file.read(settings.supervised_source_max_bytes + 1)
     try:
         row = imports.import_source(
@@ -322,11 +342,9 @@ async def create_source_import(
 @router.get("", response_model=list[SourceImportSummary])
 def list_source_imports(
     business_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     session: Session = Depends(get_session),
 ) -> list[SourceImportSummary]:
-    _require_enabled()
-    _business(session, tenant_id, business_id)
     rows = session.scalars(
         select(SourceImport)
         .where(SourceImport.tenant_id == tenant_id, SourceImport.business_id == business_id)
@@ -343,10 +361,9 @@ def list_source_imports(
 def get_source_import(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     session: Session = Depends(get_session),
 ) -> SourceImportRead:
-    _require_enabled()
     return _read(session, _row(session, tenant_id, business_id, import_id))
 
 
@@ -354,13 +371,12 @@ def get_source_import(
 def source_import_diagnostics(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> dict:
     """Secondary diagnostic view: the raw SourceManifest and plan (binary
     operation content summarized by its SHA-256)."""
-    _require_enabled()
     row = _row(session, tenant_id, business_id, import_id)
     manifest = json.loads(artifact_storage.load(row.manifest_key)) if row.manifest_key else None
     plan = None
@@ -377,11 +393,10 @@ def decide(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
     body: DecisionRequest,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> SourceImportRead:
-    _require_enabled()
     row = _row(session, tenant_id, business_id, import_id)
     try:
         imports.record_decision(
@@ -402,11 +417,10 @@ def decide(
 def reinspect(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> SourceImportRead:
-    _require_enabled()
     row = _row(session, tenant_id, business_id, import_id)
     try:
         imports.reinspect(session, row=row, artifact_storage=artifact_storage)
@@ -419,12 +433,11 @@ def reinspect(
 def build(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> SourceImportRead:
-    _require_enabled()
     row = _row(session, tenant_id, business_id, import_id)
     try:
         imports.start_build(session, row=row, user=user, artifact_storage=artifact_storage)
