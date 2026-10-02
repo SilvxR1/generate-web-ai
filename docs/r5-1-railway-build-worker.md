@@ -364,20 +364,26 @@ is in the allowlist. Otherwise every lifecycle route answers 403
 - the worker protocol;
 - the artifact gate, approval and publish.
 
-**One gate.** All seven lifecycle routes depend on
-`require_supervised_import_access`; a test asserts this.
+**Write gate and read gate (R5.1.3).** The four routes that create or
+change the supervised workflow (upload, decisions, reinspect, build) depend
+on `require_supervised_import_access`. The three read routes (list, get,
+diagnostics) depend on `require_supervised_import_read`; see section 18. A
+test asserts the exact split.
 
 **Capability response.** `capability` returns `access`
 (`global` | `scoped` | `disabled`) for the caller's own authorized
-business. It never returns the allowlist.
+business, plus (R5.1.3) `mode` (`write` | `read_only` | `disabled`),
+`write_enabled` and `read_enabled`. `enabled` keeps meaning write access.
+It never returns the allowlist.
 
 **Fail closed.** Any malformed entry (`*`, `all`, a prefix, braces, a URN,
 hex without hyphens, junk) disables scoped access for every business. The
 failure is logged without the configured values.
 
-**Removing an entry.** It closes all seven routes for that business
-immediately. A job already queued still completes its build; publishing
-always requires a human approval of the exact artifact.
+**Removing an entry.** It closes the four write routes for that business
+immediately. Its existing imports stay readable (section 18). A job already
+queued still completes its build; publishing always requires a human
+approval of the exact artifact.
 
 **Disable.** Clear `SUPERVISED_SOURCE_IMPORTS_BUSINESS_IDS` (and keep the
 global flag OFF).
@@ -444,3 +450,44 @@ and network, can see that the worker exists (`/proc/<pid>/cmdline`,
 owner-reviewed exports, a worker with no platform credential and no publish
 authority, and full re-validation by the control plane. Full OS isolation
 would need the R4 sandbox, which Railway cannot run.
+
+## 18. Supervised post-build lifecycle (R5.1.3)
+
+**The defect.** The runbook closes scoped access as soon as the build job
+exists. Before R5.1.3, the read routes sat behind the same gate as the
+write routes. In the real Nexo run this meant Studio could no longer
+refresh the import, and after a reload the panel disappeared. The panel
+also did not poll, so it kept the draft returned by `start_build`
+(`building`) and Preview stayed disabled, even though the server draft was
+`ready`. The preview route itself never depended on supervised access.
+
+**The fix.**
+
+- *Write capability* (upload, review decisions, reinspect, build): the global
+  flag OR the scoped allowlist. Unchanged.
+- *Read capability* (list, get, diagnostics): write access, OR this tenant's
+  business already has at least one supervised import of its own. Session,
+  `TenantAccess` and business ownership are checked exactly as before, and
+  rows are filtered by tenant AND path business. A business that never had
+  an import still answers 403 `feature_not_available`, so this is not a
+  read bypass.
+- *Capability*: `mode` = `write` / `read_only` / `disabled`.
+- *Studio*: in `read_only` mode the panel lists existing imports with their
+  source identity, findings, plan and artifact state. It hides upload,
+  review decisions, Re-inspect and Build. Visual QA, Preview, Approve and
+  Publish keep their own server-side authorization and state checks. While
+  the selected import is `building`, the panel re-reads it every 4 s:
+  - one request at a time;
+  - failures back off up to 30 s and never replace the last good state;
+  - it stops at a terminal state, on unmount, or after 300 attempts.
+
+**Reads do not mutate the workflow.** A read still runs the existing
+derived-state sync: staleness against BusinessTruth, and import status from
+its job. It never creates an import or a job, never records a decision, and
+never starts a build.
+
+**Note.** `POST /website-drafts/{id}/visual-qa` (re-running Visual QA) is
+still gated by `generative_website_builds_enabled`. A supervised build's
+Visual QA is produced by the worker and stored with the artifact, so this
+does not block Preview.
+
