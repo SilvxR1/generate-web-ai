@@ -1398,9 +1398,15 @@ export function runGenerativeVisualQa(
 // --- R5: supervised source imports (operator-uploaded Higgsfield exports) ---
 
 export interface SourceImportCapability {
+  /** WRITE capability (upload, review decisions, re-inspect, build). */
   enabled: boolean;
   /** R5.1.1: "scoped" = only THIS business is allowlisted (supervised canary) while the global feature is off. */
   access: "global" | "scoped" | "disabled";
+  /** R5.1.3: "read_only" = write access is closed but this business's EXISTING imports stay readable.
+   * Optional so an older API (which only sends `enabled`) keeps working. */
+  mode?: "write" | "read_only" | "disabled";
+  write_enabled?: boolean;
+  read_enabled?: boolean;
   worker_configured: boolean;
   max_bytes: number;
   api_base_url_configured: boolean;

@@ -164,7 +164,19 @@ export interface DetailActions {
   diagnostics: () => Promise<unknown>;
 }
 
-export function SourceImportDetail({ item, actions }: { item: SourceImport; actions: DetailActions }) {
+export function SourceImportDetail({
+  item,
+  actions,
+  canMutate = true,
+}: {
+  item: SourceImport;
+  actions: DetailActions;
+  /** R5.1.3: false when supervised-import WRITE access is closed. The import,
+   * its draft and artifact stay visible; review decisions, re-inspection and
+   * Build are hidden. Visual QA / preview / approve / publish keep their own
+   * server-side authorization and state checks. */
+  canMutate?: boolean;
+}) {
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
   const inspection = item.inspection ?? {};
   const findings = inspection.findings ?? [];
@@ -237,7 +249,12 @@ export function SourceImportDetail({ item, actions }: { item: SourceImport; acti
         <Section title="Needs your review">
           <ul>
             {reviews.map((f) => (
-              <FindingRow key={f.id} finding={f} canDecide={item.status === "needs_review"} onDecide={actions.decide} />
+              <FindingRow
+                key={f.id}
+                finding={f}
+                canDecide={canMutate && item.status === "needs_review"}
+                onDecide={actions.decide}
+              />
             ))}
           </ul>
         </Section>
@@ -348,14 +365,16 @@ export function SourceImportDetail({ item, actions }: { item: SourceImport; acti
         </Section>
       )}
 
-      <div className="source-import__actions">
-        <button type="button" onClick={() => void actions.reinspect()}>
-          Re-inspect
-        </button>
-        <button type="button" disabled={!canBuild} onClick={() => void actions.build()}>
-          Build on the build worker
-        </button>
-      </div>
+      {canMutate && (
+        <div className="source-import__actions">
+          <button type="button" onClick={() => void actions.reinspect()}>
+            Re-inspect
+          </button>
+          <button type="button" disabled={!canBuild} onClick={() => void actions.build()}>
+            Build on the build worker
+          </button>
+        </div>
+      )}
 
       {draft && (
         <Section title="Artifact">
@@ -424,6 +443,16 @@ export function SourceImportDetail({ item, actions }: { item: SourceImport; acti
   );
 }
 
+/** R5.1.3 — while the selected import is building, its authoritative state is
+ * re-read on this interval (one request at a time). Failures back off up to
+ * POLL_MAX_BACKOFF_MS and never replace the last good state; polling stops
+ * at a terminal state, on unmount, or after POLL_MAX_ATTEMPTS (the worker's
+ * lease is 15 minutes, so the bound outlasts any real build). */
+export const POLL_INTERVAL_MS = 4000;
+export const POLL_MAX_BACKOFF_MS = 30000;
+export const POLL_MAX_ATTEMPTS = 300;
+const POLL_FAILURES_BEFORE_NOTICE = 3;
+
 /** R5 — supervised import of a website exported from Higgsfield after the
  * owner reviewed it. GWA does NOT generate or fetch anything from
  * Higgsfield: the operator uploads the ZIP; GWA inspects, asks for review,
@@ -444,6 +473,7 @@ export function SupervisedImportPanel({
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pollNotice, setPollNotice] = useState<string | null>(null);
 
   const refreshList = useCallback(() => api.list(businessId, tenantId).then(setItems), [api, businessId, tenantId]);
 
@@ -452,7 +482,7 @@ export function SupervisedImportPanel({
       .capability(businessId, tenantId)
       .then((cap) => {
         setCapability(cap);
-        return cap.enabled ? refreshList() : undefined;
+        return (cap.read_enabled ?? cap.enabled) ? refreshList() : undefined;
       })
       .catch((cause: unknown) => setError(friendlyErrorMessage(cause, "Could not load supervised imports.")));
   }, [api, businessId, tenantId, refreshList]);
@@ -469,6 +499,49 @@ export function SupervisedImportPanel({
     }
   };
 
+  // R5.1.3: follow a running build to its outcome. Keyed on the import id
+  // only, so each fresh "building" response does not restart the loop.
+  const pollingId = selected?.status === "building" ? selected.id : null;
+  useEffect(() => {
+    if (pollingId === null) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    let failures = 0;
+    const tick = async () => {
+      attempts += 1;
+      try {
+        const fresh = await api.get(businessId, pollingId, tenantId);
+        if (cancelled) return;
+        failures = 0;
+        setPollNotice(null);
+        setSelected((current) => (current?.id === fresh.id ? fresh : current));
+        if (fresh.status !== "building") {
+          void refreshList().catch(() => undefined);
+          return;
+        }
+      } catch {
+        if (cancelled) return;
+        failures += 1;
+        if (failures >= POLL_FAILURES_BEFORE_NOTICE) {
+          setPollNotice("Can't reach the server right now; still checking the build…");
+        }
+      }
+      if (attempts >= POLL_MAX_ATTEMPTS) {
+        setPollNotice("Stopped checking automatically. Reload this import to see the latest state.");
+        return;
+      }
+      const delay = failures === 0 ? POLL_INTERVAL_MS : Math.min(POLL_INTERVAL_MS * 2 ** failures, POLL_MAX_BACKOFF_MS);
+      timer = setTimeout(() => void tick(), delay);
+    };
+    timer = setTimeout(() => void tick(), POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+      setPollNotice(null);
+    };
+  }, [api, businessId, tenantId, pollingId, refreshList]);
+
   const reload = (importId: string) =>
     api.get(businessId, importId, tenantId).then((item) => {
       setSelected(item);
@@ -478,7 +551,9 @@ export function SupervisedImportPanel({
   if (capability === null) {
     return error ? <p className="banner banner--error">{error}</p> : <p className="field-hint">Loading…</p>;
   }
-  if (!capability.enabled) {
+  const canWrite = capability.write_enabled ?? capability.enabled;
+  const canRead = capability.read_enabled ?? capability.enabled;
+  if (!canRead) {
     return <p className="field-hint">Supervised website imports are not enabled on this server.</p>;
   }
 
@@ -523,37 +598,46 @@ export function SupervisedImportPanel({
           everyone else.
         </p>
       )}
-      {!capability.worker_configured && (
+      {!canWrite && (
+        <p className="banner banner--warning" role="note">
+          Read-only: new supervised imports, review decisions and builds are closed for this business. Existing
+          imports, their builds and artifacts stay visible; preview, approval and publishing keep their own checks.
+        </p>
+      )}
+      {canWrite && !capability.worker_configured && (
         <p className="banner banner--warning">No build worker is configured: you can import and review, not build.</p>
       )}
       {error && <p className="banner banner--error">{error}</p>}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!file) return;
-          void run(
-            () =>
-              api.upload(businessId, file, tenantId).then((item) => {
-                setSelected(item);
-                return refreshList();
-              }),
-            "The import failed.",
-          );
-        }}
-      >
-        <label>
-          Export ZIP (max {Math.round(capability.max_bytes / 1024 / 1024)} MB)
-          <input
-            type="file"
-            accept=".zip,application/zip"
-            aria-label="Export ZIP"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-          />
-        </label>
-        <button type="submit" disabled={!file || busy}>
-          Import and inspect
-        </button>
-      </form>
+      {pollNotice && <p className="field-hint">{pollNotice}</p>}
+      {canWrite && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!file) return;
+            void run(
+              () =>
+                api.upload(businessId, file, tenantId).then((item) => {
+                  setSelected(item);
+                  return refreshList();
+                }),
+              "The import failed.",
+            );
+          }}
+        >
+          <label>
+            Export ZIP (max {Math.round(capability.max_bytes / 1024 / 1024)} MB)
+            <input
+              type="file"
+              accept=".zip,application/zip"
+              aria-label="Export ZIP"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+          </label>
+          <button type="submit" disabled={!file || busy}>
+            Import and inspect
+          </button>
+        </form>
+      )}
 
       {items.length > 0 && (
         <ul className="source-import__list" aria-label="Imports">
@@ -567,7 +651,7 @@ export function SupervisedImportPanel({
         </ul>
       )}
 
-      {selected && actions && <SourceImportDetail item={selected} actions={actions} />}
+      {selected && actions && <SourceImportDetail item={selected} actions={actions} canMutate={canWrite} />}
     </div>
   );
 }

@@ -24,7 +24,7 @@ from app.db.models.user import User
 from app.dependencies import get_current_tenant_id, get_current_user
 from app.domain.enums import BusinessStatus, BusinessVertical, UserRole
 from app.main import app
-from app.routers.source_imports import require_supervised_import_access, router
+from app.routers.source_imports import require_supervised_import_access, require_supervised_import_read, router
 from app.security.passwords import hash_password
 from tests.test_r5_source_imports import (  # noqa: F401 — shared fixtures
     Env,
@@ -33,6 +33,10 @@ from tests.test_r5_source_imports import (  # noqa: F401 — shared fixtures
 )
 
 SEVEN = ("upload", "list", "get", "diagnostics", "decisions", "reinspect", "build")
+# R5.1.3: the write gate guards the four mutating routes; the three reads also
+# serve a business's EXISTING imports once write access is closed.
+WRITES = ("upload", "decisions", "reinspect", "build")
+READS = ("list", "get", "diagnostics")
 
 
 def _scope(monkeypatch: pytest.MonkeyPatch, *, global_on: bool = False, allow: str = "") -> None:
@@ -121,10 +125,10 @@ def test_access_resolution(monkeypatch):
     assert imports.supervised_import_access(a) == "disabled"
 
 
-# --- One authoritative gate on every lifecycle route ---------------------------------------------
+# --- One write gate on every mutating route; one read gate on every read (R5.1.3) ------------------
 
 
-def test_every_lifecycle_route_uses_the_one_gate_and_only_capability_does_not():
+def test_every_mutating_route_uses_the_write_gate_and_every_read_the_read_gate():
     def deps(route) -> set:
         found, stack = set(), list(route.dependant.dependencies)
         while stack:
@@ -133,13 +137,21 @@ def test_every_lifecycle_route_uses_the_one_gate_and_only_capability_does_not():
             stack.extend(dep.dependencies)
         return found
 
-    gated = {
-        (method, r.path): require_supervised_import_access in deps(r)  # type: ignore[attr-defined]
+    gates = {
+        (method, r.path): (
+            require_supervised_import_access in deps(r),  # type: ignore[attr-defined]
+            require_supervised_import_read in deps(r),  # type: ignore[attr-defined]
+        )
         for r in router.routes
         for method in r.methods  # type: ignore[attr-defined]
     }
-    assert gated.pop(("GET", "/businesses/{business_id}/source-imports/capability")) is False
-    assert len(gated) == 7 and all(gated.values()), gated
+    base = "/businesses/{business_id}/source-imports"
+    assert gates.pop(("GET", f"{base}/capability")) == (False, False)
+    writes = {("POST", base), *(("POST", f"{base}/{{import_id}}/{a}") for a in ("decisions", "reinspect", "build"))}
+    reads = {("GET", base), ("GET", f"{base}/{{import_id}}"), ("GET", f"{base}/{{import_id}}/diagnostics")}
+    assert set(gates) == writes | reads, gates
+    assert all(gates[key] == (True, False) for key in writes), gates  # a mutation never takes the read gate
+    assert all(gates[key] == (False, True) for key in reads), gates
 
 
 def test_global_off_and_empty_allowlist_refuses_all_seven(env: Env, monkeypatch):
@@ -149,6 +161,7 @@ def test_global_off_and_empty_allowlist_refuses_all_seven(env: Env, monkeypatch)
         assert response.status_code == 403 and response.json()["error"]["code"] == "feature_not_available", route
     capability = _capability(env, env.business.id)
     assert capability["access"] == "disabled" and capability["enabled"] is False
+    assert capability["mode"] == "disabled" and capability["read_enabled"] is False
 
 
 def test_an_allowlisted_business_gets_the_full_supervised_workflow_with_the_feature_off(
@@ -187,9 +200,12 @@ def test_an_import_of_one_business_is_unreachable_through_another_businesss_path
     import_id = uuid.UUID(env.upload(_variant_zip(tmp_path, "a")).json()["id"])
     for route in ("get", "diagnostics", "decisions", "reinspect", "build"):
         assert _call(env.client, other.id, route, env.headers, import_id).status_code == 404, route
-    _scope(monkeypatch, allow=f"{other.id}")  # only B allowlisted now: A's import is behind the gate again
-    for route in ("get", "build"):
+    _scope(monkeypatch, allow=f"{other.id}")  # only B allowlisted now: A's import is read-only (R5.1.3)
+    assert _call(env.client, env.business.id, "get", env.headers, import_id).status_code == 200
+    for route in WRITES:
         assert _call(env.client, env.business.id, route, env.headers, import_id).status_code == 403, route
+    for route in ("get", "diagnostics"):  # B's write access still never reaches A's import
+        assert _call(env.client, other.id, route, env.headers, import_id).status_code == 404, route
 
 
 @pytest.mark.parametrize("with_allowlist", [False, True])
@@ -229,8 +245,10 @@ def test_removing_or_changing_the_allowlist_closes_subsequent_actions(env: Env, 
     _scope(monkeypatch, allow=f"{env.business.id}")
     import_id = uuid.UUID(env.upload(_variant_zip(tmp_path, "removed")).json()["id"])
     _scope(monkeypatch)
-    for route in SEVEN:
+    for route in WRITES:
         assert _call(env.client, env.business.id, route, env.headers, import_id).status_code == 403, route
+    for route in READS:  # R5.1.3: the existing import stays readable
+        assert _call(env.client, env.business.id, route, env.headers, import_id).status_code == 200, route
     _scope(monkeypatch, allow=f"{uuid.uuid4()}")  # changed to another business
     assert _call(env.client, env.business.id, "build", env.headers, import_id).status_code == 403
 

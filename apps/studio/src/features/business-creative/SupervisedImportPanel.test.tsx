@@ -1,10 +1,10 @@
 // R5: the supervised import panel — a supervised workflow (never "AI
 // generation"), distinct lifecycle stages, audited review decisions, and
 // preview/approve/publish only through the exact-artifact gates.
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SourceImport, SourceImportCapability } from "../../lib/api";
-import { SupervisedImportPanel, type SourceImportApi } from "./SupervisedImportPanel";
+import { POLL_INTERVAL_MS, SupervisedImportPanel, type SourceImportApi } from "./SupervisedImportPanel";
 
 const capability: SourceImportCapability = {
   enabled: true,
@@ -188,3 +188,183 @@ describe("SupervisedImportPanel", () => {
     expect(await screen.findByText("No build worker is configured on this server.")).toBeTruthy();
   });
 });
+
+// R5.1.3 — the post-build lifecycle: the runbook closes write access right
+// after Build, so the panel must follow the build itself and keep existing
+// imports readable (read-only) without the supervised write capability.
+describe("SupervisedImportPanel post-build lifecycle (R5.1.3)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const reviewed = item({ status: "ready_to_build", stage: "ready_to_build", open_reviews: [] });
+  const building = item({
+    status: "building",
+    stage: "building",
+    open_reviews: [],
+    job_status: "running",
+    draft: {
+      id: "d1", status: "building", artifact_sha256: null, approved_artifact_sha256: null, build_error: null,
+      preview_url: null, visual_qa_current: false, visual_qa_passed: null, gate_problems: [],
+    },
+  });
+  const ready = item({
+    status: "preview_ready",
+    stage: "preview_ready",
+    open_reviews: [],
+    job_status: "succeeded",
+    draft: {
+      id: "d1", status: "ready", artifact_sha256: "e".repeat(64), approved_artifact_sha256: null, build_error: null,
+      preview_url: null, visual_qa_current: true, visual_qa_passed: true, gate_problems: [],
+    },
+  });
+  const readOnly: SourceImportCapability = {
+    ...capability,
+    enabled: false,
+    access: "disabled",
+    mode: "read_only",
+    write_enabled: false,
+    read_enabled: true,
+  };
+
+  const preview = () => screen.getByRole("button", { name: "Preview (does not approve)" }) as HTMLButtonElement;
+  const flush = (ms = 0) => act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
+
+  /** Render with real timers (initial load), then switch to fake timers
+   * before opening the import, so the poll loop runs on fake time. */
+  async function openWithFakeTimers(client: SourceImportApi) {
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={client} />);
+    const list = await screen.findByRole("list", { name: "Imports" });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.click(within(list).getByRole("button"));
+    await flush();
+  }
+
+  it("keeps Preview disabled right after Build, then enables it when a poll returns READY", async () => {
+    const get = vi.fn().mockResolvedValueOnce(reviewed).mockResolvedValueOnce(building).mockResolvedValue(ready);
+    const list = vi.fn().mockResolvedValue([reviewed]);
+    const client = api({ list, get, build: vi.fn().mockResolvedValue(building) });
+    await openWithFakeTimers(client);
+    fireEvent.click(screen.getByRole("button", { name: "Build on the build worker" }));
+    await flush();
+    expect(screen.getByRole("status").textContent).toBe("Building and validating on the build worker");
+    expect(preview().disabled).toBe(true);
+
+    await flush(POLL_INTERVAL_MS); // poll 1: still building
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(preview().disabled).toBe(true);
+
+    await flush(POLL_INTERVAL_MS); // poll 2: authoritative READY
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("status").textContent).toBe("Preview ready — not approved yet");
+    expect(preview().disabled).toBe(false);
+    expect(list.mock.calls.length).toBeGreaterThanOrEqual(3); // the list is refreshed at the outcome
+
+    await flush(POLL_INTERVAL_MS * 20); // terminal: polling has stopped
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(client.build).toHaveBeenCalledTimes(1); // polling never mutates anything
+    expect(client.reinspect).not.toHaveBeenCalled();
+    expect(client.decide).not.toHaveBeenCalled();
+  });
+
+  it("stops polling when the panel unmounts and never overlaps requests", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const get = vi.fn().mockImplementation(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return building;
+    });
+    const client = api({ list: vi.fn().mockResolvedValue([building]), get });
+    await openWithFakeTimers(client);
+    await flush(POLL_INTERVAL_MS * 3);
+    const calls = get.mock.calls.length;
+    expect(calls).toBe(4); // the open + one poll per interval
+    expect(maxInFlight).toBe(1);
+    screen.getByRole("status"); // still mounted
+    cleanup();
+    await flush(POLL_INTERVAL_MS * 30);
+    expect(get).toHaveBeenCalledTimes(calls);
+  });
+
+  it("keeps the last good state through a transient polling failure", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce(building) // open
+      .mockRejectedValueOnce(new Error("Network down")) // poll 1 (API restarting)
+      .mockResolvedValue(ready); // poll 2 after back-off
+    const client = api({ list: vi.fn().mockResolvedValue([building]), get });
+    await openWithFakeTimers(client);
+    await flush(POLL_INTERVAL_MS);
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("status").textContent).toBe("Building and validating on the build worker");
+    expect(screen.queryByText("Network down")).toBeNull();
+    expect(document.querySelector(".banner--error")).toBeNull();
+
+    await flush(POLL_INTERVAL_MS); // backing off: not retried yet
+    expect(get).toHaveBeenCalledTimes(2);
+    await flush(POLL_INTERVAL_MS);
+    expect(get).toHaveBeenCalledTimes(3);
+    expect(preview().disabled).toBe(false);
+  });
+
+  it("shows a soft notice, not an error, after repeated polling failures", async () => {
+    const get = vi.fn().mockResolvedValueOnce(building).mockRejectedValue(new Error("Network down"));
+    const client = api({ list: vi.fn().mockResolvedValue([building]), get });
+    await openWithFakeTimers(client);
+    await flush(POLL_INTERVAL_MS * 20);
+    expect(screen.getByText(/still checking the build/)).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Building and validating on the build worker");
+    expect(document.querySelector(".banner--error")).toBeNull();
+  });
+
+  it("read-only: existing imports stay visible, mutations are hidden, Preview works", async () => {
+    const client = api({
+      capability: vi.fn().mockResolvedValue(readOnly),
+      list: vi.fn().mockResolvedValue([ready]),
+      get: vi.fn().mockResolvedValue(ready),
+    });
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    await openImport(client);
+    expect(screen.getByRole("note").textContent).toMatch(/Read-only/);
+    expect(screen.queryByLabelText("Export ZIP")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Import and inspect" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Build on the build worker" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-inspect" })).toBeNull();
+    const identity = screen.getByRole("region", { name: "Source identity" });
+    expect(within(identity).getByText("nexo.zip")).toBeTruthy();
+    expect(within(identity).getByText("a".repeat(12))).toBeTruthy();
+    const artifact = screen.getByRole("region", { name: "Artifact" });
+    expect(within(artifact).getByText("e".repeat(12))).toBeTruthy();
+    expect(within(artifact).getByText("passed (this artifact)")).toBeTruthy();
+    expect(preview().disabled).toBe(false);
+    fireEvent.click(preview());
+    await waitFor(() => expect(client.preview).toHaveBeenCalledWith("biz", "d1", "ten"));
+    expect(client.approve).not.toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it("read-only: review decisions cannot be recorded", async () => {
+    const client = api({ capability: vi.fn().mockResolvedValue(readOnly) });
+    await openImport(client);
+    expect(screen.getByRole("region", { name: "Needs your review" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve finding" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
+  });
+
+  it("fully disabled with no existing imports keeps the existing disabled message", async () => {
+    const client = api({
+      capability: vi
+        .fn()
+        .mockResolvedValue({ ...capability, enabled: false, access: "disabled", mode: "disabled", write_enabled: false, read_enabled: false }),
+    });
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={client} />);
+    expect(await screen.findByText(/not enabled on this server/)).toBeTruthy();
+    expect(client.list).not.toHaveBeenCalled();
+  });
+});
+

@@ -11,8 +11,18 @@
 
 Preview, approve, publish and rollback reuse the existing website-draft and
 website-version routes (the import's `draft_id`), which enforce the R5
-artifact gate. Everything here requires an authenticated tenant member and
-the `supervised_source_imports_enabled` server setting (off by default).
+artifact gate. Everything here requires an authenticated tenant member.
+
+R5.1.3 splits the supervised-import capability in two:
+
+- WRITE (upload, decisions, reinspect, build): the global
+  `supervised_source_imports_enabled` flag or the scoped business
+  allowlist (`require_supervised_import_access`). Closing it stops every
+  NEW supervised mutation.
+- READ (list, get, diagnostics): additionally available, read-only, for a
+  business that already HAS supervised imports of its own
+  (`require_supervised_import_read`). Closing write access right after a
+  build is queued must not hide that import, its draft or its artifact.
 """
 
 import json
@@ -51,11 +61,19 @@ router = APIRouter(prefix="/businesses/{business_id}/source-imports", tags=["sou
 
 
 class SourceImportCapability(BaseModel):
+    # WRITE capability (upload/review/reinspect/build). Kept as `enabled` so
+    # older clients keep their exact behaviour.
     enabled: bool
     # R5.1.1: "global" (feature flag), "scoped" (THIS business is allowlisted
     # for a supervised canary while the flag is off) or "disabled". The
     # allowlist itself is never returned.
     access: Literal["global", "scoped", "disabled"]
+    # R5.1.3: "write" (enabled), "read_only" (write access is closed but THIS
+    # business already has supervised imports, which stay readable) or
+    # "disabled" (no write access and nothing to read).
+    mode: Literal["write", "read_only", "disabled"]
+    write_enabled: bool
+    read_enabled: bool
     worker_configured: bool
     max_bytes: int
     api_base_url_configured: bool
@@ -137,11 +155,50 @@ def require_supervised_import_access(
     3. the business belongs to the caller's tenant — else 404.
     Returns the authorized tenant id. Routes then load rows filtered by
     BOTH tenant and this business id, so an import of another business can
-    never be reached through an allowlisted business's path."""
+    never be reached through an allowlisted business's path.
+
+    R5.1.3: guards only the routes that create or mutate the supervised
+    workflow; existing imports are read through
+    `require_supervised_import_read`."""
     if imports.supervised_import_access(business_id) == "disabled":
         raise AppError("This feature is not available.", code="feature_not_available", status_code=403)
     _business(session, tenant_id, business_id)
     return tenant_id
+
+
+def require_supervised_import_read(
+    business_id: uuid.UUID,
+    tenant_id: uuid.UUID = Depends(get_current_tenant_id),
+    session: Session = Depends(get_session),
+) -> uuid.UUID:
+    """R5.1.3 — the gate of the READ-ONLY supervised-import routes.
+
+    Same authentication and tenant authorization as the write gate
+    (`get_current_tenant_id`), and the business must belong to the caller's
+    tenant (else 404). Readable when write access is open for this business,
+    OR when this tenant's business already has at least one supervised import
+    of its own: closing write access must not hide imports that already
+    exist. A business with neither answers 403 exactly as before, so this is
+    never a read bypass for businesses that never used the feature, and an
+    import of another tenant or business is never counted or reachable (rows
+    are filtered by BOTH tenant and path business)."""
+    if imports.supervised_import_access(business_id) == "disabled" and not _has_imports(
+        session, tenant_id, business_id
+    ):
+        raise AppError("This feature is not available.", code="feature_not_available", status_code=403)
+    _business(session, tenant_id, business_id)
+    return tenant_id
+
+
+def _has_imports(session: Session, tenant_id: uuid.UUID, business_id: uuid.UUID) -> bool:
+    return (
+        session.scalar(
+            select(SourceImport.id)
+            .where(SourceImport.tenant_id == tenant_id, SourceImport.business_id == business_id)
+            .limit(1)
+        )
+        is not None
+    )
 
 
 def _business(session: Session, tenant_id: uuid.UUID, business_id: uuid.UUID) -> None:
@@ -275,9 +332,14 @@ def capability(
 ) -> SourceImportCapability:
     _business(session, tenant_id, business_id)
     access = imports.supervised_import_access(business_id)
+    write = access != "disabled"
+    read = write or _has_imports(session, tenant_id, business_id)
     return SourceImportCapability(
-        enabled=access != "disabled",
+        enabled=write,
         access=access,
+        mode="write" if write else "read_only" if read else "disabled",
+        write_enabled=write,
+        read_enabled=read,
         worker_configured=imports.worker_configured(),
         max_bytes=settings.supervised_source_max_bytes,
         api_base_url_configured=public_origin_problem(resolve_public_api_base_url()) is None,
@@ -342,7 +404,7 @@ async def create_source_import(
 @router.get("", response_model=list[SourceImportSummary])
 def list_source_imports(
     business_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_read),
     session: Session = Depends(get_session),
 ) -> list[SourceImportSummary]:
     rows = session.scalars(
@@ -361,7 +423,7 @@ def list_source_imports(
 def get_source_import(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_read),
     session: Session = Depends(get_session),
 ) -> SourceImportRead:
     return _read(session, _row(session, tenant_id, business_id, import_id))
@@ -371,7 +433,7 @@ def get_source_import(
 def source_import_diagnostics(
     business_id: uuid.UUID,
     import_id: uuid.UUID,
-    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
+    tenant_id: uuid.UUID = Depends(require_supervised_import_read),
     session: Session = Depends(get_session),
     artifact_storage: PrivateArtifactStorage = Depends(get_private_artifact_storage),
 ) -> dict:
