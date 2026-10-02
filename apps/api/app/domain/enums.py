@@ -497,6 +497,13 @@ class SourceImportStatus(StrEnum):
     BUILD_FAILED = "build_failed"  # the worker or trusted intake refused the candidate
     PREVIEW_READY = "preview_ready"  # an immutable artifact passed intake (its draft is READY)
     STALE = "stale"  # BusinessTruth changed since the plan: re-inspect (approvals do not carry over)
+    DISCARDED = "discarded"  # R5.2: an operator discarded it (wrong export, superseded); kept for audit, never acted on
+
+
+class SourceImportEventKind(StrEnum):
+    """R5.2: append-only lifecycle events on a supervised import."""
+
+    DISCARDED = "discarded"
 
 
 class ReviewDecisionKind(StrEnum):

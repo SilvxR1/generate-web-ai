@@ -11,6 +11,22 @@ from datetime import datetime, timedelta
 DEFAULT_MIN_SUBMIT_SECONDS = 2.0
 
 
+def spam_reason(
+    *,
+    honeypot_value: str,
+    rendered_at: datetime | None,
+    now: datetime,
+    min_submit_seconds: float = DEFAULT_MIN_SUBMIT_SECONDS,
+) -> str | None:
+    """R5.2: which check fired ("honeypot" | "too_fast"), or None — so the
+    silent drop can be logged by reason only, never with submitted data."""
+    if honeypot_value.strip():
+        return "honeypot"
+    if rendered_at is not None and now - rendered_at < timedelta(seconds=min_submit_seconds):
+        return "too_fast"
+    return None
+
+
 def is_spam(
     *,
     honeypot_value: str,

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 from app.db.models.columns import str_enum
 from app.db.models.mixins import TenantScopedMixin, TimestampMixin, UUIDPrimaryKeyMixin
-from app.domain.enums import ReviewDecisionKind, SourceImportStatus
+from app.domain.enums import ReviewDecisionKind, SourceImportEventKind, SourceImportStatus
 
 
 class SourceImport(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
@@ -60,6 +60,25 @@ class SourceImport(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
         ForeignKey("website_drafts.id", ondelete="SET NULL"), nullable=True, index=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SourceImportEvent(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):
+    """R5.2: an append-only lifecycle event on a supervised import (today:
+    an operator discarding it). The import row, its immutable snapshot and
+    every review decision are kept; rows here are never updated or deleted
+    by the application."""
+
+    __tablename__ = "source_import_events"
+
+    source_import_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("source_imports.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[SourceImportEventKind] = mapped_column(str_enum(SourceImportEventKind, 30), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    actor_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    snapshot_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class SourceReviewDecision(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base):

@@ -236,6 +236,22 @@ def _chromium_launches() -> str:
         return f"cannot launch: {type(exc).__name__}: {first[:200]}"
 
 
+def init_protection(proc_root: str = "/proc") -> tuple[bool, str]:
+    """R5.2: when the worker is NOT PID 1 (it runs under app.worker.init),
+    PID 1 holds the same startup environment, so it must be unreadable to
+    this UID too. A dumpable init (e.g. stock tini) fails closed here."""
+    if os.getpid() == 1:
+        return True, "the worker is PID 1 (its own protection applies)"
+    try:
+        with open(f"{proc_root}/1/environ", "rb") as handle:
+            handle.read(1)
+    except PermissionError:
+        return True, "PID 1's environment is unreadable to this user"
+    except OSError as exc:
+        return True, f"PID 1's environment is not accessible ({type(exc).__name__})"
+    return False, "PID 1's environment is readable by this user (a dumpable init would expose the token)"
+
+
 def run_preflight(
     *,
     environ: Mapping[str, str] | None = None,
@@ -260,6 +276,8 @@ def run_preflight(
             else "the process is dumpable (PR_SET_DUMPABLE not applied)",
         )
     )
+    init_ok, init_detail = init_protection()
+    add(Check("init_protection", init_ok, init_detail))
     forbidden = forbidden_environment(environ)
     detail = f"forbidden variables present: {', '.join(forbidden)}" if forbidden else "none present"
     add(Check("no_platform_credentials", not forbidden, detail))

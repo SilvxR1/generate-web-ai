@@ -1422,7 +1422,9 @@ export type SourceImportStatus =
   | "building"
   | "build_failed"
   | "preview_ready"
-  | "stale";
+  | "stale"
+  /** R5.2: discarded by an operator (wrong export / superseded); kept for audit, never acted on. */
+  | "discarded";
 
 export interface SourceFinding {
   id: string;
@@ -1470,6 +1472,19 @@ export interface SourceDraftState {
   visual_qa_current: boolean;
   visual_qa_passed: boolean | null;
   gate_problems: string[];
+  /** R5.2: form submissions that reached the API from this draft's Private Preview (never stored as leads). */
+  preview_form_submissions?: number;
+  preview_form_last_at?: string | null;
+}
+
+/** R5.2: an append-only lifecycle event on a supervised import (e.g. it was discarded). */
+export interface SourceImportEvent {
+  kind: string;
+  reason: string;
+  previous_status: string;
+  actor_email: string;
+  snapshot_sha256: string;
+  created_at: string;
 }
 
 export interface SourceInspection {
@@ -1515,6 +1530,7 @@ export interface SourceImport extends SourceImportSummary {
   job_failure: string | null;
   error: string | null;
   draft: SourceDraftState | null;
+  events?: SourceImportEvent[];
 }
 
 const sourceImports = (businessId: string) => `/businesses/${businessId}/source-imports`;
@@ -1584,4 +1600,24 @@ export function reinspectSourceImport(businessId: string, importId: string, tena
 
 export function buildSourceImport(businessId: string, importId: string, tenantId: string): Promise<SourceImport> {
   return requestJson(`${sourceImports(businessId)}/${importId}/build`, { method: "POST" }, tenantId);
+}
+
+/** R5.2: discard a wrong or superseded import (nothing is deleted; an audit event is recorded). */
+export function discardSourceImport(
+  businessId: string,
+  importId: string,
+  reason: string,
+  tenantId: string,
+): Promise<SourceImport> {
+  return requestJson(
+    `${sourceImports(businessId)}/${importId}/discard`,
+    { method: "POST", body: JSON.stringify({ reason }) },
+    tenantId,
+  );
+}
+
+/** R5.2: SHA-256 of a local file, computed in the browser (the file is not sent anywhere). */
+export async function sha256OfFile(file: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

@@ -66,6 +66,8 @@ function api(overrides: Partial<SourceImportApi> = {}): SourceImportApi {
     decide: vi.fn().mockResolvedValue(item({ status: "ready_to_build", stage: "ready_to_build", open_reviews: [] })),
     reinspect: vi.fn().mockResolvedValue(current),
     build: vi.fn().mockResolvedValue(current),
+    discard: vi.fn().mockResolvedValue(current),
+    hashFile: vi.fn().mockResolvedValue("a".repeat(64)),
     visualQa: vi.fn().mockResolvedValue({}),
     preview: vi.fn().mockResolvedValue({ preview_url: "https://p.example" }),
     approve: vi.fn().mockResolvedValue({}),
@@ -104,7 +106,7 @@ describe("SupervisedImportPanel", () => {
     expect(await screen.findByText(/never contacts Higgsfield/)).toBeTruthy();
     const file = new File(["PK"], "nexo.zip", { type: "application/zip" });
     fireEvent.change(screen.getByLabelText("Export ZIP"), { target: { files: [file] } });
-    fireEvent.click(screen.getByRole("button", { name: "Import and inspect" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Import this exact file" }));
     await waitFor(() => expect(client.upload).toHaveBeenCalledWith("biz", file, "ten"));
   });
 
@@ -365,6 +367,128 @@ describe("SupervisedImportPanel post-build lifecycle (R5.1.3)", () => {
     render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={client} />);
     expect(await screen.findByText(/not enabled on this server/)).toBeTruthy();
     expect(client.list).not.toHaveBeenCalled();
+  });
+});
+
+// R5.2 — pre-upload confirmation, SHA-256 cross-check, discard, Private Preview notice.
+describe("SupervisedImportPanel pre-client hardening (R5.2)", () => {
+  const nexoSha = "f3fbc3e76caf53f8df4ae6d6819be7afcd24190af396172cd0ca68de31e0ea8f";
+  const lumenSha = "d45ee49f033bcfb495db1f18c7fb87ea2867705a577190b72e1246976fc8231a";
+  const ready = item({
+    status: "preview_ready",
+    stage: "preview_ready",
+    open_reviews: [],
+    draft: {
+      id: "d1", status: "ready", artifact_sha256: "e".repeat(64), approved_artifact_sha256: null, build_error: null,
+      preview_url: null, visual_qa_current: true, visual_qa_passed: true, gate_problems: [],
+    },
+  });
+
+  it("confirms the exact file (name, size, local SHA-256, target business) before uploading anything", async () => {
+    const hashFile = vi.fn().mockResolvedValue(nexoSha);
+    const client = api({ hashFile, upload: vi.fn().mockResolvedValue(item({ zip_sha256: nexoSha })) });
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" businessName="Nexo Reformas" api={client} />);
+    const file = new File(["PK-nexo"], "nexo-reformas-web.zip", { type: "application/zip" });
+    fireEvent.change(await screen.findByLabelText("Export ZIP"), { target: { files: [file] } });
+    const confirm = screen.getByRole("region", { name: "Confirm the file to import" });
+    expect(within(confirm).getByText("nexo-reformas-web.zip")).toBeTruthy();
+    expect(within(confirm).getByText(/7 bytes/)).toBeTruthy();
+    expect(await within(confirm).findByText(nexoSha)).toBeTruthy();
+    expect(within(confirm).getByText("Nexo Reformas")).toBeTruthy();
+    expect(hashFile).toHaveBeenCalledWith(file);
+    expect(client.upload).not.toHaveBeenCalled(); // nothing leaves the browser before the confirmation
+    fireEvent.click(within(confirm).getByRole("button", { name: "Import this exact file" }));
+    await waitFor(() => expect(client.upload).toHaveBeenCalledWith("biz", file, "ten"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("changing the selected file invalidates the confirmation", async () => {
+    const hashFile = vi.fn().mockImplementation((f: File) => Promise.resolve(f.name === "a.zip" ? lumenSha : nexoSha));
+    const client = api({ hashFile, upload: vi.fn().mockResolvedValue(item({ zip_sha256: nexoSha })) });
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" businessName="Nexo Reformas" api={client} />);
+    const input = await screen.findByLabelText("Export ZIP");
+    const first = new File(["x"], "a.zip", { type: "application/zip" });
+    const second = new File(["y"], "b.zip", { type: "application/zip" });
+    fireEvent.change(input, { target: { files: [first] } });
+    expect(await screen.findByText(lumenSha)).toBeTruthy();
+    fireEvent.change(input, { target: { files: [second] } });
+    expect(await screen.findByText(nexoSha)).toBeTruthy();
+    expect(screen.queryByText(lumenSha)).toBeNull();
+    expect(screen.queryByText("a.zip")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Import this exact file" }));
+    await waitFor(() => expect(client.upload).toHaveBeenCalledWith("biz", second, "ten"));
+    expect(client.upload).toHaveBeenCalledTimes(1);
+  });
+
+  it("flags a hard error when the server's SHA-256 differs from the confirmed file", async () => {
+    const client = api({
+      hashFile: vi.fn().mockResolvedValue(nexoSha),
+      upload: vi.fn().mockResolvedValue(item({ id: "imp-x", zip_sha256: lumenSha })),
+    });
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" businessName="Nexo Reformas" api={client} />);
+    fireEvent.change(await screen.findByLabelText("Export ZIP"), {
+      target: { files: [new File(["x"], "nexo-reformas-web.zip")] },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Import this exact file" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(lumenSha);
+    expect(alert.textContent).toContain(nexoSha);
+    expect(alert.textContent).toMatch(/Do not build this import/);
+  });
+
+  it("discards an import with a required reason and keeps it only in the audit history", async () => {
+    const wrong = item({ id: "imp-w", status: "ready_to_build", stage: "ready_to_build", open_reviews: [] });
+    const gone = item({
+      id: "imp-w",
+      status: "discarded",
+      stage: "discarded",
+      open_reviews: [],
+      events: [
+        { kind: "discarded", reason: "Wrong export (Lumen) uploaded under Nexo", previous_status: "ready_to_build",
+          actor_email: "owner@example.com", snapshot_sha256: lumenSha, created_at: "2026-10-02T10:00:00Z" },
+      ],
+    });
+    const list = vi.fn().mockResolvedValueOnce([wrong]).mockResolvedValue([gone]);
+    const client = api({ list, get: vi.fn().mockResolvedValue(wrong), discard: vi.fn().mockResolvedValue(gone) });
+    await openImport(client);
+    const section = screen.getByRole("region", { name: "Discard this import" });
+    const button = within(section).getByRole("button", { name: "Discard import" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true); // a reason is required
+    fireEvent.change(within(section).getByLabelText("Reason for discarding"), {
+      target: { value: "Wrong export (Lumen) uploaded under Nexo" },
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(client.discard).toHaveBeenCalledWith("biz", "imp-w", "Wrong export (Lumen) uploaded under Nexo", "ten"),
+    );
+    expect((await screen.findByRole("note")).textContent).toMatch(/Discarded on .* by owner@example.com/);
+    expect(screen.queryByRole("button", { name: "Build on the build worker" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-inspect" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Discard this import" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Imports" })).toBeNull(); // not in the operational list
+    expect(screen.getByRole("list", { name: "Discarded imports" })).toBeTruthy();
+  });
+
+  it("a discarded import's artifact offers no preview, approval or publish", async () => {
+    const gone = { ...ready, status: "discarded" as const, stage: "discarded" };
+    const client = api({ list: vi.fn().mockResolvedValue([gone]), get: vi.fn().mockResolvedValue(gone) });
+    render(<SupervisedImportPanel businessId="biz" tenantId="ten" api={client} />);
+    const history = await screen.findByRole("list", { name: "Discarded imports" });
+    fireEvent.click(within(history).getByRole("button"));
+    await screen.findByRole("status");
+    expect(screen.queryByRole("button", { name: "Preview (does not approve)" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve this artifact" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish approved artifact" })).toBeNull();
+  });
+
+  it("explains Private Preview form suppression and shows the privacy-safe preview submission count", async () => {
+    const tested = { ...ready, draft: { ...ready.draft!, preview_form_submissions: 2, preview_form_last_at: "2026-10-02T09:52:17Z" } };
+    const client = api({ list: vi.fn().mockResolvedValue([tested]), get: vi.fn().mockResolvedValue(tested) });
+    await openImport(client);
+    expect(
+      screen.getByText(/Form submissions in Private Preview reach the API for validation but are not stored, notified, automated/),
+    ).toBeTruthy();
+    expect(screen.getByText(/Preview form submissions received by the API: 2/)).toBeTruthy();
   });
 });
 

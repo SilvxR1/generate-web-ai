@@ -755,4 +755,7 @@ def test_r5_migration_is_the_single_head():
     from alembic.script import ScriptDirectory
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    assert ScriptDirectory.from_config(config).get_heads() == ["a7d3f1c5e8b2"]
+    # R5.2 (b8e2f4a6c1d3) is the only revision after R5's.
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["b8e2f4a6c1d3"]
+    assert script.get_revision("b8e2f4a6c1d3").down_revision == "a7d3f1c5e8b2"

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
@@ -110,6 +110,11 @@ class WebsiteDraft(UUIDPrimaryKeyMixin, TimestampMixin, TenantScopedMixin, Base)
     preview_deployment_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     preview_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     preview_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # R5.2: privacy-safe proof that the preview's form reached the API. A
+    # preview submission is never stored, notified or dispatched; only this
+    # count and time are recorded (no field values, no visitor data).
+    preview_form_submissions: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    preview_form_last_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     business: Mapped["Business"] = relationship(back_populates="website_drafts")
     creative_generation: Mapped["CreativeGeneration | None"] = relationship()

@@ -284,7 +284,7 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
       />
 
       <h3>Import a reviewed Higgsfield export (supervised)</h3>
-      <SupervisedImportPanel businessId={businessId} tenantId={tenantId} />
+      <SupervisedImportPanel businessId={businessId} tenantId={tenantId} businessName={business.name} />
 
       <h3>Generate website with AI (experimental)</h3>
       <GenerativeWorkflowGate businessId={businessId} tenantId={tenantId}>

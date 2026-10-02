@@ -21,7 +21,7 @@ from app.db.models.integration import Integration
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.db.models.lead_note import LeadNote
-from app.db.models.source_import import SourceImport, SourceReviewDecision
+from app.db.models.source_import import SourceImport, SourceImportEvent, SourceReviewDecision
 from app.db.models.template import Template
 from app.db.models.tenant import Tenant
 from app.db.models.tenant_access import TenantAccess
@@ -51,6 +51,7 @@ __all__ = [
     "Lead",
     "LeadNote",
     "SourceImport",
+    "SourceImportEvent",
     "SourceReviewDecision",
     "Template",
     "Tenant",

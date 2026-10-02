@@ -107,8 +107,65 @@ def worker_stub() -> None:
     print(result.stdout.strip() or json.dumps({"error": result.stderr[-800:]}))
 
 
+def init_stub() -> None:
+    """R5.2: app.worker.init as PID-1 stand-in, in THIS process (so the Yama
+    emulation applies to it), running the protected worker stub. `control`
+    skips the init's own protection — what a stock (dumpable) init does."""
+    mode = sys.argv[2]
+    _libc().prctl(PR_SET_PTRACER, ctypes.c_ulong(PR_SET_PTRACER_ANY), 0, 0, 0)  # emulate Railway Yama=0
+    from app.worker import init, process_protection
+
+    if mode == "control":
+        process_protection.make_non_dumpable = lambda: None  # type: ignore[assignment]
+    sys.exit(init.run([], command=[sys.executable, __file__, "worker", "protect"]))
+
+
+def orphan_maker() -> None:
+    """Leaves an orphan (its shell parent exits at once), waits for the
+    orphan to exit, then counts zombies whose parent is OUR parent."""
+    import time
+
+    subprocess.run(["sh", "-c", "sleep 0.3 & exit 0"], check=True)  # noqa: S603, S607
+    time.sleep(1.5)
+    parent = os.getppid()
+    zombies = 0
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            status = open(f"/proc/{entry}/status").read()
+        except OSError:
+            continue
+        fields = dict(line.split(":\t", 1) for line in status.splitlines() if ":\t" in line)
+        if fields.get("PPid", "").strip() == str(parent) and fields.get("State", "").startswith("Z"):
+            zombies += 1
+    print(json.dumps({"zombies_under_parent": zombies}))
+
+
+def lazy_subreaper() -> None:
+    """Control: a subreaper that waits only for its direct child (what
+    `python -m app.worker` as PID 1 effectively did) — orphans stay zombies."""
+    _libc().prctl(36, 1, 0, 0, 0)  # PR_SET_CHILD_SUBREAPER
+    child = subprocess.Popen([sys.executable, __file__, "orphan_maker"])  # noqa: S603
+    child.wait()
+
+
+def reaping_init() -> None:
+    from app.worker import init
+
+    sys.exit(init.run([], command=[sys.executable, __file__, "orphan_maker"]))
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "hostile":
         print(json.dumps(hostile(sys.argv[2].encode(), sys.argv[3].encode())))
     elif sys.argv[1] == "worker":
         worker_stub()
+    elif sys.argv[1] == "init":
+        init_stub()
+    elif sys.argv[1] == "orphan_maker":
+        orphan_maker()
+    elif sys.argv[1] == "lazy_subreaper":
+        lazy_subreaper()
+    elif sys.argv[1] == "reaping_init":
+        reaping_init()

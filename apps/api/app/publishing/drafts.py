@@ -84,6 +84,7 @@ from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.truth_contract import TruthContractResult, validate_truth_contract
 from app.qa.validate import validate_site_config
+from app.qa.web_manifest import manifest_links, validate_web_manifests
 from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.creative_direction import CreativeDirectionRepository
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
@@ -658,6 +659,7 @@ def judge_generative_candidate(
     artifact_storage: PrivateArtifactStorage,
     api_base_url: str | None,
     csp_extensions: CspExtensions | None = None,
+    contracts: dict | None = None,
 ) -> str | None:
     """v0.2 R4.1: the trusted verdict on a candidate returned by an isolated
     execution host — the same gates, in the same order and with the same
@@ -669,12 +671,23 @@ def judge_generative_candidate(
     from its HTML: security headers are never taken from the untrusted host.
     `csp_extensions` is the caller's trusted per-source-family CSP policy
     (H1, see security_headers.CspExtensions) — never read from the candidate.
+
+    R5.2: when `contracts` is given it receives each contract's verdict
+    (version, passed, rule ids and counts — no page content), so the caller
+    can persist it on the artifact record tied to the stored SHA-256.
     """
     files = {name: data for name, data in files.items() if name != "_headers"}
     files["_headers"] = artifact_headers(files, api_base_url=api_base_url, csp_extensions=csp_extensions)
     artifact = WebsiteArtifact(files=files, entry_point="index.html")
 
     contract_result = validate_platform_contract(artifact.files, business_config=business_config)
+    if contracts is not None:
+        contracts["platform_contract"] = {
+            "version": contract_result.version,
+            "passed": contract_result.passed,
+            "blocking": sorted({f.rule for f in contract_result.blocking_violations}),
+            "advisory": sorted({f.rule for f in contract_result.advisory_findings}),
+        }
     issues = [f"[PlatformContract:{f.rule}] {f.message}" for f in contract_result.findings]
     if not contract_result.passed:
         draft.status = WebsiteDraftStatus.BUILD_FAILED
@@ -685,6 +698,13 @@ def judge_generative_candidate(
         return "platform_contract"
 
     truth_result = validate_truth_contract(artifact.files, business_truth=business_truth)
+    if contracts is not None:
+        contracts["truth_contract"] = {
+            "version": truth_result.version,
+            "passed": truth_result.passed,
+            "blocking": sorted({f.rule for f in truth_result.violations}),
+            "advisory": sorted({f.rule for f in truth_result.warnings}),
+        }
     _log_truth_contract(truth_result, draft=draft, mode="blocking")
     issues += [f"[TruthContract:{f.rule}] {f.description}" for f in truth_result.findings]
     if not truth_result.passed:
@@ -692,6 +712,22 @@ def judge_generative_candidate(
         draft.build_error = "TruthContract violation(s): " + truth_result.summary()
         draft.validation_issues = issues or None
         return "truth_contract"
+
+    # R5.2: every <link rel="manifest"> must resolve inside the artifact,
+    # parse, and reference local icons — checked here, on the exact bytes,
+    # because the Access-protected Private Preview cannot load a manifest.
+    manifest_problems = validate_web_manifests(artifact.files)
+    if contracts is not None:
+        contracts["web_manifest"] = {
+            "passed": not manifest_problems,
+            "manifests": len({href for _, href in manifest_links(artifact.files)}),
+            "problems": manifest_problems,
+        }
+    if manifest_problems:
+        draft.status = WebsiteDraftStatus.BUILD_FAILED
+        draft.build_error = "Web app manifest invalid: " + "; ".join(manifest_problems)
+        draft.validation_issues = (issues + [f"[WebManifest] {p}" for p in manifest_problems]) or None
+        return "platform_contract"
 
     _promote_with_stored_artifact(draft=draft, artifact_storage=artifact_storage, artifact=artifact, issues=issues)
     return None if draft.status is WebsiteDraftStatus.READY else "storage"

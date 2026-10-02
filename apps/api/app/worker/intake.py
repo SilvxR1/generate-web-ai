@@ -57,6 +57,8 @@ from app.worker.protocol import (
 logger = logging.getLogger(__name__)
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 _MAX_SCREENSHOT_BYTES = 10 * 1024**2
+# R5.2: shape version of the per-artifact contract/QA summary stored in `qa_state`.
+QA_SUMMARY_VERSION = 1
 _GATE_FAILURE = {
     "platform_contract": GenerationFailureKind.PLATFORM_CONTRACT,
     "truth_contract": GenerationFailureKind.TRUTH_CONTRACT,
@@ -392,7 +394,9 @@ def _accept_result(
         _fail(job, draft, GenerationFailureKind.CANDIDATE_REJECTED, str(exc))
         return job
 
+    contracts: dict = {}
     gate = judge_generative_candidate(
+        contracts=contracts,
         draft=draft,
         files=files,
         business_config=business_config,
@@ -408,6 +412,7 @@ def _accept_result(
     _record_visual_qa(
         session, draft=draft, result=result, asset_storage=asset_storage, headers_sha256=sha256_hex(expected_headers)
     )
+    _record_qa_summary(session, draft=draft, contracts=contracts)
     jobs.succeed(job)
     logger.info("generation job succeeded job_id=%s draft_id=%s", job.id, draft.id)
     return job
@@ -457,6 +462,40 @@ def _record_visual_qa(
         ],
     )
     row.screenshot_keys = keys
+
+
+def _record_qa_summary(session: Session, *, draft: WebsiteDraft, contracts: dict) -> None:
+    """R5.2: persist the trusted verdicts for THIS artifact on its record —
+    references and rule ids only (the full evidence stays where it is). Keeps
+    the `passed`/`findings` keys Studio already reads from `qa_state`."""
+    row = GenerativeWebsiteArtifactRepository(session).get_for_draft(draft.tenant_id, draft.business_id, draft.id)
+    if row is None or draft.artifact_sha256 is None:
+        return
+    visual = row.visual_qa_state or {}
+    platform, truth = contracts.get("platform_contract", {}), contracts.get("truth_contract", {})
+    row.qa_state = {
+        "summary_version": QA_SUMMARY_VERSION,
+        "artifact_sha256": draft.artifact_sha256,
+        "passed": bool(
+            platform.get("passed") and truth.get("passed") and (contracts.get("web_manifest") or {}).get("passed", True)
+        ),
+        "findings": [{"contract": "platform", "rule": r} for r in platform.get("advisory", [])]
+        + [{"contract": "truth", "rule": r} for r in truth.get("advisory", [])],
+        "blocking_violations": [],
+        "platform_contract": platform,
+        "truth_contract": truth,
+        "web_manifest": contracts.get("web_manifest"),
+        "visual_qa": {
+            "passed": visual.get("passed"),
+            "evidence_version": visual.get("evidence_version"),
+            "artifact_sha256": visual.get("artifact_sha256"),
+            "headers_sha256": visual.get("headers_sha256"),
+            "source": visual.get("source"),
+        }
+        if visual
+        else None,
+        "evaluated_at": datetime.now(UTC).isoformat(),
+    }
 
 
 def load_job_inputs(session: Session, job: GenerationJob) -> tuple[BusinessConfig, BusinessTruth]:
