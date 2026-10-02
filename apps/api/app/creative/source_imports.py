@@ -43,7 +43,7 @@ from app.creative.source_adapter.records import AdapterError
 from app.db.models.custom_domain import CustomDomain
 from app.db.models.generation_job import GenerationJob
 from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
-from app.db.models.source_import import SourceImport, SourceReviewDecision
+from app.db.models.source_import import SourceImport, SourceImportEvent, SourceReviewDecision
 from app.db.models.user import User
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
@@ -55,6 +55,7 @@ from app.domain.enums import (
     GenerationJobStatus,
     JobTrustClass,
     ReviewDecisionKind,
+    SourceImportEventKind,
     SourceImportStatus,
     WebsiteDraftStatus,
 )
@@ -498,6 +499,65 @@ def refresh_staleness(session: Session, row: SourceImport) -> bool:
     return changed
 
 
+# --- Discard (R5.2) -------------------------------------------------------------------------
+
+# A queued/running build is never discarded underneath its job.
+_NOT_DISCARDABLE = frozenset({SourceImportStatus.BUILDING, SourceImportStatus.DISCARDED})
+_LIVE_DRAFT = frozenset({WebsiteDraftStatus.APPROVED, WebsiteDraftStatus.PUBLISHED})
+
+
+def discard_import(session: Session, *, row: SourceImport, reason: str, user: User) -> SourceImportEvent:
+    """Marks an import as discarded (the wrong export, or superseded by a
+    newer one) WITHOUT deleting anything: the row, its immutable snapshot,
+    manifest, plan and every review decision stay, and an append-only event
+    records who, when, why and which source. A discarded import can never be
+    reviewed, re-inspected or built, and its draft can never be approved or
+    published (see artifact_gate)."""
+    if row.status in _NOT_DISCARDABLE:
+        raise SourceImportError(
+            f"This import can't be discarded now (status: {row.status.value}).",
+            code="source_import_not_discardable",
+            status_code=409,
+        )
+    draft = session.get(WebsiteDraft, row.draft_id) if row.draft_id else None
+    if draft is not None and draft.status in _LIVE_DRAFT:
+        raise SourceImportError(
+            "This import's site is approved or published; it can't be discarded.",
+            code="source_import_not_discardable",
+            status_code=409,
+        )
+    text = reason.strip()
+    if not text or len(text) > MAX_RATIONALE_CHARS:
+        raise SourceImportError(
+            f"A reason (1-{MAX_RATIONALE_CHARS} characters) is required.", code="reason_required", status_code=422
+        )
+    event = SourceImportEvent(
+        tenant_id=row.tenant_id,
+        source_import_id=row.id,
+        kind=SourceImportEventKind.DISCARDED,
+        reason=text,
+        previous_status=row.status.value,
+        actor_user_id=user.id,
+        actor_email=user.email,
+        snapshot_sha256=row.zip_sha256,
+    )
+    session.add(event)
+    row.status = SourceImportStatus.DISCARDED
+    session.flush()
+    logger.info("source import discarded import=%s user=%s zip=%s", row.id, user.id, row.zip_sha256[:12])
+    return event
+
+
+def events_for(session: Session, row: SourceImport) -> list[SourceImportEvent]:
+    return list(
+        session.scalars(
+            select(SourceImportEvent)
+            .where(SourceImportEvent.tenant_id == row.tenant_id, SourceImportEvent.source_import_id == row.id)
+            .order_by(SourceImportEvent.created_at, SourceImportEvent.id)
+        ).all()
+    )
+
+
 # --- Build ---------------------------------------------------------------------------------
 
 
@@ -644,6 +704,8 @@ def artifact_gate(session: Session, draft: WebsiteDraft) -> ArtifactGate:
     if row is None:
         return ArtifactGate(True, ())
     problems: list[str] = []
+    if row.status is SourceImportStatus.DISCARDED:
+        problems.append("This site's import was discarded; it can't be approved or published.")
     try:
         _, truth = load_business_inputs(session, tenant_id=draft.tenant_id, business_id=draft.business_id)
         if business_truth_sha256(truth) != row.business_truth_sha256:

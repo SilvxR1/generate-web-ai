@@ -491,3 +491,109 @@ still gated by `generative_website_builds_enabled`. A supervised build's
 Visual QA is produced by the worker and stored with the artifact, so this
 does not block Preview.
 
+
+## 19. Pre-client hardening (R5.2)
+
+These are concrete fixes from the Lumen and Nexo production runs.
+
+**Source ↔ BusinessTruth identity.** Inspection compares the identity the
+export declares with BusinessTruth (`source_adapter/identity.py`). It uses
+deterministic string evidence only, with no provider call. The declarations
+it reads:
+
+- app-meta `og_title` (the brand part);
+- `og:site_name`;
+- the web manifest `name` / `short_name`;
+- a JSON-LD organization/business `name`.
+
+| Evidence | Result |
+|---|---|
+| no declaration (or only generic words) | no finding |
+| BusinessTruth's name appears in the export, or a declaration shares a distinctive word with it | no finding (restyled names pass) |
+| another name, but BusinessTruth's city or services appear | `source_identity_unconfirmed` (info) |
+| another name, none of BusinessTruth's services appear, and the city is absent or two declarations agree | `source_identity_conflict` (**review**) |
+
+A review finding blocks Build until an operator approves it with a
+rationale. That decision is bound to this snapshot and plan. The finding
+quotes only the declared names and where they were found. Nexo's own export
+produces no finding and an unchanged plan (`2802d4d1…`). The Lumen export
+under Nexo produces the conflict.
+
+**Pre-upload confirmation.** Studio computes the SHA-256 of the selected ZIP
+in the browser before anything is sent. It then shows the file name, size,
+SHA-256 and target business, and uploads only after **"Import this exact
+file"**. Choosing another file invalidates the confirmation. After upload,
+the server's `zip_sha256` (authoritative) is compared with the local
+SHA-256. A difference is a hard error, and the import must not be built.
+
+**Discard.** `POST /source-imports/{id}/discard` with a reason is a write
+route, so it is gated like build. It records an append-only
+`source_import_events` row: actor, time, reason, previous status and source
+SHA-256. It then sets the status to `discarded`.
+
+- Nothing is deleted: the row, snapshot, manifest, plan and decisions stay.
+- A discarded import can't be reviewed, re-inspected, built or discarded again.
+- Its draft can never be approved or published (the artifact gate).
+- A building import, or one whose draft is approved/published, can't be discarded.
+- Studio lists discarded imports only under a collapsed **"Discarded imports — audit history"**.
+
+The wrong Lumen import stored under the production Nexo business is not
+discarded automatically. Discarding it needs separate authorization and
+scoped write access.
+
+**Private Preview forms.** A preview submission is never stored, notified,
+dispatched or counted as a lead or as analytics. Studio says so above the
+Preview button. The API now:
+
+- logs `public_lead_suppressed_preview business=… draft=…` with no submitted data;
+- increments `website_drafts.preview_form_submissions` and `preview_form_last_at`
+  on the draft whose current preview URL matches the request's Origin. Nothing
+  from the form is kept. Studio shows the count.
+
+Spam drops are logged as `public_lead_suppressed_spam business=…
+reason=honeypot|too_fast`, also with no submitted data.
+
+**Known Private Preview console warning.** Chrome may report a CSP violation
+for `/site.webmanifest` on the preview. Browsers fetch manifests without
+cookies, so Cloudflare Access redirects that one request to its login origin,
+and the artifact's `default-src 'self'` blocks the redirect. Production has no
+Access layer and is unaffected.
+
+The artifact, its CSP and the Access configuration are deliberately not
+changed. Instead, intake validates every `<link rel="manifest">` on the exact
+artifact bytes (`app/qa/web_manifest.py`):
+
+- the URL is same-origin;
+- the file exists and parses as a JSON object;
+- every icon is local and present;
+- the type is `.webmanifest` (application/manifest+json) or `.json`, with no
+  `_headers` override.
+
+A failure refuses the candidate as a PlatformContract-class failure.
+
+**Artifact QA state.** Intake now persists a summary in the artifact
+record's `qa_state` (`summary_version` 1):
+
+- the evaluated `artifact_sha256`;
+- PlatformContract and TruthContract version, pass and rule ids;
+- the manifest check;
+- a reference to the Visual QA evidence (pass, evidence version, artifact and headers SHA-256).
+
+No evidence blobs are duplicated. Earlier artifacts keep `{}` and stay
+readable; nothing was backfilled.
+
+**Worker init.** PID 1 is now `python -m app.worker.init`, which runs
+`python -m app.worker`. It:
+
+- makes itself non-dumpable (EX_CONFIG if it can't);
+- becomes a child subreaper;
+- forwards SIGTERM/SIGINT/SIGHUP/SIGQUIT;
+- reaps every exited child (the orphaned Chromium helpers seen as zombies);
+- exits with the worker's status (78 still means "don't restart-loop").
+
+It is not tini: PID 1 holds the startup environment (`GWA_WORKER_TOKEN`), and
+a stock, dumpable init would expose it through `/proc/1/environ`. A
+regression test proves that leak for a dumpable init and its absence for
+this one. Preflight's new `init_protection` check fails closed if PID 1's
+environment is readable to the worker's user. The image is unchanged
+otherwise: non-root, no capability, no extra package.

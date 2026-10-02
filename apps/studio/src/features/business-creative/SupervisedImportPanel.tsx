@@ -4,6 +4,7 @@ import {
   approveWebsiteDraft,
   buildSourceImport,
   decideSourceFinding,
+  discardSourceImport,
   getSourceImport,
   getSourceImportCapability,
   getSourceImportDiagnostics,
@@ -12,6 +13,7 @@ import {
   publishWebsiteDraft,
   reinspectSourceImport,
   runGenerativeVisualQa,
+  sha256OfFile,
   uploadSourceImport,
   type SourceFinding,
   type SourceImport,
@@ -37,6 +39,9 @@ export interface SourceImportApi {
   ) => Promise<SourceImport>;
   reinspect: (businessId: string, importId: string, tenantId: string) => Promise<SourceImport>;
   build: (businessId: string, importId: string, tenantId: string) => Promise<SourceImport>;
+  discard: (businessId: string, importId: string, reason: string, tenantId: string) => Promise<SourceImport>;
+  /** SHA-256 of the selected file, computed locally before anything is uploaded. */
+  hashFile: (file: File) => Promise<string>;
   visualQa: (businessId: string, draftId: string, tenantId: string) => Promise<unknown>;
   preview: (businessId: string, draftId: string, tenantId: string) => Promise<{ preview_url: string }>;
   approve: (businessId: string, draftId: string, tenantId: string) => Promise<unknown>;
@@ -52,6 +57,8 @@ export const realSourceImportApi: SourceImportApi = {
   decide: decideSourceFinding,
   reinspect: reinspectSourceImport,
   build: buildSourceImport,
+  discard: discardSourceImport,
+  hashFile: sha256OfFile,
   visualQa: runGenerativeVisualQa,
   preview: previewWebsiteDraft,
   approve: approveWebsiteDraft,
@@ -93,6 +100,7 @@ export const STAGE_LABELS: Record<string, string> = {
   building: "Building and validating on the build worker",
   build_failed: "Build or validation failed",
   preview_ready: "Preview ready — not approved yet",
+  discarded: "Discarded — kept for audit only",
   approved: "Artifact approved — ready to publish",
   published: "Published",
 };
@@ -157,6 +165,7 @@ export interface DetailActions {
   decide: (findingId: string, decision: "approved" | "rejected", rationale: string) => Promise<void>;
   reinspect: () => Promise<void>;
   build: () => Promise<void>;
+  discard: (reason: string) => Promise<void>;
   visualQa: () => Promise<void>;
   preview: () => Promise<void>;
   approve: () => Promise<void>;
@@ -178,6 +187,13 @@ export function SourceImportDetail({
   canMutate?: boolean;
 }) {
   const [diagnostics, setDiagnostics] = useState<string | null>(null);
+  const [discardReason, setDiscardReason] = useState("");
+  const discarded = item.status === "discarded";
+  const discardEvent = (item.events ?? []).filter((e) => e.kind === "discarded").at(-1);
+  // A discarded import is audit history: nothing on it is actionable.
+  const mutable = canMutate && !discarded;
+  const liveDraft = item.draft?.status === "approved" || item.draft?.status === "published";
+  const canDiscard = mutable && item.status !== "building" && !liveDraft;
   const inspection = item.inspection ?? {};
   const findings = inspection.findings ?? [];
   const blockers = findings.filter((f) => f.severity === "blocker" && f.open);
@@ -212,6 +228,15 @@ export function SourceImportDetail({
         {STAGE_LABELS[item.stage] ?? item.stage}
       </p>
       {item.error && <p className="banner banner--error">{item.error}</p>}
+      {discarded && (
+        <p className="banner banner--warning" role="note">
+          Discarded
+          {discardEvent
+            ? ` on ${new Date(discardEvent.created_at).toLocaleString()} by ${discardEvent.actor_email}: ${discardEvent.reason}`
+            : ""}
+          . Kept for audit only; it can't be reviewed, re-inspected, built, approved or published.
+        </p>
+      )}
 
       <Section title="Source identity">
         <dl>
@@ -252,7 +277,7 @@ export function SourceImportDetail({
               <FindingRow
                 key={f.id}
                 finding={f}
-                canDecide={canMutate && item.status === "needs_review"}
+                canDecide={mutable && item.status === "needs_review"}
                 onDecide={actions.decide}
               />
             ))}
@@ -365,7 +390,7 @@ export function SourceImportDetail({
         </Section>
       )}
 
-      {canMutate && (
+      {mutable && (
         <div className="source-import__actions">
           <button type="button" onClick={() => void actions.reinspect()}>
             Re-inspect
@@ -374,6 +399,30 @@ export function SourceImportDetail({
             Build on the build worker
           </button>
         </div>
+      )}
+
+      {canDiscard && (
+        <Section title="Discard this import">
+          <p className="field-hint">
+            For a wrong or superseded export. Nothing is deleted: the source, its review history and this reason are
+            kept for audit, and the import can no longer be built, approved or published.
+          </p>
+          <label>
+            Reason (recorded with your name and this source)
+            <textarea
+              aria-label="Reason for discarding"
+              value={discardReason}
+              onChange={(event) => setDiscardReason(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={!discardReason.trim()}
+            onClick={() => void actions.discard(discardReason.trim())}
+          >
+            Discard import
+          </button>
+        </Section>
       )}
 
       {draft && (
@@ -392,6 +441,7 @@ export function SourceImportDetail({
               {problem}
             </p>
           ))}
+          {!discarded && (
           <div className="source-import__actions">
             <button type="button" disabled={draft.status !== "ready"} onClick={() => void actions.visualQa()}>
               Run Visual QA
@@ -414,6 +464,19 @@ export function SourceImportDetail({
               Publish approved artifact
             </button>
           </div>
+          )}
+          {!discarded && (draft.status === "ready" || draft.status === "approved") && (
+            <p className="field-hint">
+              Form submissions in Private Preview reach the API for validation but are not stored, notified, automated
+              or counted.
+            </p>
+          )}
+          {(draft.preview_form_submissions ?? 0) > 0 && (
+            <p className="field-hint">
+              Preview form submissions received by the API: {draft.preview_form_submissions}
+              {draft.preview_form_last_at ? ` (last ${new Date(draft.preview_form_last_at).toLocaleString()})` : ""}.
+            </p>
+          )}
           {draft.preview_url && (
             <p>
               Preview:{" "}
@@ -458,19 +521,36 @@ const POLL_FAILURES_BEFORE_NOTICE = 3;
  * Higgsfield: the operator uploads the ZIP; GWA inspects, asks for review,
  * builds on its isolated build worker and validates; then the normal
  * preview -> approve -> publish -> rollback lifecycle applies. */
+/** R5.2: the exact file the operator confirmed, identified locally before upload. */
+interface PendingUpload {
+  file: File;
+  sha256: string | null;
+  hashError: string | null;
+}
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 export function SupervisedImportPanel({
   businessId,
   tenantId,
+  businessName,
   api = realSourceImportApi,
 }: {
   businessId: string;
   tenantId: string;
+  /** Shown in the pre-upload confirmation, so the operator sees the target business. */
+  businessName?: string;
   api?: SourceImportApi;
 }) {
   const [capability, setCapability] = useState<SourceImportCapability | null>(null);
   const [items, setItems] = useState<SourceImportSummary[]>([]);
   const [selected, setSelected] = useState<SourceImport | null>(null);
-  const [file, setFile] = useState<File | null>(null);
+  const [pending, setPending] = useState<PendingUpload | null>(null);
+  // R5.2: imports whose server SHA-256 differed from the SHA-256 computed
+  // locally before upload — never presented as trusted.
+  const [shaMismatch, setShaMismatch] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
@@ -542,6 +622,38 @@ export function SupervisedImportPanel({
     };
   }, [api, businessId, tenantId, pollingId, refreshList]);
 
+  const choose = (chosen: File | null) => {
+    setError(null);
+    if (chosen === null) {
+      setPending(null);
+      return;
+    }
+    // A new selection always invalidates the previous confirmation.
+    setPending({ file: chosen, sha256: null, hashError: null });
+    api.hashFile(chosen).then(
+      (sha256) => setPending((current) => (current?.file === chosen ? { ...current, sha256 } : current)),
+      () =>
+        setPending((current) =>
+          current?.file === chosen ? { ...current, hashError: "This browser could not compute the file's SHA-256." } : current,
+        ),
+    );
+  };
+
+  const importConfirmed = (confirmed: PendingUpload) =>
+    run(async () => {
+      const item = await api.upload(businessId, confirmed.file, tenantId);
+      setPending(null);
+      setSelected(item);
+      if (item.zip_sha256 !== confirmed.sha256) {
+        setShaMismatch((current) => ({ ...current, [item.id]: String(confirmed.sha256) }));
+        setError(
+          `The server received a different file than the one you confirmed (server SHA-256 ${item.zip_sha256}, ` +
+            `selected ${confirmed.sha256}). Do not build this import; discard it and upload again.`,
+        );
+      }
+      await refreshList();
+    }, "The import failed.");
+
   const reload = (importId: string) =>
     api.get(businessId, importId, tenantId).then((item) => {
       setSelected(item);
@@ -552,6 +664,8 @@ export function SupervisedImportPanel({
     return error ? <p className="banner banner--error">{error}</p> : <p className="field-hint">Loading…</p>;
   }
   const canWrite = capability.write_enabled ?? capability.enabled;
+  const activeItems = items.filter((item) => item.status !== "discarded");
+  const discardedItems = items.filter((item) => item.status === "discarded");
   const canRead = capability.read_enabled ?? capability.enabled;
   if (!canRead) {
     return <p className="field-hint">Supervised website imports are not enabled on this server.</p>;
@@ -568,6 +682,15 @@ export function SupervisedImportPanel({
           ),
         reinspect: () => run(() => api.reinspect(businessId, id, tenantId).then(setSelected), "Re-inspection failed."),
         build: () => run(() => api.build(businessId, id, tenantId).then(setSelected), "The build could not start."),
+        discard: (reason) =>
+          run(
+            () =>
+              api.discard(businessId, id, reason, tenantId).then((item) => {
+                setSelected(item);
+                return refreshList();
+              }),
+            "The import could not be discarded.",
+          ),
         visualQa: () => run(() => api.visualQa(businessId, draftId, tenantId).then(() => reload(id)), "Visual QA failed to run."),
         preview: () =>
           run(
@@ -610,38 +733,50 @@ export function SupervisedImportPanel({
       {error && <p className="banner banner--error">{error}</p>}
       {pollNotice && <p className="field-hint">{pollNotice}</p>}
       {canWrite && (
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!file) return;
-            void run(
-              () =>
-                api.upload(businessId, file, tenantId).then((item) => {
-                  setSelected(item);
-                  return refreshList();
-                }),
-              "The import failed.",
-            );
-          }}
-        >
+        <div className="source-import__upload">
           <label>
             Export ZIP (max {Math.round(capability.max_bytes / 1024 / 1024)} MB)
             <input
               type="file"
               accept=".zip,application/zip"
               aria-label="Export ZIP"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => choose(event.target.files?.[0] ?? null)}
             />
           </label>
-          <button type="submit" disabled={!file || busy}>
-            Import and inspect
-          </button>
-        </form>
+          {pending && (
+            <Section title="Confirm the file to import">
+              <dl>
+                <dt>File</dt>
+                <dd>{pending.file.name}</dd>
+                <dt>Size</dt>
+                <dd>
+                  {formatBytes(pending.file.size)} ({pending.file.size.toLocaleString()} bytes)
+                </dd>
+                <dt>SHA-256 (computed in this browser)</dt>
+                <dd className="source-import__sha">{pending.sha256 ?? pending.hashError ?? "computing…"}</dd>
+                <dt>Target business</dt>
+                <dd>{businessName ?? businessId}</dd>
+                <dt>Source family</dt>
+                <dd>detected by the server after upload</dd>
+              </dl>
+              <p className="field-hint">
+                Check the file name and SHA-256 against the export you reviewed. Nothing has been uploaded yet.
+              </p>
+              <button
+                type="button"
+                disabled={!pending.sha256 || busy}
+                onClick={() => void importConfirmed(pending)}
+              >
+                Import this exact file
+              </button>
+            </Section>
+          )}
+        </div>
       )}
 
-      {items.length > 0 && (
+      {activeItems.length > 0 && (
         <ul className="source-import__list" aria-label="Imports">
-          {items.map((item) => (
+          {activeItems.map((item) => (
             <li key={item.id}>
               <button type="button" onClick={() => void run(() => reload(item.id), "Could not load the import.")}>
                 {item.original_filename} · {short(item.zip_sha256)} · {STAGE_LABELS[item.stage] ?? item.stage}
@@ -651,6 +786,26 @@ export function SupervisedImportPanel({
         </ul>
       )}
 
+      {discardedItems.length > 0 && (
+        <details className="source-import__history">
+          <summary>Discarded imports ({discardedItems.length}) — audit history</summary>
+          <ul className="source-import__list" aria-label="Discarded imports">
+            {discardedItems.map((item) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => void run(() => reload(item.id), "Could not load the import.")}>
+                  {item.original_filename} · {short(item.zip_sha256)} · {STAGE_LABELS[item.stage] ?? item.stage}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {selected && shaMismatch[selected.id] && (
+        <p className="banner banner--error" role="alert">
+          SHA-256 mismatch: the server stored {selected.zip_sha256}, but the file confirmed before upload was{" "}
+          {shaMismatch[selected.id]}. Do not build this import.
+        </p>
+      )}
       {selected && actions && <SourceImportDetail item={selected} actions={actions} canMutate={canWrite} />}
     </div>
   );

@@ -66,4 +66,8 @@ ENV PATH=/srv/worker/.venv/bin:/usr/local/bin:/usr/bin:/bin \
     GWA_WORKER_WORK_ROOT=/tmp/gwa-worker \
     GWA_WORKER_CONCURRENCY=1
 
-ENTRYPOINT ["python", "-m", "app.worker"]
+# R5.2: a non-dumpable init (app.worker.init) is PID 1 — it reaps orphaned
+# build descendants (Chromium helpers) and forwards signals to the worker.
+# Not tini: PID 1 holds the startup environment (GWA_WORKER_TOKEN), and a
+# dumpable init would expose it to same-UID builds through /proc/1/environ.
+ENTRYPOINT ["python", "-m", "app.worker.init"]

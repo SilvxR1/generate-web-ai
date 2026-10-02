@@ -29,17 +29,21 @@ its failure never loses the lead or fails this request.
 
 import logging
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.analytics_events.provider import AnalyticsProvider
 from app.automation.n8n.dispatch import LeadDispatchError, dispatch_lead_to_workflow
 from app.config import settings
+from app.db.models.business import Business
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
+from app.db.models.website_draft import WebsiteDraft
 from app.dependencies import (
     get_analytics_provider,
     get_optional_notification_sender,
@@ -49,7 +53,7 @@ from app.dependencies import (
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadSource, NotificationDeliveryStatus, WorkflowStatus
 from app.errors import AppError
-from app.leads.spam import is_spam
+from app.leads.spam import spam_reason
 from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.notifications.sender import NotificationSender
 from app.notifications.service import (
@@ -100,17 +104,22 @@ def create_public_lead(
                 status_code=status.HTTP_403_FORBIDDEN,
             )
 
-    if is_spam(honeypot_value=payload.company_website, rendered_at=payload.rendered_at, now=datetime.now(UTC)):
+    reason = spam_reason(honeypot_value=payload.company_website, rendered_at=payload.rendered_at, now=datetime.now(UTC))
+    if reason is not None:
         # Never tell a bot its submission was rejected — that only
         # teaches it to iterate. The lead is simply never created; the
-        # caller sees the exact same response as a real success.
+        # caller sees the exact same response as a real success. R5.2: the
+        # drop is logged by reason only (no submitted data).
+        logger.info("public_lead_suppressed_spam business=%s reason=%s", business.id, reason)
         return PublicLeadCreateResponse()
 
     if from_preview:
         # Same response shape as a real success (the site's form shows its
         # normal confirmation), but nothing is persisted, notified or
-        # dispatched. No payload/PII in the log.
-        logger.info("public_lead_suppressed_preview business=%s", business.id)
+        # dispatched. No payload/PII in the log. R5.2: the draft whose
+        # preview this is records only that a submission reached the API.
+        draft_id = _record_preview_form_submission(session, business, request.headers.get("origin"))
+        logger.info("public_lead_suppressed_preview business=%s draft=%s", business.id, draft_id or "-")
         return PublicLeadCreateResponse()
 
     leads = LeadRepository(session)
@@ -205,6 +214,35 @@ def create_public_lead(
     _dispatch_to_automation_if_configured(session, lead)
 
     return PublicLeadCreateResponse()
+
+
+def _record_preview_form_submission(session: Session, business: Business, origin: str | None) -> UUID | None:
+    """R5.2: count a Private Preview form submission on the draft whose
+    current preview deployment is `origin` — a count and a time, nothing
+    from the form. Best effort: an origin that names no current preview
+    (a branch alias, an expired preview) records nothing. A forged preview
+    Origin can at most bump a counter; it never creates or exposes data."""
+    host = urlsplit(origin or "").hostname
+    if not host:
+        return None
+    draft = session.scalar(
+        select(WebsiteDraft).where(
+            WebsiteDraft.tenant_id == business.tenant_id,
+            WebsiteDraft.business_id == business.id,
+            WebsiteDraft.preview_url.in_([f"https://{host}/", f"https://{host}"]),
+        )
+    )
+    if draft is None:
+        return None
+    session.execute(
+        update(WebsiteDraft)
+        .where(WebsiteDraft.id == draft.id)
+        .values(
+            preview_form_submissions=WebsiteDraft.preview_form_submissions + 1,
+            preview_form_last_at=datetime.now(UTC),
+        )
+    )
+    return draft.id
 
 
 def _dispatch_to_automation_if_configured(session: Session, lead: Lead) -> None:

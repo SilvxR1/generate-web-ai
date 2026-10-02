@@ -40,6 +40,7 @@ from app.creative.source_adapter.adapters.base import PlanContext, SiteContext
 from app.creative.source_adapter.classify import Finding, Supportability, classify
 from app.creative.source_adapter.facts import discover_facts, reconcile_claims
 from app.creative.source_adapter.forms import FormField, FormInfo, FormMapping, FormOption, FormTransport, map_form
+from app.creative.source_adapter.identity import assess_identity
 from app.creative.source_adapter.manifest import SourceManifest, inspect_source, write_manifest
 from app.creative.source_adapter.overlays import overlay_for
 from app.creative.source_adapter.plan import (
@@ -232,6 +233,8 @@ def inspect_export(
             extra += [Finding(f["code"], f["severity"], f["subject"], f["detail"], "forms") for f in mapping.findings]
         facts = discover_facts(tree, adapter.text_paths(manifest, tree), truth, locale=locale, ledger=fact_ledger)
         extra += [Finding(f["code"], f["severity"], f["subject"], f["detail"], "facts") for f in facts.findings]
+        identity = assess_identity(tree, truth, facts, app_meta_file=manifest.metadata.get("app_meta_file"))
+        extra += [Finding(f["code"], f["severity"], f["subject"], f["detail"], "identity") for f in identity]
         claims = reconcile_claims(manifest.claims, truth)
         extra += [Finding(f["code"], f["severity"], f["subject"], f["detail"], "claims") for f in claims]
     supportability = classify(manifest, adapter, tree, extra, overlay)

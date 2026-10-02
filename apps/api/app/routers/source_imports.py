@@ -8,6 +8,7 @@
     POST /businesses/{id}/source-imports/{import_id}/decisions
     POST /businesses/{id}/source-imports/{import_id}/reinspect
     POST /businesses/{id}/source-imports/{import_id}/build
+    POST /businesses/{id}/source-imports/{import_id}/discard   (R5.2)
 
 Preview, approve, publish and rollback reuse the existing website-draft and
 website-version routes (the import's `draft_id`), which enforce the R5
@@ -15,7 +16,7 @@ artifact gate. Everything here requires an authenticated tenant member.
 
 R5.1.3 splits the supervised-import capability in two:
 
-- WRITE (upload, decisions, reinspect, build): the global
+- WRITE (upload, decisions, reinspect, build, discard): the global
   `supervised_source_imports_enabled` flag or the scoped business
   allowlist (`require_supervised_import_access`). Closing it stops every
   NEW supervised mutation.
@@ -101,6 +102,19 @@ class DraftStateRead(BaseModel):
     visual_qa_current: bool
     visual_qa_passed: bool | None
     gate_problems: list[str]
+    # R5.2: form submissions that reached the API from this draft's Private
+    # Preview (never stored as leads; only the count and time are kept).
+    preview_form_submissions: int = 0
+    preview_form_last_at: datetime | None = None
+
+
+class SourceImportEventRead(BaseModel):
+    kind: str
+    reason: str
+    previous_status: str
+    actor_email: str
+    snapshot_sha256: str
+    created_at: datetime
 
 
 class SourceImportSummary(BaseModel):
@@ -130,12 +144,17 @@ class SourceImportRead(SourceImportSummary):
     job_failure: str | None
     error: str | None
     draft: DraftStateRead | None
+    events: list[SourceImportEventRead] = Field(default_factory=list)
 
 
 class DecisionRequest(BaseModel):
     finding_id: str = Field(min_length=1, max_length=400)
     decision: Literal["approved", "rejected"]
     rationale: str = Field(min_length=1, max_length=imports.MAX_RATIONALE_CHARS)
+
+
+class DiscardRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=imports.MAX_RATIONALE_CHARS)
 
 
 # --- Helpers ----------------------------------------------------------------------------
@@ -273,6 +292,8 @@ def _draft_state(session: Session, draft: WebsiteDraft) -> DraftStateRead:
         visual_qa_current=current,
         visual_qa_passed=bool(state.get("passed")) if current else None,
         gate_problems=list(gate.problems) if gate is not None else [],
+        preview_form_submissions=draft.preview_form_submissions or 0,
+        preview_form_last_at=draft.preview_form_last_at,
     )
 
 
@@ -318,6 +339,17 @@ def _read(session: Session, row: SourceImport) -> SourceImportRead:
         job_failure=job.failure_kind.value if job and job.failure_kind else None,
         error=row.error,
         draft=_draft_state(session, draft) if draft is not None else None,
+        events=[
+            SourceImportEventRead(
+                kind=e.kind.value,
+                reason=e.reason,
+                previous_status=e.previous_status,
+                actor_email=e.actor_email,
+                snapshot_sha256=e.snapshot_sha256,
+                created_at=e.created_at,
+            )
+            for e in imports.events_for(session, row)
+        ],
     )
 
 
@@ -507,3 +539,23 @@ def build(
         session.commit()  # keep a STALE transition
         raise _error(exc) from exc
     return _read(session, row)
+
+
+@router.post("/{import_id}/discard", response_model=SourceImportRead)
+def discard(
+    business_id: uuid.UUID,
+    import_id: uuid.UUID,
+    body: DiscardRequest,
+    tenant_id: uuid.UUID = Depends(require_supervised_import_access),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> SourceImportRead:
+    """R5.2: discard a wrong or superseded import. Nothing is deleted; an
+    append-only event records the actor, time, reason and source SHA-256."""
+    row = _row(session, tenant_id, business_id, import_id)
+    try:
+        imports.discard_import(session, row=row, reason=body.reason, user=user)
+    except imports.SourceImportError as exc:
+        raise _error(exc) from exc
+    return _read(session, row)
+

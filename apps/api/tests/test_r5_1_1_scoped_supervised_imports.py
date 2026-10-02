@@ -32,10 +32,10 @@ from tests.test_r5_source_imports import (  # noqa: F401 — shared fixtures
     env,
 )
 
-SEVEN = ("upload", "list", "get", "diagnostics", "decisions", "reinspect", "build")
+SEVEN = ("upload", "list", "get", "diagnostics", "decisions", "reinspect", "build", "discard")  # + R5.2 discard
 # R5.1.3: the write gate guards the four mutating routes; the three reads also
 # serve a business's EXISTING imports once write access is closed.
-WRITES = ("upload", "decisions", "reinspect", "build")
+WRITES = ("upload", "decisions", "reinspect", "build", "discard")
 READS = ("list", "get", "diagnostics")
 
 
@@ -75,6 +75,8 @@ def _call(client: TestClient, business_id: uuid.UUID, route: str, headers: dict,
         return client.post(f"{item}/decisions", headers=headers, json=body)
     if route == "reinspect":
         return client.post(f"{item}/reinspect", headers=headers)
+    if route == "discard":
+        return client.post(f"{item}/discard", headers=headers, json={"reason": "canary test"})
     return client.post(f"{item}/build", headers=headers)
 
 
@@ -147,7 +149,10 @@ def test_every_mutating_route_uses_the_write_gate_and_every_read_the_read_gate()
     }
     base = "/businesses/{business_id}/source-imports"
     assert gates.pop(("GET", f"{base}/capability")) == (False, False)
-    writes = {("POST", base), *(("POST", f"{base}/{{import_id}}/{a}") for a in ("decisions", "reinspect", "build"))}
+    writes = {
+        ("POST", base),
+        *(("POST", f"{base}/{{import_id}}/{a}") for a in ("decisions", "reinspect", "build", "discard")),
+    }
     reads = {("GET", base), ("GET", f"{base}/{{import_id}}"), ("GET", f"{base}/{{import_id}}/diagnostics")}
     assert set(gates) == writes | reads, gates
     assert all(gates[key] == (True, False) for key in writes), gates  # a mutation never takes the read gate
