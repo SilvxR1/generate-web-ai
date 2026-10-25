@@ -40,7 +40,7 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -149,7 +149,7 @@ jobs:
     name: Frontend (pnpm monorepo)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Enable corepack
         run: corepack enable
@@ -179,7 +179,7 @@ jobs:
     name: Build worker image (build + preflight)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build the worker image
         run: docker build -f apps/api/Dockerfile.worker -t gwa-build-worker:ci .
