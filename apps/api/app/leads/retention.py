@@ -73,8 +73,9 @@ def delete_lead(
     def scope(model):
         return model.tenant_id == tenant_id, model.business_id == business_id, model.lead_id == lead_id
 
-    notifications = session.execute(delete(InternalNotification).where(*scope(InternalNotification))).rowcount
-    notes = session.execute(delete(LeadNote).where(*scope(LeadNote))).rowcount
+    deleted_notifications = session.execute(delete(InternalNotification).where(*scope(InternalNotification)))
+    notifications = getattr(deleted_notifications, "rowcount", 0)
+    notes = getattr(session.execute(delete(LeadNote).where(*scope(LeadNote))), "rowcount", 0)
     event = LeadDeletionEvent(
         tenant_id=tenant_id,
         business_id=business_id,
