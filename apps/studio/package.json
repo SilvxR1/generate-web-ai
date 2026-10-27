@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:local": "VITE_API_URL=http://localhost:8000 vite --mode development",
     "build": "vite build",
     "preview": "vite preview",
+    "preview:local": "VITE_API_URL=http://localhost:8000 vite build --mode development --outDir node_modules/.local-preview --emptyOutDir && vite preview --outDir node_modules/.local-preview --port 5173 --strictPort",
     "check": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run"

@@ -36,6 +36,9 @@ export interface BusinessAssetInput {
   origin: "uploaded" | "imported" | "generated";
   storage_url: string;
   alt_text?: string | null;
+  /** C2.1: intrinsic pixel size, when the API recorded it at upload. */
+  width?: number | null;
+  height?: number | null;
   /** Set only by a real, explicit backend check (POST .../assets/{id}/
    * verify — app.services.asset_health.check_business_asset_availability)
    * confirming this asset's underlying storage object is gone — a
@@ -63,7 +66,13 @@ function usable(assets: readonly BusinessAssetInput[]): BusinessAssetInput[] {
 
 function toAssetConfig(asset: BusinessAssetInput, fallbackAlt: string): AssetConfig {
   const alt = asset.alt_text?.trim() || fallbackAlt;
-  return { src: asset.storage_url, alt };
+  const { width, height } = asset;
+  const sized = isPositiveInteger(width) && isPositiveInteger(height);
+  return { src: asset.storage_url, alt, ...(sized ? { width, height } : {}) };
+}
+
+function isPositiveInteger(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
 /** The business's real logo, if it has one — kind `logo` (category is a

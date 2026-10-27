@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.creative.website_direction import WebsiteCreativeDirection, parse_website_direction
 from app.domain.enums import (
@@ -64,6 +65,22 @@ class BusinessAssetRead(BaseModel):
     alt_text: str | None
     generation_id: uuid.UUID | None
     created_at: datetime
+    # C2.1: intrinsic pixel size, recorded at upload (asset_metadata) — lets
+    # a generated site emit width/height on <img> so the layout never
+    # shifts. None for assets uploaded before C2.1 or not a raster image.
+    width: int | None = None
+    height: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _dimensions_from_metadata(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            return data
+        metadata = getattr(data, "asset_metadata", None) or {}
+        width, height = metadata.get("width"), metadata.get("height")
+        valid = all(isinstance(value, int) and not isinstance(value, bool) and value > 0 for value in (width, height))
+        fields = {name: getattr(data, name) for name in cls.model_fields if name not in ("width", "height")}
+        return {**fields, "width": width if valid else None, "height": height if valid else None}
 
 
 class BusinessAssetUploadResult(BaseModel):

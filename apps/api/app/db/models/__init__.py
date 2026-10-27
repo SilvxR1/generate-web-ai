@@ -20,6 +20,7 @@ from app.db.models.generative_website_artifact import GenerativeWebsiteArtifact
 from app.db.models.integration import Integration
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
+from app.db.models.lead_deletion_event import LeadDeletionEvent
 from app.db.models.lead_note import LeadNote
 from app.db.models.source_import import SourceImport, SourceImportEvent, SourceReviewDecision
 from app.db.models.template import Template
@@ -49,6 +50,7 @@ __all__ = [
     "InternalNotification",
     "Integration",
     "Lead",
+    "LeadDeletionEvent",
     "LeadNote",
     "SourceImport",
     "SourceImportEvent",

@@ -1,8 +1,16 @@
+import os
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Which dotenv file to read, relative to the working directory. Unset keeps
+# the default ".env"; an empty value reads no file at all, so only real
+# environment variables apply (the test bootstrap, tests/isolation.py, sets it
+# empty so the test suite never sees a developer's real credentials).
+_ENV_FILE = os.environ.get("GWA_ENV_FILE", ".env") or None
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
     environment: str = "development"
     service_name: str = "generate-web-ai-api"
@@ -254,6 +262,10 @@ class Settings(BaseSettings):
     # not credentials — safe to ship as-is; override per deployment.
     public_lead_rate_limit_per_minute: int = 10
     asset_upload_rate_limit_per_minute: int = 20
+    # C2.1: comma-separated CIDRs of reverse proxies whose X-Forwarded-For is
+    # trusted for rate-limit keys (app.security.client_ip). Empty = key on the
+    # direct peer address, exactly as before. On Railway, "100.64.0.0/10".
+    trusted_proxy_cidrs: str = ""
     # "Check now" (app.routers.website_health) makes real outbound HTTP/
     # DNS/TLS calls — cheap for a human clicking a button occasionally,
     # not something to leave uncapped.

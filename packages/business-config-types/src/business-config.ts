@@ -242,15 +242,19 @@ export interface IntegrationPreferences {
 }
 export interface LeadManagementConfig {
   acknowledgement?: boolean;
+  consent_required?: boolean;
   destination?: IntegrationProvider | null;
   enabled?: boolean;
   follow_up?: boolean;
   required_fields?: string[];
+  retention_days?: number | null;
   sources?: LeadSource[];
 }
 export interface LegalProfile {
   address?: PostalAddress | null;
   data_processors?: string[];
+  data_retention?: string | null;
+  first_layer_notice?: string | null;
   legal_name?: string | null;
   privacy_contact_email?: string | null;
   registration_number?: string | null;

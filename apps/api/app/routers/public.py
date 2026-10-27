@@ -113,6 +113,18 @@ def create_public_lead(
         logger.info("public_lead_suppressed_spam business=%s reason=%s", business.id, reason)
         return PublicLeadCreateResponse()
 
+    # C2.1: a business that requires explicit consent never stores (or
+    # notifies about) a submission without it. Checked after the spam drop
+    # (a bot still sees a normal success) and before the preview drop (a
+    # preview submission is validated exactly like production). Opt-in per
+    # business, so a site already live without the checkbox is unaffected.
+    if business_config is not None and business_config.lead_management.consent_required and not payload.consent:
+        raise AppError(
+            "Please accept the privacy policy to send your message.",
+            code="consent_required",
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        )
+
     if from_preview:
         # Same response shape as a real success (the site's form shows its
         # normal confirmation), but nothing is persisted, notified or
@@ -164,7 +176,11 @@ def create_public_lead(
 
     try:
         deliver_internal_notification(
-            notification=notification, business_name=business.name, business_config=business_config, sender=sender
+            notification=notification,
+            business_name=business.name,
+            business_config=business_config,
+            sender=sender,
+            lead=lead,
         )
     except NotificationDeliveryError as exc:
         # notification.delivered stays False; the lead itself is
@@ -211,6 +227,11 @@ def create_public_lead(
             lead_id=lead.id,
         )
 
+    # C2.1: commit the lead and the outcome of both emails BEFORE handing the
+    # lead to n8n. Its workflow calls back into /internal/notifications and
+    # /internal/leads/{id}/acknowledgement-email, which skip anything already
+    # delivered — that check only works against committed state.
+    session.commit()
     _dispatch_to_automation_if_configured(session, lead)
 
     return PublicLeadCreateResponse()

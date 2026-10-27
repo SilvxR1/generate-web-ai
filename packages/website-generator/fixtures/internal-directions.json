@@ -160,7 +160,9 @@
           ],
           "destination": "google_sheets",
           "acknowledgement": true,
-          "follow_up": true
+          "follow_up": true,
+          "consent_required": false,
+          "retention_days": null
         },
         "communications": {
           "email_enabled": true,

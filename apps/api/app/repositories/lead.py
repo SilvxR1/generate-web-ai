@@ -71,6 +71,18 @@ class LeadRepository(TenantScopedRepository[Lead]):
         stmt = select(Lead).where(Lead.id == lead_id, Lead.tenant_id == tenant_id, Lead.business_id == business_id)
         return self.session.scalars(stmt).first()
 
+    def lock_for_business(self, tenant_id: UUID, business_id: UUID, lead_id: UUID) -> Lead | None:
+        """C2.1: get_for_business with a row lock (SELECT ... FOR UPDATE),
+        held until the caller's transaction ends — serializes concurrent
+        delivery attempts for one lead so a notification is sent at most
+        once. A no-op lock on SQLite (tests), real on PostgreSQL."""
+        stmt = (
+            select(Lead)
+            .where(Lead.id == lead_id, Lead.tenant_id == tenant_id, Lead.business_id == business_id)
+            .with_for_update()
+        )
+        return self.session.scalars(stmt).first()
+
     def get_by_client_submission(self, business_id: UUID, submission_id: UUID) -> Lead | None:
         """H1.2: the lead an earlier attempt of the same client submission
         created for this business (public idempotency; never cross-business)."""

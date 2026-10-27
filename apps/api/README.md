@@ -98,6 +98,11 @@ above.
 
 ## Running it
 
+Before starting the API, Alembic or Docker Compose locally, run
+`.venv/bin/python scripts/check_local_env.py` and follow
+[docs/local-development.md](../../docs/local-development.md): it keeps local
+work and tests away from production configuration.
+
 ```sh
 uv sync                      # installs deps + creates .venv
 uv run pytest -q             # 104 tests: schema validation, tenant isolation,

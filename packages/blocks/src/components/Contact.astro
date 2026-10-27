@@ -92,11 +92,19 @@ export type ContactFormField =
   | CheckboxContactFormField
   | FileContactFormField;
 
+/** C2.1: first-layer data-protection notice shown under the fields. */
+export interface ContactFormPrivacyNotice {
+  text: string;
+  linkLabel: string;
+  href: string;
+}
+
 export interface ContactForm {
   action?: string;
   method?: "get" | "post";
   fields: ContactFormField[];
   submitLabel?: string;
+  privacyNotice?: ContactFormPrivacyNotice;
 }
 
 export interface ContactContent {
@@ -296,6 +304,12 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
            */
         }
         <input type="hidden" name="rendered_at" />
+        {form.privacyNotice && (
+          <p class="block-contact__privacy">
+            {form.privacyNotice.text}{" "}
+            <a href={form.privacyNotice.href}>{form.privacyNotice.linkLabel}</a>
+          </p>
+        )}
         <button type="submit" class="block-contact__submit">
           {form.submitLabel ?? "Send message"}
         </button>
@@ -519,6 +533,19 @@ const FULL_WIDTH_TYPES = new Set(["textarea", "file"]);
     width: 1px;
     height: 1px;
     overflow: hidden;
+  }
+
+  .block-contact__privacy {
+    margin: 0;
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: inherit;
+  }
+
+  .block-contact__privacy a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
 
   .block-contact__submit {

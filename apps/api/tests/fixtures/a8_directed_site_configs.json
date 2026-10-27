@@ -9,7 +9,7 @@
         "colors": {
           "primary": "#e06e17",
           "secondary": "#1eaaa0",
-          "accent": "#f6aa28",
+          "accent": "#9d6607",
           "background": "#f9f9f9",
           "foreground": "#111827"
         },
@@ -261,46 +261,45 @@
                           "value": "diseno-planificacion"
                         }
                       ]
+                    },
+                    {
+                      "name": "message",
+                      "label": "Mensaje",
+                      "type": "textarea",
+                      "required": false
                     }
                   ],
-                  "submitLabel": "Enviar solicitud"
+                  "submitLabel": "Enviar solicitud",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Reforma Casa Valencia operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: info@reformacasavalencia.example"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Reforma Casa Valencia y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at info@reformacasavalencia.example."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -308,29 +307,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Reforma Casa Valencia."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, teléfono, el servicio que te interesa, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to info@reformacasavalencia.example."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a info@reformacasavalencia.example.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -343,16 +350,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Reforma Casa Valencia's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -410,7 +417,8 @@
           "label": "Contacto",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     },
     "new_direction": {
       "brand": {
@@ -421,7 +429,7 @@
         "colors": {
           "primary": "#823c06",
           "secondary": "#0b554f",
-          "accent": "#de8e08",
+          "accent": "#a36806",
           "background": "#fdfcfc",
           "foreground": "#121721"
         },
@@ -657,46 +665,45 @@
                           "value": "diseno-planificacion"
                         }
                       ]
+                    },
+                    {
+                      "name": "message",
+                      "label": "Mensaje",
+                      "type": "textarea",
+                      "required": false
                     }
                   ],
-                  "submitLabel": "Enviar solicitud"
+                  "submitLabel": "Enviar solicitud",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Reforma Casa Valencia operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: info@reformacasavalencia.example"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Reforma Casa Valencia y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at info@reformacasavalencia.example."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -704,29 +711,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Reforma Casa Valencia."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, teléfono, el servicio que te interesa, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to info@reformacasavalencia.example."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a info@reformacasavalencia.example.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -739,16 +754,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Reforma Casa Valencia's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -806,7 +821,8 @@
           "label": "Contacto",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     },
     "undirected": {
       "brand": {
@@ -817,7 +833,7 @@
         "colors": {
           "primary": "#b45309",
           "secondary": "#0f766e",
-          "accent": "#f59e0b",
+          "accent": "#a36907",
           "background": "#ffffff",
           "foreground": "#111827"
         },
@@ -1080,46 +1096,45 @@
                           "value": "diseno-planificacion"
                         }
                       ]
+                    },
+                    {
+                      "name": "message",
+                      "label": "Mensaje",
+                      "type": "textarea",
+                      "required": false
                     }
                   ],
-                  "submitLabel": "Enviar solicitud"
+                  "submitLabel": "Enviar solicitud",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Reforma Casa Valencia operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: info@reformacasavalencia.example"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Reforma Casa Valencia y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at info@reformacasavalencia.example."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -1127,29 +1142,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Reforma Casa Valencia."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: info@reformacasavalencia.example"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, teléfono, el servicio que te interesa, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to info@reformacasavalencia.example."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a info@reformacasavalencia.example.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -1162,16 +1185,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Reforma Casa Valencia's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -1229,7 +1252,8 @@
           "label": "Contacto",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     }
   },
   "handmade_shop": {
@@ -1241,7 +1265,7 @@
         "colors": {
           "primary": "#d48034",
           "secondary": "#96613c",
-          "accent": "#ebae54",
+          "accent": "#9e6512",
           "background": "#fbf9f6",
           "foreground": "#3a2e28"
         },
@@ -1434,44 +1458,37 @@
                       "required": true
                     }
                   ],
-                  "submitLabel": "Enviar mensaje"
+                  "submitLabel": "Enviar mensaje",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Taller de Hilo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Taller de Hilo y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -1479,29 +1496,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Taller de Hilo."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, correo electrónico, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to hola@example.com."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a hola@example.com.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -1514,16 +1539,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Taller de Hilo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -1561,7 +1586,8 @@
           "label": "Hablemos",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     },
     "new_direction": {
       "brand": {
@@ -1571,7 +1597,7 @@
         "colors": {
           "primary": "#844913",
           "secondary": "#4d301b",
-          "accent": "#d18515",
+          "accent": "#a36810",
           "background": "#fdfcfc",
           "foreground": "#1e1815"
         },
@@ -1744,44 +1770,37 @@
                       "required": true
                     }
                   ],
-                  "submitLabel": "Enviar mensaje"
+                  "submitLabel": "Enviar mensaje",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Taller de Hilo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Taller de Hilo y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -1789,29 +1808,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Taller de Hilo."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, correo electrónico, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to hola@example.com."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a hola@example.com.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -1824,16 +1851,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Taller de Hilo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -1871,7 +1898,8 @@
           "label": "Hablemos",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     },
     "undirected": {
       "brand": {
@@ -1881,7 +1909,7 @@
         "colors": {
           "primary": "#b5651d",
           "secondary": "#6b4226",
-          "accent": "#e8a33d",
+          "accent": "#9d6513",
           "background": "#fdf8f3",
           "foreground": "#3a2e28"
         },
@@ -2234,44 +2262,37 @@
                       "required": true
                     }
                   ],
-                  "submitLabel": "Enviar mensaje"
+                  "submitLabel": "Enviar mensaje",
+                  "privacyNotice": {
+                    "text": "Responsable: pendiente de completar por el titular. Finalidad: atender tu consulta. Derechos: acceso, rectificación, supresión y otros.",
+                    "linkLabel": "Más información en la política de privacidad.",
+                    "href": "/privacidad"
+                  }
                 }
               }
             }
           ]
         },
         {
-          "path": "/privacy",
+          "path": "/aviso-legal",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Privacy Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Aviso legal",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Who we are",
-                    "body": "Taller de Hilo operates this website.\n\nRegistered address: Not provided.\n\nRegistration number: Not provided.\n\nTax ID: Not provided.\n\nContact for privacy questions: hola@example.com"
+                    "heading": "Titular del sitio web",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Information we collect",
-                    "body": "If you submit this site's contact form, we collect the information you enter (such as your name, email address, phone number, and message) in order to respond to your inquiry. We do not collect any other personal information through this site."
+                    "heading": "Objeto",
+                    "body": "Este sitio web presenta la actividad de Taller de Hilo y permite ponerse en contacto con su titular."
                   },
                   {
-                    "heading": "Cookies",
-                    "body": "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only set after you give consent through the cookie banner."
-                  },
-                  {
-                    "heading": "Third parties we work with",
-                    "body": "No third-party data processors have been listed for this business."
-                  },
-                  {
-                    "heading": "Your rights",
-                    "body": "Depending on where you are located, applicable law may give you rights to access, correct, or delete personal data we hold about you, or to object to how it's used. To exercise any of these rights, contact us at hola@example.com."
-                  },
-                  {
-                    "heading": "Changes to this policy",
-                    "body": "We may update this policy from time to time. Continued use of this site after a change means you accept the updated policy."
+                    "heading": "Privacidad y cookies",
+                    "body": "El tratamiento de datos personales se explica en la Política de privacidad y el uso del almacenamiento del navegador, en la Política de cookies."
                   }
                 ]
               }
@@ -2279,29 +2300,37 @@
           ]
         },
         {
-          "path": "/terms",
+          "path": "/privacidad",
           "blocks": [
             {
               "type": "legal_text",
               "content": {
-                "heading": "Terms of Service",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de privacidad",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "Acceptance of these terms",
-                    "body": "By using this website, you agree to these terms. This website is operated by Taller de Hilo."
+                    "heading": "Responsable del tratamiento",
+                    "body": "Titular: Pendiente de completar por el titular.\n\nNIF: Pendiente de completar por el titular.\n\nDomicilio: Pendiente de completar por el titular.\n\nCorreo electrónico: hola@example.com"
                   },
                   {
-                    "heading": "Use of this website",
-                    "body": "You agree to use this website only for lawful purposes and in a way that doesn't infringe the rights of, or restrict or inhibit the use and enjoyment of this site by, anyone else."
+                    "heading": "Qué datos tratamos y para qué",
+                    "body": "Si nos escribes mediante el formulario de contacto tratamos nombre, correo electrónico, el mensaje que escribas con la única finalidad de atender tu consulta y responderte. Estos datos no se usan para publicidad ni para estadísticas.\n\nTu mensaje se guarda en la plataforma que aloja este sitio y se envía por email al titular para que pueda responderte. Puedes recibir un email automático que confirma su recepción."
                   },
                   {
-                    "heading": "No warranty",
-                    "body": "This website and its content are provided as-is, without warranties of any kind, to the fullest extent permitted by applicable law."
+                    "heading": "Legitimación",
+                    "body": "Pendiente de completar por el titular."
                   },
                   {
-                    "heading": "Contact",
-                    "body": "Questions about these terms can be sent to hola@example.com."
+                    "heading": "Conservación",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Proveedores con acceso a los datos",
+                    "body": "Pendiente de completar por el titular."
+                  },
+                  {
+                    "heading": "Tus derechos",
+                    "body": "Puedes solicitar el acceso, la rectificación o la supresión de tus datos, así como la limitación u oposición a su tratamiento y su portabilidad, escribiendo a hola@example.com.\n\nTambién puedes presentar una reclamación ante la Agencia Española de Protección de Datos (www.aepd.es)."
                   }
                 ]
               }
@@ -2314,16 +2343,16 @@
             {
               "type": "legal_text",
               "content": {
-                "heading": "Cookie Policy",
-                "disclaimer": "This page was generated automatically from the information provided in this business's legal profile, plus general template text. It is not legal advice, has not been reviewed by a lawyer, and does not by itself guarantee compliance with any law. Consult a legal professional to confirm it meets your obligations.",
+                "heading": "Política de cookies",
+                "disclaimer": "Algunos datos de esta página están pendientes de completar por el titular del sitio web.",
                 "sections": [
                   {
-                    "heading": "How this site uses cookies",
-                    "body": "Taller de Hilo's website groups cookies into four categories: Necessary (required for the site to function, always on), Analytics, Marketing, and Preferences. This site currently only sets cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or Preferences cookie, it will only be set after you explicitly consent to that category — consent is never assumed or pre-selected."
+                    "heading": "Qué utiliza este sitio",
+                    "body": "El código de este sitio web no crea cookies. Guarda tu elección sobre privacidad en el almacenamiento local de tu navegador para no volver a preguntarte.\n\nSi aceptas la categoría «Analítica», el sitio envía al servidor del titular eventos de uso sin identificadores personales (por ejemplo, visitas a la página o pulsaciones en los botones de contacto). Si no la aceptas, no se envía ninguno."
                   },
                   {
-                    "heading": "Managing your preferences",
-                    "body": "You can change your cookie choices at any time using the \"Manage cookie preferences\" link in this site's footer."
+                    "heading": "Cómo cambiar tu elección",
+                    "body": "Puedes cambiarla en cualquier momento desde el enlace «Preferencias de privacidad» del pie de página."
                   }
                 ]
               }
@@ -2361,7 +2390,8 @@
           "label": "Hablemos",
           "href": "#contact"
         }
-      ]
+      ],
+      "locale": "es"
     }
   }
 }

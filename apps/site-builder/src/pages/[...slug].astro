@@ -23,6 +23,6 @@ export const getStaticPaths = (() => {
 const { page, siteConfig } = Astro.props;
 ---
 
-<Layout siteConfig={siteConfig}>
+<Layout siteConfig={siteConfig} pagePath={page.path}>
   <PageRenderer page={page} />
 </Layout>

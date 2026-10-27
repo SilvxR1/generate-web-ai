@@ -47,11 +47,14 @@ export interface Props {
   /** Scales the image slightly on hover. Respects prefers-reduced-motion. Defaults to false. */
   zoom?: boolean;
   loading?: "eager" | "lazy";
+  /** C2.1: "high" for the one above-the-fold image the page is judged by (LCP). */
+  fetchpriority?: "high" | "low" | "auto";
   /** Additional class names to merge onto the root element. */
   class?: string;
 }
 
-const { src, alt, width, height, ratio, radius = "none", zoom = false, loading = "lazy", class: className } = Astro.props;
+const { src, alt, width, height, ratio, radius = "none", zoom = false, loading = "lazy", fetchpriority, class: className } =
+  Astro.props;
 
 const isLocal = typeof src !== "string";
 
@@ -86,7 +89,16 @@ const imgClassList = ["ui-media__img", { "ui-media__img--zoom": zoom }];
         class:list={imgClassList}
       />
     ) : (
-      <img src={src} alt={alt} width={width} height={height} loading={loading} decoding="async" class:list={imgClassList} />
+      <img
+        src={src}
+        alt={alt}
+        width={width}
+        height={height}
+        loading={loading}
+        fetchpriority={fetchpriority}
+        decoding={fetchpriority === "high" ? undefined : "async"}
+        class:list={imgClassList}
+      />
     )
   }
 </div>

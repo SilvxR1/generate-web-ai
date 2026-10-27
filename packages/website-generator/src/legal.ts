@@ -19,7 +19,9 @@
  * legal page a real site should have.
  */
 import type { BusinessProfile, LegalProfile } from "@generate-web-ai/business-config-types";
-import type { PageConfig } from "@generate-web-ai/site-config";
+import type { PageConfig, SiteLocale } from "@generate-web-ai/site-config";
+import type { SpanishLegalOptions } from "./legal-es.ts";
+import { buildSpanishLegalPages } from "./legal-es.ts";
 
 const NOT_PROVIDED = "Not provided.";
 
@@ -85,8 +87,8 @@ function buildPrivacyPolicyPage(
             {
               heading: "Cookies",
               body:
-                "This site uses cookies as described in its Cookie Policy. Non-essential cookies are only " +
-                "set after you give consent through the cookie banner.",
+                "This site's use of browser storage is described in its Cookie Policy. Its optional " +
+                "analytics only runs after you accept it in the privacy notice.",
             },
             {
               heading: "Third parties we work with",
@@ -164,11 +166,11 @@ function buildCookiePolicyPage(profile: BusinessProfile, legal: LegalProfile | u
             {
               heading: "How this site uses cookies",
               body:
-                `${name}'s website groups cookies into four categories: Necessary (required for the site to ` +
-                "function, always on), Analytics, Marketing, and Preferences. This site currently only sets " +
-                "cookies in the Necessary category. If a future feature needs an Analytics, Marketing, or " +
-                "Preferences cookie, it will only be set after you explicitly consent to that category — " +
-                "consent is never assumed or pre-selected.",
+                `${name}'s website code sets no cookies. It keeps your choice on the privacy notice in your ` +
+                "browser's local storage so you are not asked again. If you accept the Analytics category, the " +
+                "site sends its own server usage events without personal identifiers (for example, page visits " +
+                "or clicks on contact links); if you don't, none are sent. Consent is never assumed or " +
+                "pre-selected.",
             },
             {
               heading: "Managing your preferences",
@@ -183,11 +185,17 @@ function buildCookiePolicyPage(profile: BusinessProfile, legal: LegalProfile | u
   };
 }
 
+/** C2.1: `locale` "es" switches to the Spanish client templates in
+ * legal-es.ts (Aviso Legal / Privacidad / Cookies); omitted, the English
+ * pages below are produced exactly as before. */
 export function buildLegalPages(
   profile: BusinessProfile,
   legal: LegalProfile | undefined,
   hasContactForm: boolean,
+  locale: SiteLocale = "en",
+  spanish: Omit<SpanishLegalOptions, "hasContactForm"> = {},
 ): PageConfig[] {
+  if (locale === "es") return buildSpanishLegalPages(profile, legal, { ...spanish, hasContactForm });
   return [
     buildPrivacyPolicyPage(profile, legal, hasContactForm),
     buildTermsPage(profile, legal),

@@ -35,6 +35,7 @@ from app.publishing.artifact_store import ArtifactError, short_hash, store_versi
 from app.publishing.build import build_site
 from app.publishing.errors import WebsitePublisherError
 from app.publishing.publisher import WebsiteArtifact, WebsitePublisher
+from app.publishing.site_url import canonical_site_url
 from app.qa.platform_contract import validate_platform_contract
 from app.repositories.website import WebsiteRepository
 from app.schemas.site_config import SiteConfigPayload
@@ -151,6 +152,8 @@ def publish_website(
     # went through the draft flow still gets it. Never trusted from the
     # payload itself.
     site_config.businessId = str(business_id)
+    # C2.1: same server-side-only rule for the canonical origin.
+    site_config.siteUrl = canonical_site_url(session=session, tenant_id=tenant_id, business_id=business_id)
 
     def _build() -> WebsiteArtifact:
         artifact = build_site(site_config)

@@ -44,6 +44,7 @@ export type {
   FileContactFormFieldConfig,
   ContactFormFieldConfig,
   ContactFormConfig,
+  ContactFormPrivacyNoticeConfig,
   ContactWhatsAppCtaConfig,
   ContactBlockContent,
   ContactBlockConfig,
@@ -56,7 +57,7 @@ export type {
 export { BLOCK_TYPES, isKnownBlockType, assertKnownBlockType } from "./blocks.ts";
 export type { PageConfig } from "./pages.ts";
 export type { SEOConfig } from "./seo.ts";
-export type { SiteConfig, SiteNavigationItem } from "./site-config.ts";
+export type { SiteConfig, SiteLocale, SiteNavigationItem } from "./site-config.ts";
 export type { WhatsAppConfig } from "./whatsapp.ts";
 export { exampleSiteConfig } from "./example.ts";
 export type {

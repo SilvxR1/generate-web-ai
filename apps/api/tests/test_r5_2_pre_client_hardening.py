@@ -160,9 +160,14 @@ def test_the_real_nexo_export_under_nexo_has_no_identity_finding_and_an_unchange
         NEXO_EXPORT, tmp_path / "w", nexo_reformas_business_config(), site_origin="https://nexo-reformas.example"
     )
     assert not [f for f in planned.supportability.findings if f.code.startswith("source_identity")]
-    # The plan identity recorded before R5.2: legitimate sources are unaffected.
+    # Legitimate sources are unaffected by the identity check. C3 moved this pin
+    # from 2802d4d1… : the plan differs from it only in business_truth_sha256
+    # (LegalTruth.data_retention/consent_required) and in
+    # src/platform/legal-content.json (the Spanish "Titular" wording). P3 then
+    # moved it from 1d35c313… : only src/platform/legal-content.json differs
+    # (accurate contact/analytics wording and the TanStack Router storage line).
     assert planned.plan is not None
-    assert planned.plan.plan_sha256 == "2802d4d1c492ab204bfaf7887a1274849d4a5902558e2fe233870bbc83651cb3"
+    assert planned.plan.plan_sha256 == "b0b0d4ea21ee165ed6793a6a5be17105996f1a7c64e51c672ee7cde74a2e6890"
 
 
 # --- 3. Discard ------------------------------------------------------------------------------------

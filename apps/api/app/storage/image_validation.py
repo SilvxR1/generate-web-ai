@@ -64,6 +64,20 @@ def _sniff_format(data: bytes) -> str | None:
     return None
 
 
+def raster_dimensions(data: bytes) -> tuple[int, int] | None:
+    """C2.1: the intrinsic (width, height) of an already-validated raster
+    image, read from its header only — or None for anything that isn't one.
+    Never raises: dimensions are presentation metadata, never a gate."""
+    fmt = _sniff_format(data)
+    if fmt is None:
+        return None
+    try:
+        width, height = Image.open(BytesIO(data), formats=[fmt]).size
+    except Exception:  # noqa: BLE001 — metadata only
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
 def validate_raster_image(data: bytes) -> str:
     """Raises InvalidImageError unless `data` is a real, safely-decodable
     JPEG/PNG/WebP image within safe dimension bounds. Returns the REAL

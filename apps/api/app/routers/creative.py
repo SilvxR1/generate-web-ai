@@ -113,7 +113,7 @@ from app.services.business_service import BusinessNotFoundError, BusinessService
 from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import StorageProvider, absolute_url_path, generate_storage_key
 from app.storage.errors import StorageProviderError
-from app.storage.image_validation import InvalidImageError, validate_raster_image
+from app.storage.image_validation import InvalidImageError, raster_dimensions, validate_raster_image
 from app.storage.private import PrivateArtifactStorage
 
 logger = logging.getLogger(__name__)
@@ -379,8 +379,15 @@ def _save_uploaded_asset(
         storage_key=storage_key,
         original_filename=file.filename,
         alt_text=alt_text,
+        asset_metadata=_dimension_metadata(content),
     )
     return BusinessAssetRepository(session).add(asset)
+
+
+def _dimension_metadata(content: bytes) -> dict[str, int] | None:
+    """C2.1: the image's intrinsic size, so generated sites can size <img>."""
+    dimensions = raster_dimensions(content)
+    return {"width": dimensions[0], "height": dimensions[1]} if dimensions else None
 
 
 @router.post("/assets/upload", response_model=BusinessAssetRead, status_code=status.HTTP_201_CREATED)
@@ -622,6 +629,9 @@ def replace_business_asset(
     asset.storage_key = new_storage_key
     asset.original_filename = file.filename
     asset.unavailable_reason = None
+    # C2.1: the new file's size replaces the old one; other metadata stays.
+    kept = {key: value for key, value in (asset.asset_metadata or {}).items() if key not in ("width", "height")}
+    asset.asset_metadata = {**kept, **(_dimension_metadata(content) or {})} or None
     session.flush()
 
     if old_storage_key and old_storage_provider == storage.provider_name:

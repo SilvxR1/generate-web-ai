@@ -33,6 +33,7 @@ from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.dependencies import get_optional_notification_sender, get_session, verify_internal_automation_token
 from app.domain.business_config import BusinessConfig
+from app.domain.enums import NotificationDeliveryStatus
 from app.errors import AppError
 from app.notifications.sender import NotificationSender
 from app.notifications.service import (
@@ -184,9 +185,15 @@ def send_lead_acknowledgement_email(
     silent 200 that hides it.
     """
     business = _require_known_business(session, payload.tenant_id, payload.business_id)
-    lead = LeadRepository(session).get_for_business(payload.tenant_id, payload.business_id, lead_id)
+    lead = LeadRepository(session).lock_for_business(payload.tenant_id, payload.business_id, lead_id)
     if lead is None:
         raise AppError("Lead not found.", code="lead_not_found", status_code=status.HTTP_404_NOT_FOUND)
+
+    # C2.1: the public lead route is the authoritative sender and commits the
+    # outcome before dispatching here, so a lead it already acknowledged is
+    # never emailed twice — this call only retries a FAILED/absent attempt.
+    if lead.acknowledgement_status == NotificationDeliveryStatus.SENT:
+        return LeadAcknowledgementEmailResponse(sent=False)
 
     business_config = BusinessConfig.model_validate(business.config) if business.config else None
 
@@ -203,6 +210,9 @@ def send_lead_acknowledgement_email(
         session.commit()
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
+    # C2.1: durable at once, like ingest_notification — releases the row lock
+    # with the SENT status visible to the next retry.
+    session.commit()
     return LeadAcknowledgementEmailResponse(sent=sent)
 
 
@@ -213,6 +223,19 @@ def ingest_notification(
     sender: NotificationSender | None = Depends(get_optional_notification_sender),
 ) -> InternalNotification:
     business = _require_known_business(session, payload.tenant_id, payload.business_id)
+
+    # C2.1: one delivered internal notification per lead, whichever path sent
+    # it. The public lead route sends first and commits before dispatching
+    # to n8n; this endpoint then returns that delivered notification instead
+    # of emailing again, and only sends when no earlier attempt succeeded.
+    lead = None
+    if payload.id is not None:
+        lead = LeadRepository(session).lock_for_business(payload.tenant_id, payload.business_id, payload.id)
+        delivered = InternalNotificationRepository(session).first_delivered_for_lead(
+            payload.tenant_id, payload.business_id, payload.id
+        )
+        if delivered is not None:
+            return delivered
 
     contact = payload.email or payload.phone or "sin datos de contacto"
     summary = f"Nuevo lead ({payload.source}) de {payload.name or 'desconocido'} — {contact}"
@@ -238,7 +261,11 @@ def ingest_notification(
 
     try:
         deliver_internal_notification(
-            notification=notification, business_name=business.name, business_config=business_config, sender=sender
+            notification=notification,
+            business_name=business.name,
+            business_config=business_config,
+            sender=sender,
+            lead=lead,
         )
     except NotificationDeliveryError as exc:
         # The notification row above is already committed, so this
@@ -253,4 +280,7 @@ def ingest_notification(
         session.commit()
         raise AppError(str(exc), code=exc.code, status_code=exc.status_code) from exc
 
+    # C2.1: make a successful delivery durable at once, so the next callback
+    # for this lead (an n8n retry) sees it and never emails again.
+    session.commit()
     return notification

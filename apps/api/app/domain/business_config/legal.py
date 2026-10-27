@@ -34,3 +34,10 @@ class LegalProfile(BaseModel):
     # list itself, since doing so would assert a data-processing
     # relationship this app cannot actually verify.
     data_processors: list[str] = Field(default_factory=list)
+    # C2.1: how long enquiry data is kept, in the owner's own words (e.g.
+    # "12 meses desde la última comunicación"). Human-entered only — the
+    # generated privacy policy shows it verbatim or marks it pending.
+    data_retention: str | None = Field(default=None, max_length=300)
+    # C2.1: optional owner-supplied replacement for the generated
+    # first-layer privacy notice shown under the contact form.
+    first_layer_notice: str | None = Field(default=None, max_length=1000)

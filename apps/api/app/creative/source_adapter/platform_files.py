@@ -48,6 +48,16 @@ THIRD_PARTY_DISCLOSURES: dict[str, dict[str, str]] = {
         "cdn.fontshare.com); loading the page sends your IP address to them. It is not used for analytics.",
     }
 }
+# P3: browser storage a source family's own framework uses (measured, not
+# assumed: TanStack Router's sessionStorage scroll-restoration key).
+TECHNICAL_STORAGE_DISCLOSURES: dict[str, dict[str, str]] = {
+    "tanstack-router": {
+        "es": "el sistema de navegación del sitio (TanStack Router) guarda en el almacenamiento de sesión del "
+        "navegador la posición de desplazamiento de cada página durante tu visita; se borra al cerrar la pestaña.",
+        "en": "the site's navigation system (TanStack Router) keeps each page's scroll position in the browser's "
+        "session storage during your visit; it is cleared when you close the tab.",
+    }
+}
 
 JSON_LD_TYPES = {
     "home_renovation": "HomeAndConstructionBusiness",
@@ -141,8 +151,11 @@ def business_module(truth: BusinessTruth, origin: str) -> str:
     )
 
 
-def legal_content_json(truth: BusinessTruth, locale: str, third_parties: tuple[str, ...]) -> str:
+def legal_content_json(
+    truth: BusinessTruth, locale: str, third_parties: tuple[str, ...], technical_storage: tuple[str, ...] = ()
+) -> str:
     name = truth.identity.name
+    content = legal_page_content(truth, locale=locale, third_parties=third_parties, technical_storage=technical_storage)
     pages = {
         slug: {
             "title": title,
@@ -150,7 +163,7 @@ def legal_content_json(truth: BusinessTruth, locale: str, third_parties: tuple[s
             "metaDescription": text(locale, "desc").format(title=title, name=name),
             "paragraphs": paragraphs,
         }
-        for slug, (title, paragraphs) in legal_page_content(truth, locale=locale, third_parties=third_parties).items()
+        for slug, (title, paragraphs) in content.items()
     }
     return json.dumps({"businessName": name, "lang": locale, "pages": pages}, ensure_ascii=False, indent=2) + "\n"
 

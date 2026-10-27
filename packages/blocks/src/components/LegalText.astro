@@ -3,11 +3,9 @@
  * LegalText — plain prose for a legal page (Privacy Policy, Terms of
  * Service, Cookie Policy). `body` paragraphs are split on blank lines
  * and rendered as separate <p> elements from plain text, never
- * `set:html`/`is:raw` — nothing here accepts markup. `disclaimer`
- * always renders, visibly, above the page content: this block can never
- * be used to present generated legal text as reviewed or guaranteed
- * compliant (see LegalTextBlockContent's own docstring in
- * packages/site-config).
+ * `set:html`/`is:raw` — nothing here accepts markup. `disclaimer`, when
+ * set, renders visibly above the page content (see LegalTextBlockContent's
+ * own docstring in packages/site-config for when producers set it).
  */
 import { Container, Heading, Text } from "@generate-web-ai/ui";
 
@@ -18,7 +16,7 @@ export interface LegalSection {
 
 export interface LegalTextContent {
   heading: string;
-  disclaimer: string;
+  disclaimer?: string;
   intro?: string;
   sections: LegalSection[];
   lastUpdated?: string;
@@ -46,9 +44,11 @@ function paragraphs(body: string): string[] {
 <section id={id} data-surface={background} class:list={["block-legal-text", { "block-reveal": reveal }, className]}>
   <Container size="sm">
     <Heading level={1} font="display">{heading}</Heading>
-    <div class="block-legal-text__disclaimer">
-      <Text size="sm">{disclaimer}</Text>
-    </div>
+    {disclaimer && (
+      <div class="block-legal-text__disclaimer">
+        <Text size="sm">{disclaimer}</Text>
+      </div>
+    )}
     {lastUpdated && (
       <Text size="sm" variant="muted">
         Last updated: {lastUpdated}

@@ -48,6 +48,7 @@ from app.publishing.publisher import PreviewPublisher, WebsitePublisher
 from app.repositories.tenant import TenantRepository
 from app.repositories.tenant_access import TenantAccessRepository
 from app.reviews.provider import GoogleReviewProvider, ManualReviewProvider
+from app.security.client_ip import client_ip, parse_trusted_proxies
 from app.security.rate_limit import InMemoryRateLimiter, RateLimiter, RateLimitExceededError
 from app.services.generated_image_qa import GeneratedImageQAService
 from app.storage import CloudflareR2StorageProvider, LocalStorageProvider, StorageProvider
@@ -653,7 +654,11 @@ def rate_limit_dependency(*, key_prefix: str, limit_attr: str, window_seconds: f
 
     def _dependency(request: Request, limiter: RateLimiter = Depends(get_rate_limiter)) -> None:
         limit = getattr(settings, limit_attr)
-        client_host = request.client.host if request.client else "unknown"
+        client_host = client_ip(
+            request.client.host if request.client else None,
+            request.headers.get("x-forwarded-for"),
+            parse_trusted_proxies(settings.trusted_proxy_cidrs),
+        )
         try:
             limiter.check(f"{key_prefix}:{client_host}", limit=limit, window_seconds=window_seconds)
         except RateLimitExceededError as exc:

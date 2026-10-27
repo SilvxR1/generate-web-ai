@@ -20,6 +20,7 @@ import {
   previewWebsiteDraft,
   publishWebsiteDraft,
   replaceBusinessAsset,
+  updateBusinessAsset,
   updateCreativeConfig,
   uploadBusinessAsset,
   uploadBusinessAssetsBatch,
@@ -160,6 +161,15 @@ export function CreativeSection({ business, tenantId, reloadToken }: CreativeSec
         }
         onReplace={(assetId, file) =>
           replaceBusinessAsset(businessId, assetId, file, tenantId).then((updated) => {
+            setAssets((prev) => ({
+              ...prev,
+              data: (prev.data ?? []).map((asset) => (asset.id === assetId ? updated : asset)),
+            }));
+            return updated;
+          })
+        }
+        onUpdateAltText={(assetId, altText) =>
+          updateBusinessAsset(businessId, assetId, { alt_text: altText }, tenantId).then((updated) => {
             setAssets((prev) => ({
               ...prev,
               data: (prev.data ?? []).map((asset) => (asset.id === assetId ? updated : asset)),

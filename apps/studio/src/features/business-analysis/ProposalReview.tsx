@@ -351,6 +351,18 @@ export function ProposalReview({
             {option.label}
           </label>
         ))}
+        <label className="checkbox-field">
+          <input
+            type="checkbox"
+            checked={draft.consentRequired}
+            onChange={(event) => {
+              const consentRequired = event.target.checked;
+              onChange((prev) => ({ ...prev, consentRequired }));
+            }}
+          />
+          Require explicit consent on the contact form (a required checkbox; the API refuses leads without it). Turn
+          on only once the published site shows the checkbox.
+        </label>
       </fieldset>
 
       <fieldset className="form-section">
@@ -579,6 +591,32 @@ export function ProposalReview({
           onChange={(event) => {
             const privacyContactEmail = event.target.value;
             onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, privacyContactEmail } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-data-retention">
+          Data retention for enquiries (in the owner's own words, e.g. "12 meses desde la última comunicación")
+        </label>
+        <input
+          id="legal-data-retention"
+          type="text"
+          value={draft.legalProfile.dataRetention}
+          onChange={(event) => {
+            const dataRetention = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, dataRetention } }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="legal-first-layer-notice">
+          Privacy notice under the contact form (optional — leave blank to use the generated one)
+        </label>
+        <textarea
+          id="legal-first-layer-notice"
+          rows={3}
+          value={draft.legalProfile.firstLayerNotice}
+          onChange={(event) => {
+            const firstLayerNotice = event.target.value;
+            onChange((prev) => ({ ...prev, legalProfile: { ...prev.legalProfile, firstLayerNotice } }));
           }}
         />
 

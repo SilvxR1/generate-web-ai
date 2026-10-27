@@ -36,7 +36,7 @@ import type {
   WebsiteDesignFamily,
 } from "@generate-web-ai/site-config";
 import { getDesignTokens, resolveDesignFamily, type DesignTokens } from "./design.ts";
-import { deriveBrandPalette } from "./palette.ts";
+import { accessibleAccent, deriveBrandPalette } from "./palette.ts";
 
 export interface ResolvedPresentation {
   /** The business's own content family — drives the copy preset only. */
@@ -122,6 +122,12 @@ function resolveFonts(config: BusinessConfig, direction: WebsiteCreativeDirectio
   return TYPOGRAPHY_STACKS[direction.typography.pairing];
 }
 
+/** C2.1: every resolved theme gets a contrast-safe accent (palette.ts). */
+function withAccessibleAccent(theme: ThemeConfig): ThemeConfig {
+  const accent = accessibleAccent(theme.colors.accent, theme.colors.background);
+  return accent === theme.colors.accent ? theme : { ...theme, colors: { ...theme.colors, accent } };
+}
+
 export function resolvePresentation(
   config: BusinessConfig,
   realGalleryAssetCount: number,
@@ -134,7 +140,7 @@ export function resolvePresentation(
     const tokens = getDesignTokens(contentFamily);
     return {
       contentFamily,
-      theme: baselineTheme(config, tokens),
+      theme: withAccessibleAccent(baselineTheme(config, tokens)),
       sectionOrder: PLACEMENT_ORDER[tokens.galleryPlacement],
       gallery: {},
       alternateSurfaces: tokens.alternateSurfaces,
@@ -145,12 +151,12 @@ export function resolvePresentation(
   const spacing = direction.density === "comfortable" ? undefined : DENSITY_SPACING[direction.density];
   return {
     contentFamily,
-    theme: {
+    theme: withAccessibleAccent({
       colors: resolveColors(config, direction),
       fonts: resolveFonts(config, direction),
       radius: RADIUS_TOKENS[direction.radius],
       ...(spacing ? { spacing } : {}),
-    },
+    }),
     sectionOrder: [...direction.sectionOrder],
     heroLayout: direction.hero.layout,
     gallery: { maxItems: direction.gallery.maxItems, layout: direction.gallery.layout },

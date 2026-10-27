@@ -26,6 +26,16 @@ def _fake_build(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("app.publishing.service.build_site", lambda site_config: _FAKE_ARTIFACT)
 
 
+# C2.1: every fact the Spanish legal pages need for a business without a
+# contact form (a form also needs data_retention + consent_required).
+_COMPLETE_LEGAL_PROFILE = {
+    "legal_name": "Acme S.L.",
+    "tax_id": "B12345678",
+    "address": {"street_address": "Calle Mayor 1", "locality": "Valencia", "country": "ES"},
+    "privacy_contact_email": "privacy@acme.example",
+}
+
+
 def _checks_by_id(report):
     return {check.id: check for check in report.checks}
 
@@ -80,6 +90,8 @@ def test_no_blocking_issues_once_both_technical_checks_are_ready(
     business.config = {
         "schema_version": 1,
         "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
+        # C2.1: the legal facts line is blocking too, so it must be complete.
+        "legal_profile": _COMPLETE_LEGAL_PROFILE,
     }
     session.flush()
 
@@ -106,11 +118,14 @@ def test_published_check_is_informational_never_blocking(session: Session, busin
     assert _checks_by_id(report_after)["published"].blocking is False
 
 
-def test_legal_profile_incompleteness_never_sets_blocking_even_when_not_ready(
+def test_legal_profile_incompleteness_blocks_publication(
     session: Session, business: Business, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr(settings, "cloudflare_account_id", None)
-    monkeypatch.setattr(settings, "cloudflare_api_token", None)
+    # C2.1: generated Spanish legal pages can't be published with facts
+    # pending from the owner (app.publishing.legal_readiness), so this
+    # line is blocking — formerly informational.
+    monkeypatch.setattr(settings, "cloudflare_account_id", "acct-1")
+    monkeypatch.setattr(settings, "cloudflare_api_token", "token-1")
     business.config = {
         "schema_version": 1,
         "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
@@ -122,10 +137,9 @@ def test_legal_profile_incompleteness_never_sets_blocking_even_when_not_ready(
 
     legal_check = _checks_by_id(report)["legal_profile"]
     assert legal_check.ready is False
-    assert legal_check.blocking is False
-    # has_blocking_issues is True here only because hosting_provider (a
-    # genuine technical blocker, pinned unconfigured above) isn't ready
-    # — never because of the incomplete legal profile.
+    assert legal_check.blocking is True
+    assert "tax_id" in legal_check.detail and "address" in legal_check.detail
+    # Hosting is configured above, so the legal facts are the blocker.
     assert report.has_blocking_issues is True
 
 
@@ -133,11 +147,7 @@ def test_legal_profile_ready_once_the_key_fields_are_filled_in(session: Session,
     business.config = {
         "schema_version": 1,
         "business_profile": {"name": business.name, "slug": business.slug, "industry": "other"},
-        "legal_profile": {
-            "legal_name": "Acme S.L.",
-            "address": {"street_address": "Calle Mayor 1", "locality": "Valencia", "country": "ES"},
-            "privacy_contact_email": "privacy@acme.example",
-        },
+        "legal_profile": _COMPLETE_LEGAL_PROFILE,
     }
     session.flush()
 
@@ -145,7 +155,7 @@ def test_legal_profile_ready_once_the_key_fields_are_filled_in(session: Session,
 
     legal_check = _checks_by_id(report)["legal_profile"]
     assert legal_check.ready is True
-    assert legal_check.blocking is False
+    assert legal_check.blocking is True
 
 
 def test_custom_domain_check_is_informational_and_reflects_no_domain_attached(session: Session, business: Business):

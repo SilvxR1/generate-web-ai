@@ -165,6 +165,7 @@
   },
   "lead_management": {
     "acknowledgement": true,
+    "consent_required": false,
     "destination": "google_sheets",
     "enabled": true,
     "follow_up": true,
@@ -173,6 +174,7 @@
       "phone",
       "service"
     ],
+    "retention_days": null,
     "sources": [
       "website_form",
       "phone",

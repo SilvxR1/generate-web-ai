@@ -77,10 +77,15 @@ from app.publishing.artifact_store import (
 from app.publishing.build import build_site
 from app.publishing.cloudflare.engine import preview_branch_for
 from app.publishing.errors import WebsitePublisherError
+from app.publishing.legal_readiness import (
+    require_legal_facts_for_imported_publication,
+    require_legal_facts_for_publication,
+)
 from app.publishing.publisher import PreviewPublisher, WebsiteArtifact, WebsitePublisher
 from app.publishing.qa_evidence import visual_qa_evidence
 from app.publishing.security_headers import CspExtensions
 from app.publishing.service import WebsiteStateResult, publish_prebuilt_artifact
+from app.publishing.site_url import canonical_site_url
 from app.qa.platform_contract import PLATFORM_CONTRACT_VERSION, validate_platform_contract
 from app.qa.truth_contract import TruthContractResult, validate_truth_contract
 from app.qa.validate import validate_site_config
@@ -396,6 +401,8 @@ def create_website_draft(
     # here rather than trusted from Studio's own payload, so it can never
     # be spoofed to point a generated site at a different business.
     site_config.businessId = str(business_id)
+    # C2.1: same server-side-only rule for the canonical origin.
+    site_config.siteUrl = canonical_site_url(session=session, tenant_id=tenant_id, business_id=business_id)
 
     draft = WebsiteDraft(
         tenant_id=tenant_id,
@@ -497,6 +504,10 @@ def publish_website_draft(
     same approved draft without re-approving.
     """
     draft = _require_approved(session, tenant_id, business_id, draft_id)
+    # C2.1: Spanish legal pages with pending owner facts are never published.
+    require_legal_facts_for_publication(
+        session=session, tenant_id=tenant_id, business_id=business_id, site_config=draft.site_config
+    )
     artifact = _load_verified_artifact(draft, artifact_storage)
     assert draft.artifact_sha256 is not None and draft.artifact_key is not None  # by _load_verified_artifact
     result = publish_prebuilt_artifact(
@@ -858,6 +869,14 @@ def publish_generative_website_draft(
     generative marker (never a fabricated SiteConfig) since there is no
     SiteConfig for a generative build."""
     draft = _require_approved(session, tenant_id, business_id, draft_id, generative=True)
+    from app.creative.source_imports import import_for_draft  # local: avoids an import cycle at startup
+
+    source_import = import_for_draft(session, draft)
+    if source_import is not None:
+        # C3: an imported site's legal pages meet the same C2.1 rule as a SiteConfig site's.
+        require_legal_facts_for_imported_publication(
+            session=session, tenant_id=tenant_id, business_id=business_id, inspection=source_import.inspection
+        )
 
     artifact_row = GenerativeWebsiteArtifactRepository(session).get_for_draft(tenant_id, business_id, draft_id)
     if artifact_row is None:

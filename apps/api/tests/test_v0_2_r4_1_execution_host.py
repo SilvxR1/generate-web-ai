@@ -599,5 +599,6 @@ def test_r4_1_migration_is_additive_reversible_and_the_single_head(tmp_path):
     # H1.1 (d2b7e4a9c1f3, generation_jobs.source_family) and H1.2
     # (e5c1a7b3d9f2, leads.details/client_submission_id) and R5
     # (a7d3f1c5e8b2, supervised source imports; b8e2f4a6c1d3, R5.2 import
-    # events + preview form signal) now follow R4.1.
-    assert alembic("heads").split() == ["b8e2f4a6c1d3", "(head)"]
+    # events + preview form signal) and P1 (c4d9e2a7f1b3, lead deletion
+    # events) now follow R4.1.
+    assert alembic("heads").split() == ["c4d9e2a7f1b3", "(head)"]

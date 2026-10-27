@@ -350,6 +350,8 @@ describe("buildCreatePayload", () => {
         address: { streetAddress: "Calle Mayor 1", locality: "Valencia", region: "", postalCode: "46001", country: "es" },
         privacyContactEmail: "privacidad@cafedelmar.example",
         dataProcessors: "Resend (email),  Cloudflare (hosting) ",
+        dataRetention: "",
+        firstLayerNotice: "",
       },
     };
 
@@ -383,11 +385,44 @@ describe("buildCreatePayload", () => {
         address: { streetAddress: "Calle Mayor 1", locality: "", region: "", postalCode: "", country: "" },
         privacyContactEmail: "",
         dataProcessors: "",
+        dataRetention: "",
+        firstLayerNotice: "",
       },
     };
 
     const payload = buildCreatePayload(draft);
 
     expect(payload.config?.legal_profile?.address).toBeUndefined();
+  });
+});
+
+describe("C2.1 consent and legal facts", () => {
+  const existing = (config: object): AnalyzeBusinessResponse =>
+    ({ proposed_config: config, missing_information: [], questions: [] }) as unknown as AnalyzeBusinessResponse;
+
+  it("round-trips consent_required, data_retention and first_layer_notice when editing an existing business", () => {
+    const draft = buildDraftFromAnalysis(
+      existing({
+        business_profile: { name: "Cositas", slug: "cositas" },
+        lead_management: { enabled: true, sources: ["website_form"], consent_required: true },
+        legal_profile: { data_retention: "12 meses", first_layer_notice: "Aviso propio." },
+      }),
+      "x".repeat(20),
+    );
+
+    const payload = buildCreatePayload(draft);
+
+    expect(payload.config?.lead_management?.consent_required).toBe(true);
+    expect(payload.config?.legal_profile?.data_retention).toBe("12 meses");
+    expect(payload.config?.legal_profile?.first_layer_notice).toBe("Aviso propio.");
+  });
+
+  it("defaults to no consent requirement and invents no retention period or notice", () => {
+    const draft = buildDraftFromAnalysis(existing({}), "x".repeat(20));
+
+    const payload = buildCreatePayload({ ...draft, name: "Cositas", slug: "cositas" });
+
+    expect(payload.config?.lead_management?.consent_required).toBe(false);
+    expect(payload.config?.legal_profile).toBeUndefined();
   });
 });

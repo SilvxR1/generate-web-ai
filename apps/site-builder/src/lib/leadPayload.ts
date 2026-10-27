@@ -44,6 +44,97 @@ export interface PublicLeadPayload {
   consent: boolean;
   company_website: string;
   rendered_at?: string;
+  /** C2.3: one id per logical submission, reused by its retries (the API
+   * stores at most one lead per business and submission_id). */
+  submission_id?: string;
+}
+
+/** PublicLeadCreateRequest.source_url's max_length: a longer value would
+ * fail validation and lose the whole lead, so it's left out instead. */
+export const SOURCE_URL_MAX_LENGTH = 2048;
+
+/**
+ * C2.3: the page a lead was sent from, for `source_url`. The page's
+ * canonical URL when it has one (an absolute http(s) URL), otherwise the
+ * current location. Query string, fragment and credentials are always
+ * dropped (campaign or session parameters are never stored with a lead).
+ * Comes from the page itself, never from a form field, and the server
+ * still validates it like any other value.
+ */
+export function leadSourceUrl({ href, canonicalHref }: { href: string; canonicalHref?: string | null }): string | undefined {
+  for (const candidate of [canonicalHref, href]) {
+    const url = toSourceUrl(candidate);
+    if (url) return url;
+  }
+  return undefined;
+}
+
+function toSourceUrl(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  const value = url.toString();
+  return value.length <= SOURCE_URL_MAX_LENGTH ? value : undefined;
+}
+
+interface CryptoLike {
+  randomUUID?: () => string;
+  getRandomValues?: (array: Uint8Array) => Uint8Array;
+}
+
+/** A random (version 4) UUID, the format PublicLeadCreateRequest.submission_id
+ * expects. `crypto.randomUUID` only exists on https/localhost pages, hence
+ * the getRandomValues fallback; with neither, undefined (the lead is sent
+ * without one, exactly as before). */
+export function newSubmissionId(
+  cryptoImpl: CryptoLike | undefined = (globalThis as { crypto?: CryptoLike }).crypto,
+): string | undefined {
+  if (typeof cryptoImpl?.randomUUID === "function") return cryptoImpl.randomUUID();
+  if (typeof cryptoImpl?.getRandomValues !== "function") return undefined;
+  const bytes = cryptoImpl.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
+ * C2.3: which submission_id each form's next attempt uses. An attempt
+ * with exactly the same content as the previous one is a retry and reuses
+ * its id, so the API can recognise a retry after a timeout or a lost
+ * response. Changed content is a new submission and gets a new id.
+ * `forget` drops a form's id once it has been sent successfully. Ids live
+ * only in memory (a WeakMap keyed by the form), never in storage.
+ */
+export class SubmissionIdTracker<Key extends object> {
+  readonly #attempts = new WeakMap<Key, { id: string | undefined; fingerprint: string }>();
+  readonly #generate: () => string | undefined;
+
+  constructor(generate: () => string | undefined = newSubmissionId) {
+    this.#generate = generate;
+  }
+
+  idFor(key: Key, payload: PublicLeadPayload): string | undefined {
+    const fingerprint = JSON.stringify({ ...payload, submission_id: undefined });
+    const previous = this.#attempts.get(key);
+    if (previous && previous.fingerprint === fingerprint) return previous.id;
+    const id = this.#generate();
+    this.#attempts.set(key, { id, fingerprint });
+    return id;
+  }
+
+  forget(key: Key): void {
+    this.#attempts.delete(key);
+  }
 }
 
 /** `undefined`/empty-string safe: FormData reports an unfilled optional
@@ -69,6 +160,8 @@ export interface BuildPublicLeadPayloadOptions {
    * `service` <select> and one is chosen — resolved by the caller
    * (which has the actual <select> element), not here. */
   serviceLabel?: string;
+  /** The page the form is on (see leadSourceUrl), resolved by the caller. */
+  sourceUrl?: string;
 }
 
 /**
@@ -79,7 +172,11 @@ export interface BuildPublicLeadPayloadOptions {
  * path in this function, or in LeadSubmission.astro, that reads or
  * forwards a tenant id from anywhere.
  */
-export function buildPublicLeadPayload({ fields, serviceLabel }: BuildPublicLeadPayloadOptions): PublicLeadPayload {
+export function buildPublicLeadPayload({
+  fields,
+  serviceLabel,
+  sourceUrl,
+}: BuildPublicLeadPayloadOptions): PublicLeadPayload {
   const subject = cleanString(fields.subject) ?? cleanString(serviceLabel) ?? cleanString(fields.service);
 
   return {
@@ -88,7 +185,8 @@ export function buildPublicLeadPayload({ fields, serviceLabel }: BuildPublicLead
     phone: cleanString(fields.phone),
     message: cleanString(fields.message),
     subject,
-    source_url: cleanString(fields.source_url),
+    // C2.3: from the page itself (leadSourceUrl), never from a form field.
+    source_url: cleanString(sourceUrl),
     consent: fields.consent === "true" || fields.consent === "on",
     // Always a string (never omitted) — matches
     // PublicLeadCreateRequest.company_website's own `= ""` default.

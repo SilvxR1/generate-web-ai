@@ -37,4 +37,16 @@ export interface SiteConfig {
   businessId?: string;
   /** Header navigation, in page order. Omitted when there are no sections worth linking. */
   navigation?: SiteNavigationItem[];
+  /** C2.1: language of the generated chrome (html lang, navigation,
+   * consent banner, footer, legal pages). Absent means "en" — the
+   * behaviour of every SiteConfig produced before this field existed. */
+  locale?: SiteLocale;
+  /** C2.1: the site's canonical public origin (e.g.
+   * "https://cositasypuntos.com"), set server-side from the business's
+   * active custom domain — never trusted from a client payload. Drives the
+   * canonical link, Open Graph URL, robots.txt Sitemap line, sitemap.xml
+   * and the noindex rule for the default *.pages.dev host. */
+  siteUrl?: string;
 }
+
+export type SiteLocale = "es" | "en";

@@ -201,11 +201,20 @@ export type ContactFormFieldConfig =
   | CheckboxContactFormFieldConfig
   | FileContactFormFieldConfig;
 
+/** C2.1: the first-layer data-protection notice shown under the form —
+ * short text plus a link to the full privacy policy. */
+export interface ContactFormPrivacyNoticeConfig {
+  text: string;
+  linkLabel: string;
+  href: string;
+}
+
 export interface ContactFormConfig {
   action?: string;
   method?: "get" | "post";
   fields: ContactFormFieldConfig[];
   submitLabel?: string;
+  privacyNotice?: ContactFormPrivacyNoticeConfig;
 }
 
 /** A prominent WhatsApp call-to-action rendered in the Contact block's
@@ -240,13 +249,15 @@ export interface LegalSectionConfig {
  * producer of this block type). Every value here is either a real fact
  * pulled from BusinessConfig.legal_profile or explicit template/
  * disclaimer copy — never a fabricated compliance claim. `disclaimer`
- * is the required, always-visible "this is not legal advice" notice
- * (P0's "Do NOT claim ... lawyer-reviewed status" constraint) — kept
- * separate from `sections` so a consumer can never omit it by accident.
+ * is a visible notice above the content, kept separate from `sections`.
+ * The English templates always set it ("this is not legal advice"). C2.1:
+ * the Spanish client templates set it only while required facts are still
+ * pending — a commercial publication is refused in that state
+ * (app.publishing.legal_readiness), so no claim is made either way.
  */
 export interface LegalTextBlockContent {
   heading: string;
-  disclaimer: string;
+  disclaimer?: string;
   intro?: string;
   sections: LegalSectionConfig[];
   lastUpdated?: string;

@@ -41,6 +41,22 @@ const INTERNAL_STRATEGY_PATTERNS: RegExp[] = [
   /\bobjective\s+is\s+to\s+create\s+a\s+professional\s+digital\s+presence\b/i,
   /\b(this|the)\s+website('?s)?\s+(aims?|goal|objective)\b/i,
   /\bwe\s+(are\s+)?build(ing)?\s+(a\s+|this\s+)?website\b/i,
+  // C3: the same briefing language in Spanish (it reached the live Cositas
+  // y Puntos site verbatim).
+  /\bno\s+(dispone|tiene)\s+de\s+(p[aá]gina\s+)?web\b/i,
+  /\b(todav[ií]a|a[uú]n)\s+no\s+tiene\s+(p[aá]gina\s+)?web\b/i,
+  /\bprincipal\s+presencia\s+(online|digital|en\s+internet)\b/i,
+  /\bel\s+objetivo\s+es\s+crear\b/i,
+  /\bpresencia\s+digital\s+profesional\b/i,
+  /\besta\s+primera\s+versi[oó]n\b/i,
+  /\bconversi[oó]n\s+principal\b/i,
+  /\bobjetivo\s+de\s+conversi[oó]n\b/i,
+  /\bvalores\s+a\s+transmitir\b/i,
+  /\bse\s+espera\s+que\b.{0,80}\bvisitantes\b/i,
+  /\bprioridad\s+m[oó]vil\b/i,
+  /\bno\s+se\s+han?\s+(proporcionado|facilitado|indicado)\b/i,
+  /\bcat[aá]logo\s*\/\s*portfolio\b/i,
+  /\bno\s+inventar\b/i,
 ];
 
 /** Splits on sentence-ending punctuation, keeping the punctuation with

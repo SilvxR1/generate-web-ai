@@ -141,3 +141,30 @@ export function deriveBrandPalette(brand: ThemeColorConfig, derivation: PaletteD
   ) as unknown as ThemeColorConfig;
   return { ...derived, foreground: readableForeground(derived.foreground, derived.background) };
 }
+
+const BUTTON_TEXT = "#ffffff";
+const AA_TEXT = 4.5;
+
+/**
+ * C2.1: the accent is used as text on the page background (eyebrows,
+ * outline buttons) and as the fill behind white button text, so it must
+ * reach WCAG AA 4.5:1 against both. A hex accent that doesn't is darkened
+ * in small lightness steps (same hue and saturation) until it does; the
+ * first passing shade is kept so the colour stays as close to the
+ * original as possible. A non-hex value, or one already passing, is
+ * returned unchanged. Only the rendered theme changes — the business's
+ * stored brand colours are never touched.
+ */
+export function accessibleAccent(accent: string, background: string): string {
+  const passes = (color: string) =>
+    contrastRatio(color, background) >= AA_TEXT && contrastRatio(color, BUTTON_TEXT) >= AA_TEXT;
+  if (passes(accent)) return accent;
+  const rgb = parseHex(accent);
+  if (!rgb || !parseHex(background)) return accent;
+  const hsl = toHsl(rgb);
+  for (let l = hsl.l - 0.01; l >= 0; l -= 0.01) {
+    const candidate = toHex({ ...hsl, l });
+    if (passes(candidate)) return candidate;
+  }
+  return accent;
+}
