@@ -76,6 +76,13 @@ BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS = {
     "communications": {"customer_notifications": {"email": True}},
 }
 
+# Follow-up is its own opt-in on top of customer_notifications: the
+# immediate acknowledgement shares that flag, the follow-up must not.
+BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL = {
+    **BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS,
+    "automation": {"lead_capture": True, "follow_up": {"enabled": True}},
+}
+
 
 @pytest.fixture()
 def client(session):
@@ -273,7 +280,7 @@ def _send_follow_up_email(client: TestClient, lead_id, tenant: Tenant, business:
 def test_follow_up_email_sent_when_lead_is_new_and_customer_notifications_enabled(
     client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
 ):
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
@@ -290,7 +297,7 @@ def test_follow_up_email_sent_when_lead_is_new_and_customer_notifications_enable
 def test_follow_up_email_never_creates_an_internal_notification_row(
     client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
 ):
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
@@ -304,7 +311,7 @@ def test_follow_up_email_never_creates_an_internal_notification_row(
 def test_follow_up_email_skipped_when_lead_has_no_email(
     client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
 ):
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads",
@@ -324,7 +331,7 @@ def test_follow_up_email_skipped_when_lead_is_no_longer_new(
 ):
     # Re-checked here independently of whatever n8n's own condition
     # already established — this endpoint is authoritative, not a mirror.
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
@@ -357,6 +364,25 @@ def test_follow_up_email_skipped_when_customer_notifications_disabled(
     assert notification_sender.sent == []
 
 
+def test_follow_up_email_skipped_when_follow_up_disabled_even_with_customer_email_on(
+    client: TestClient, session, tenant: Tenant, business: Business, notification_sender: _FakeNotificationSender
+):
+    # A workflow generated while follow-up was on keeps calling this
+    # endpoint after the business turns it off; the acknowledgement's
+    # flag (customer_notifications.email) alone must not let it send.
+    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    session.flush()
+    lead_id = client.post(
+        "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
+    ).json()["id"]
+
+    response = _send_follow_up_email(client, lead_id, tenant, business)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"sent": False}
+    assert notification_sender.sent == []
+
+
 def test_follow_up_email_skipped_when_no_sender_configured(
     client: TestClient, session, tenant: Tenant, business: Business
 ):
@@ -367,7 +393,7 @@ def test_follow_up_email_skipped_when_no_sender_configured(
     # configured (see the earlier email-infrastructure phase, and
     # tests/test_smtp_isolation.py for the regression coverage on that
     # guarantee itself), so nothing further needs to be forced here.
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
@@ -382,7 +408,7 @@ def test_follow_up_email_skipped_when_no_sender_configured(
 def test_follow_up_email_provider_failure_returns_502_and_fails_the_branch(
     client: TestClient, session, tenant: Tenant, business: Business
 ):
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     failing_sender = _FakeNotificationSender(fail=True)
     app.dependency_overrides[get_optional_notification_sender] = lambda: failing_sender
@@ -409,7 +435,7 @@ def test_follow_up_email_for_unknown_lead_is_404(client: TestClient, tenant: Ten
 def test_follow_up_email_rejects_wrong_tenant(
     client: TestClient, session, tenant: Tenant, business: Business, other_tenant: Tenant
 ):
-    business.config = BUSINESS_CONFIG_WITH_CUSTOMER_EMAIL_NOTIFICATIONS
+    business.config = BUSINESS_CONFIG_WITH_FOLLOW_UP_EMAIL
     session.flush()
     lead_id = client.post(
         "/internal/leads", json=_lead_payload(tenant, business), headers={"X-Internal-Automation-Token": TOKEN}
