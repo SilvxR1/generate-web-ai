@@ -299,11 +299,16 @@ def deliver_lead_follow_up_email(
     business hasn't opted into customer-facing email
     (CommunicationConfig.customer_notifications.email — the customer-
     facing counterpart of internal_notifications.email, and distinct
-    from it on purpose), the lead has no email, or the lead is no
-    longer NEW (checked again here, independently of whatever n8n's own
-    condition already established — this function is the authoritative
-    check, not merely a mirror of it). Only a real send attempt against
-    a configured sender can raise LeadFollowUpEmailError.
+    from it on purpose), the business has follow-up turned off
+    (automation.follow_up.enabled — re-checked here because an n8n
+    workflow generated while it was on keeps calling this endpoint
+    after the business turns it off; the immediate acknowledgement
+    shares customer_notifications.email and must keep working), the
+    lead has no email, or the lead is no longer NEW (checked again
+    here, independently of whatever n8n's own condition already
+    established — this function is the authoritative check, not merely
+    a mirror of it). Only a real send attempt against a configured
+    sender can raise LeadFollowUpEmailError.
 
     Content is fixed and business-name-based only for this MVP — no
     per-business copy, no template engine, no AI-generated text yet.
@@ -311,6 +316,8 @@ def deliver_lead_follow_up_email(
     if sender is None or business_config is None:
         return False
     if not business_config.communications.customer_notifications.email:
+        return False
+    if not business_config.automation.follow_up.enabled:
         return False
     if lead.status != LeadStatus.NEW:
         return False
