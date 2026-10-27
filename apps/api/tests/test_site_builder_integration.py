@@ -160,10 +160,11 @@ def test_cookie_consent_banner_renders_on_every_page_with_no_preselected_optiona
     # optional consent as accepted" constraint). Matches the actual
     # <input> elements (attribute value quoted with "), not the bundled
     # script's own `[data-consent-category]` selector string.
+    # P3: only the category GWA sites really use is offered (no marketing or
+    # preference storage exists on any of them).
     checkbox_matches = re.findall(r'<input type="checkbox"[^>]*data-consent-category="(\w+)"[^>]*>', reforma_html)
-    assert sorted(checkbox_matches) == ["analytics", "marketing", "preferences"]
-    for category in ("analytics", "marketing", "preferences"):
-        assert f'checked data-consent-category="{category}"' not in reforma_html
+    assert sorted(checkbox_matches) == ["analytics"]
+    assert 'checked data-consent-category="analytics"' not in reforma_html
 
 
 def test_the_consent_banners_inline_script_is_allow_listed_in_the_generated_csp(reforma_artifact):

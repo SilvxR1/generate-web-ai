@@ -106,7 +106,7 @@ export function generateSiteConfig(
 
   // Built first so the hero/CTA only link to "#contact" when that
   // section will actually be rendered — never a dangling in-page anchor.
-  const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig);
+  const contactBlock = buildContactBlock(profile, leadManagement, preset, whatsappConfig, legalProfile ?? undefined);
 
   const heroBlock: HeroBlockConfig = buildHeroBlock(
     profile,
@@ -152,7 +152,14 @@ export function generateSiteConfig(
 
   const page: PageConfig = { path: "/", blocks };
   const navigation = buildNavigation(blocks);
-  const legalPages = buildLegalPages(profile, legalProfile ?? undefined, Boolean(contactBlock?.content.form));
+  // C2.1: every generated site's copy (presets, form labels, CTAs) is
+  // Spanish, so its chrome and legal pages are too.
+  const locale = "es" as const;
+  const form = contactBlock?.content.form;
+  const legalPages = buildLegalPages(profile, legalProfile ?? undefined, Boolean(form), locale, {
+    formFields: form?.fields.map((field) => field.name),
+    leadManagement,
+  });
   const business = buildBusiness(profile);
 
   return {
@@ -176,5 +183,6 @@ export function generateSiteConfig(
     ...(business ? { business } : {}),
     ...(siteWhatsappConfig ? { whatsapp: siteWhatsappConfig } : {}),
     ...(navigation.length > 0 ? { navigation } : {}),
+    locale,
   };
 }

@@ -23,6 +23,10 @@ All three never raise for a legitimate "nothing to deliver to (yet)"
 state — only for a real, configured provider call that itself failed.
 """
 
+import re
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
 from app.db.models.internal_notification import InternalNotification
 from app.db.models.lead import Lead
 from app.domain.business_config import BusinessConfig
@@ -44,12 +48,94 @@ class NotificationDeliveryError(Exception):
         self.status_code = status_code
 
 
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_MAX_LINE_CHARS = 320
+_MAX_MESSAGE_CHARS = 5000
+_OWNER_TIMEZONE = "Europe/Madrid"
+_OWNER_LABELS = {
+    "es": {
+        "intro": "Has recibido un mensaje nuevo desde la web de {business}.",
+        "name": "Nombre",
+        "email": "Email",
+        "phone": "Teléfono",
+        "subject": "Servicio",
+        "date": "Fecha",
+        "message": "Mensaje",
+        "none": "(sin mensaje)",
+        "reply": "Para responder, escribe a la dirección de email indicada arriba.",
+        "zone": "hora de Madrid",
+    },
+    "en": {
+        "intro": "You have a new message from the {business} website.",
+        "name": "Name",
+        "email": "Email",
+        "phone": "Phone",
+        "subject": "Service",
+        "date": "Date",
+        "message": "Message",
+        "none": "(no message)",
+        "reply": "To reply, write to the email address above.",
+        "zone": "Madrid time",
+    },
+}
+
+
+def _one_line(value: object) -> str:
+    """Visitor text as one plain line: control characters and line breaks
+    become spaces (the email is plain text — nothing is ever rendered as
+    HTML — but a value can't start a fake line of its own)."""
+    text = " ".join(_CONTROL.sub(" ", str(value)).replace("\r", " ").replace("\n", " ").split())
+    return text if len(text) <= _MAX_LINE_CHARS else text[: _MAX_LINE_CHARS - 1] + "…"
+
+
+def _paragraphs(value: str) -> str:
+    text = _CONTROL.sub(" ", value.replace("\r\n", "\n").replace("\r", "\n")).strip()
+    return text if len(text) <= _MAX_MESSAGE_CHARS else text[: _MAX_MESSAGE_CHARS - 1] + "…"
+
+
+def notification_locale(business_config: BusinessConfig) -> str:
+    """Spanish unless the business is located outside Spain — every site the
+    deterministic generator builds is Spanish (generateSiteConfig)."""
+    location = business_config.business_profile.location
+    return "en" if location is not None and location.country and location.country.upper() != "ES" else "es"
+
+
+def _submitted_at(when: datetime | None, labels: dict[str, str]) -> str:
+    moment = when or datetime.now(UTC)
+    if moment.tzinfo is None:  # SQLite hands back naive UTC timestamps
+        moment = moment.replace(tzinfo=UTC)
+    try:
+        local = moment.astimezone(ZoneInfo(_OWNER_TIMEZONE))
+        return f"{local:%d/%m/%Y, %H:%M} ({labels['zone']})"
+    except ZoneInfoNotFoundError:  # no tz database in the runtime: UTC, said so
+        return f"{moment.astimezone(UTC):%d/%m/%Y, %H:%M} (UTC)"
+
+
+def owner_notification_body(*, lead: Lead, business_name: str, locale: str) -> str:
+    """P4: what the owner needs to read and answer a contact message —
+    never the lead id, the page URL, consent flags or other metadata.
+    `subject` and form details appear only when the visitor's form had them."""
+    labels = _OWNER_LABELS.get(locale, _OWNER_LABELS["es"])
+    lines = [labels["intro"].format(business=_one_line(business_name)), ""]
+    for key, value in (("name", lead.name), ("email", lead.email), ("phone", lead.phone), ("subject", lead.subject)):
+        if value and str(value).strip():
+            lines.append(f"{labels[key]}: {_one_line(value)}")
+    for detail in lead.details or []:
+        if isinstance(detail, dict) and str(detail.get("value") or "").strip():
+            lines.append(f"{_one_line(detail.get('label') or detail.get('key') or '')}: {_one_line(detail['value'])}")
+    lines.append(f"{labels['date']}: {_submitted_at(lead.created_at, labels)}")
+    message = _paragraphs(lead.message or "")
+    lines += ["", f"{labels['message']}:", message or labels["none"], "", labels["reply"]]
+    return "\n".join(lines) + "\n"
+
+
 def deliver_internal_notification(
     *,
     notification: InternalNotification,
     business_name: str,
     business_config: BusinessConfig | None,
     sender: NotificationSender | None,
+    lead: Lead | None = None,
 ) -> None:
     """No-op (delivered stays False, no error) when: no sender is
     configured yet, this business has no persisted config, it has no
@@ -58,6 +144,10 @@ def deliver_internal_notification(
     those is a legitimate "not set up for this yet" state, not a
     failure. Only a real send attempt against a configured sender can
     raise NotificationDeliveryError.
+
+    P4: with the `lead` this notification is about, the body is the
+    owner-readable message (owner_notification_body); without one it is
+    the stored one-line summary, as before.
     """
     if sender is None or business_config is None:
         notification.status = NotificationDeliveryStatus.NOT_CONFIGURED
@@ -75,7 +165,13 @@ def deliver_internal_notification(
             NotificationEmail(
                 to=contact.email,
                 subject=f"Nuevo lead para {business_name}",
-                body=notification.summary,
+                body=(
+                    owner_notification_body(
+                        lead=lead, business_name=business_name, locale=notification_locale(business_config)
+                    )
+                    if lead is not None
+                    else notification.summary
+                ),
             )
         )
     except NotificationSenderError as exc:

@@ -2,7 +2,9 @@
 synthesis of signals this codebase already computes elsewhere
 (Website status, CustomDomain status, whether a BusinessConfig exists,
 whether the hosting provider is configured), never a new gate on top of
-publishing itself. POST .../website/publish is untouched by this
+publishing itself — with one C2.1 exception: the "legal_profile" line is
+blocking and mirrors app.publishing.legal_readiness, which refuses to publish
+Spanish legal pages that still show facts pending from the owner. POST .../website/publish is untouched by this
 module: the only things that already stop a publish from succeeding are
 the same two genuine technical blockers this checklist surfaces (no
 website configuration to publish; Cloudflare not configured on this
@@ -18,8 +20,10 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.domain.enums import AssetKind, DomainStatus, WebsiteStatus
+from app.domain.business_config import BusinessConfig
+from app.domain.enums import AssetKind, DomainStatus, LeadSource, WebsiteStatus
 from app.publishing.domains import get_custom_domain_state
+from app.publishing.legal_readiness import SPANISH_LEGAL_FACTS, spanish_legal_pending_facts
 from app.publishing.service import get_website_state
 from app.repositories.business import BusinessRepository
 from app.repositories.business_asset import BusinessAssetRepository
@@ -56,27 +60,7 @@ def get_production_readiness(*, session: Session, tenant_id: UUID, business_id: 
         )
     )
 
-    legal_profile = (business.config or {}).get("legal_profile") if business is not None else None
-    legal_complete = bool(
-        legal_profile
-        and legal_profile.get("legal_name")
-        and legal_profile.get("address")
-        and legal_profile.get("privacy_contact_email")
-    )
-    checks.append(
-        ProductionReadinessCheck(
-            id="legal_profile",
-            label="Legal profile",
-            ready=legal_complete,
-            blocking=False,
-            detail=(
-                "Legal name, address, and privacy contact email are filled in."
-                if legal_complete
-                else "Legal profile is incomplete — the generated legal pages will show \"Not provided\" for "
-                "missing fields. This does not block publishing."
-            ),
-        )
-    )
+    checks.append(_legal_facts_check(business.config if business is not None else None))
 
     custom_domain = get_custom_domain_state(session=session, tenant_id=tenant_id, business_id=business_id)
     domain_active = custom_domain is not None and custom_domain.status is DomainStatus.ACTIVE
@@ -162,6 +146,27 @@ def _contact_channels_check(business_config: dict | None) -> ProductionReadiness
 
     return ProductionReadinessCheck(
         id="contact_channels", label="Contact channels", ready=ready, blocking=False, detail=detail
+    )
+
+
+def _legal_facts_check(raw_config: dict | None) -> ProductionReadinessCheck:
+    """C2.1: the same rule app.publishing.legal_readiness enforces at publish
+    time for the Spanish legal templates every generated site now uses —
+    blocking, because a site with pending legal facts can't be published."""
+    config = BusinessConfig.model_validate(raw_config) if raw_config else None
+    leads = config.lead_management if config else None
+    has_form = bool(leads and leads.enabled and LeadSource.WEBSITE_FORM in leads.sources)
+    missing = spanish_legal_pending_facts(config, has_contact_form=has_form)
+    return ProductionReadinessCheck(
+        id="legal_profile",
+        label="Legal facts",
+        ready=not missing,
+        blocking=True,
+        detail=(
+            "Every fact the legal pages need is provided."
+            if not missing
+            else "Pending from the business owner: " + "; ".join(SPANISH_LEGAL_FACTS[fact] for fact in missing) + "."
+        ),
     )
 
 

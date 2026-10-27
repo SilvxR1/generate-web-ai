@@ -19,10 +19,12 @@ from app.config import settings
 from app.db.models.business import Business
 from app.db.models.lead import Lead
 from app.db.models.lead_note import LeadNote
+from app.db.models.user import User
 from app.db.models.workflow import Workflow
 from app.dependencies import (
     get_business_analyzer,
     get_current_tenant_id,
+    get_current_user,
     get_domain_provider,
     get_n8n_client,
     get_optional_n8n_client,
@@ -31,9 +33,16 @@ from app.dependencies import (
     get_website_publisher,
 )
 from app.domain.business_config import BusinessConfig, Location
-from app.domain.enums import BusinessVertical, LeadStatus, NotificationDeliveryStatus, WorkflowStatus
+from app.domain.enums import (
+    BusinessVertical,
+    LeadDeletionReason,
+    LeadStatus,
+    NotificationDeliveryStatus,
+    WorkflowStatus,
+)
 from app.domain.workflow_config import WorkflowConfig, generate_lead_capture_workflow, recommended_automation_template
 from app.errors import AppError
+from app.leads.retention import delete_lead
 from app.monitoring.alerts import AlertSeverity, send_operator_alert
 from app.publishing.domain_provider import DomainProvider
 from app.publishing.domains import (
@@ -43,6 +52,7 @@ from app.publishing.domains import (
     get_custom_domain_state,
     refresh_custom_domain_status,
 )
+from app.publishing.legal_readiness import require_legal_facts_for_publication
 from app.publishing.publisher import WebsitePublisher
 from app.publishing.readiness import get_production_readiness
 from app.publishing.service import (
@@ -453,6 +463,33 @@ def create_lead_note(
     return LeadNoteRepository(session).add(note)
 
 
+@router.delete("/{business_id}/leads/{lead_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_business_lead(
+    business_id: UUID,
+    lead_id: UUID,
+    tenant_id: UUID = Depends(get_current_tenant_id),
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> None:
+    """P1: permanently deletes one lead, its notes and the internal
+    notifications about it (e.g. the visitor asked for erasure), recording
+    who deleted it and when without keeping any of the visitor's data — see
+    app.leads.retention.delete_lead. Same three-way scoping as the other
+    lead routes: a lead of another business 404s. Repeating the request for
+    a lead this business already deleted is a no-op 204 (safe to retry).
+    Needs a real signed-in operator (never the legacy header auth), so the
+    deletion record names them."""
+    _ensure_business_exists(session, tenant_id, business_id)
+    delete_lead(
+        session,
+        tenant_id=tenant_id,
+        business_id=business_id,
+        lead_id=lead_id,
+        reason=LeadDeletionReason.OPERATOR_REQUEST,
+        actor=user,
+    )
+
+
 @router.post("/{business_id}/website/publish", response_model=WebsiteStateResult)
 def publish_business_website(
     business_id: UUID,
@@ -486,6 +523,10 @@ def publish_business_website(
     app.automation.n8n.dispatch's own docstring).
     """
     _ensure_business_exists(session, tenant_id, business_id)
+    # C2.1: same legal-facts gate as the draft lifecycle (rollback is exempt).
+    require_legal_facts_for_publication(
+        session=session, tenant_id=tenant_id, business_id=business_id, site_config=payload.model_dump(mode="json")
+    )
 
     try:
         return publish_website(

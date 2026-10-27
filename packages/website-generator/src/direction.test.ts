@@ -25,7 +25,7 @@ import { describe, expect, it } from "vitest";
 import type { BusinessAssetInput } from "./assets.ts";
 import { getDesignTokens } from "./design.ts";
 import { generateSiteConfig } from "./generateSiteConfig.ts";
-import { contrastRatio, deriveBrandPalette } from "./palette.ts";
+import { accessibleAccent, contrastRatio, deriveBrandPalette } from "./palette.ts";
 import { DENSITY_SPACING, RADIUS_TOKENS, TYPOGRAPHY_STACKS } from "./presentation.ts";
 
 interface DirectionCase {
@@ -75,15 +75,21 @@ describe("every supplied direction is a valid canonical direction", () => {
 
 // B — family / palette ------------------------------------------------------
 
+// C2.1: every rendered theme gets a contrast-safe accent; all other roles
+// must still match their source palette exactly.
+function withAccessibleAccent<T extends { accent: string; background: string }>(colors: T): T {
+  return { ...colors, accent: accessibleAccent(colors.accent, colors.background) };
+}
+
 describe("palette resolution", () => {
   it.each(WEBSITE_DESIGN_FAMILIES)("family palette uses the %s family's own colours", (family) => {
     const site = generateSiteConfig(shop.businessConfig, shop.assets, withDirection(evolveShop, { family, palette: { mode: "family" } }));
-    expect(site.theme.colors).toEqual(getDesignTokens(family).colors);
+    expect(site.theme.colors).toEqual(withAccessibleAccent(getDesignTokens(family).colors));
   });
 
   it("brand palette keeps the business's real brand colours", () => {
     const site = generateSiteConfig(shop.businessConfig, shop.assets, withDirection(evolveShop, { palette: { mode: "brand" } }));
-    expect(site.theme.colors).toEqual(shop.businessConfig.brand!.colors);
+    expect(site.theme.colors).toEqual(withAccessibleAccent(shop.businessConfig.brand!.colors));
   });
 
   it.each(PALETTE_DERIVATIONS)("brand_derived:%s derives new, readable hex colours from the brand", (derivation) => {
@@ -107,13 +113,15 @@ describe("palette resolution", () => {
   it("falls back safely: no brand → family palette; non-hex brand → the brand's own colours", () => {
     const unbranded = { business_profile: shop.businessConfig.business_profile } as BusinessConfig;
     const derived = withDirection(evolveShop, { palette: { mode: "brand_derived", derivation: "vivid" } });
-    expect(generateSiteConfig(unbranded, shop.assets, derived).theme.colors).toEqual(getDesignTokens(derived.family).colors);
+    expect(generateSiteConfig(unbranded, shop.assets, derived).theme.colors).toEqual(
+      withAccessibleAccent(getDesignTokens(derived.family).colors),
+    );
 
     const named = {
       ...shop.businessConfig,
       brand: { ...shop.businessConfig.brand!, colors: { ...shop.businessConfig.brand!.colors, primary: "rebeccapurple" } },
     };
-    expect(generateSiteConfig(named, shop.assets, derived).theme.colors).toEqual(named.brand.colors);
+    expect(generateSiteConfig(named, shop.assets, derived).theme.colors).toEqual(withAccessibleAccent(named.brand.colors));
   });
 });
 

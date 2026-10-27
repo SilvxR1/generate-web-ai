@@ -1,6 +1,7 @@
 import type {
   BusinessProfile,
   LeadManagementConfig,
+  LegalProfile,
   WhatsAppConfig as BusinessWhatsAppConfig,
 } from "@generate-web-ai/business-config-types";
 import type {
@@ -18,6 +19,8 @@ import type {
 } from "@generate-web-ai/site-config";
 import type { BusinessAssetInput } from "./assets.ts";
 import { assetToImageConfig } from "./assets.ts";
+import { sanitizeCustomerCopy } from "./copy.ts";
+import { buildSpanishFirstLayerNotice } from "./legal-es.ts";
 import type { WebsiteGeneratorPreset } from "./presets.ts";
 
 function toTelHref(phone: string): string {
@@ -115,7 +118,7 @@ export function buildServicesBlock(profile: BusinessProfile, preset: WebsiteGene
       heading: preset.servicesHeading,
       items: services.map((service) => ({
         title: service.name,
-        description: service.short_description || service.description,
+        description: sanitizeCustomerCopy(service.short_description || service.description) ?? "",
         featured: service.featured,
       })),
     },
@@ -145,8 +148,9 @@ export function buildAboutBlock(
   if (serviceArea.length > 0) {
     items.push({ title: "Zona de servicio", description: serviceArea.join(", ") });
   }
-  if (profile.target_customers) {
-    items.push({ title: "¿Para quién?", description: profile.target_customers });
+  const targetCustomers = sanitizeCustomerCopy(profile.target_customers);
+  if (targetCustomers) {
+    items.push({ title: "¿Para quién?", description: targetCustomers });
   }
 
   const description = includeDescription ? customerFacingDescription : undefined;
@@ -260,8 +264,14 @@ const FORM_FIELD_BUILDERS: Record<string, (profile: BusinessProfile) => ContactF
  * neutral `lead.submitted` DOM event instead of posting anywhere — no
  * n8n/CRM connection, per this phase's explicit scope.
  */
-function buildLeadForm(profile: BusinessProfile, leadManagement: LeadManagementConfig, preset: WebsiteGeneratorPreset): ContactFormConfig {
-  const fields = (leadManagement.required_fields ?? []).map((fieldName) => {
+function buildLeadForm(
+  profile: BusinessProfile,
+  leadManagement: LeadManagementConfig,
+  preset: WebsiteGeneratorPreset,
+  legal: LegalProfile | undefined,
+): ContactFormConfig {
+  const requiredFields = leadManagement.required_fields ?? [];
+  const fields = requiredFields.map((fieldName) => {
     const build = FORM_FIELD_BUILDERS[fieldName];
     if (!build) {
       throw new Error(
@@ -272,7 +282,28 @@ function buildLeadForm(profile: BusinessProfile, leadManagement: LeadManagementC
     return build(profile);
   });
 
-  return { fields, submitLabel: preset.formSubmitLabel };
+  // C2.1: a contact form always lets the visitor say what they want. Listed
+  // in required_fields it stays required; otherwise it's added as optional.
+  if (!requiredFields.includes("message")) {
+    fields.push({ name: "message", label: "Mensaje", type: "textarea", required: false });
+  }
+  // C2.1: explicit consent, only when the business enabled it — the API
+  // enforces the same flag (app.routers.public).
+  if (leadManagement.consent_required) {
+    fields.push({
+      name: "consent",
+      label: "Protección de datos",
+      type: "checkbox",
+      required: true,
+      placeholder: "He leído y acepto la política de privacidad.",
+    });
+  }
+
+  return {
+    fields,
+    submitLabel: preset.formSubmitLabel,
+    privacyNotice: buildSpanishFirstLayerNotice(legal, leadManagement),
+  };
 }
 
 function buildContactDetails(profile: BusinessProfile): ContactDetailConfig[] {
@@ -310,10 +341,11 @@ export function buildContactBlock(
   leadManagement: LeadManagementConfig | undefined,
   preset: WebsiteGeneratorPreset,
   whatsappConfig?: BusinessWhatsAppConfig,
+  legal?: LegalProfile,
 ): ContactBlockConfig | null {
   const details = buildContactDetails(profile);
   const wantsForm = Boolean(leadManagement?.enabled && (leadManagement.sources ?? []).includes("website_form"));
-  const form = wantsForm && leadManagement ? buildLeadForm(profile, leadManagement, preset) : undefined;
+  const form = wantsForm && leadManagement ? buildLeadForm(profile, leadManagement, preset, legal) : undefined;
   const whatsappCta = buildContactWhatsAppCta(whatsappConfig);
 
   if (details.length === 0 && !form && !whatsappCta) return null;

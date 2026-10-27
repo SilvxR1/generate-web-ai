@@ -28,6 +28,8 @@
  * `</style>` break out of the tag and inject real markup.
  */
 import type { SiteConfig } from "@generate-web-ai/site-config";
+import { buildLocalBusinessJsonLd } from "@generate-web-ai/site-config";
+import { canonicalOrigin, canonicalPath, chromeStrings } from "../lib/i18n.ts";
 import Analytics from "./Analytics.astro";
 import CookieConsentBanner from "./CookieConsentBanner.astro";
 import LeadSubmission from "./LeadSubmission.astro";
@@ -36,9 +38,15 @@ import "../styles/global.css";
 
 export interface Props {
   siteConfig: SiteConfig;
+  /** C2.1: the SiteConfig page path being rendered ("/" for the homepage). */
+  pagePath?: string;
+  /** C2.1: true for pages that must never be indexed (the 404 page). */
+  noindex?: boolean;
+  /** C2.1: overrides seo.title for this page (e.g. the 404 page). */
+  title?: string;
 }
 
-const { siteConfig } = Astro.props;
+const { siteConfig, pagePath = "/", noindex = false, title } = Astro.props;
 const { theme, seo, brand, pages, whatsapp, businessId, navigation } = siteConfig;
 // A8.3.3: header navigation, generated only for sections that render (see
 // packages/website-generator navigation.ts). `?? []` also covers a JSON null.
@@ -58,17 +66,31 @@ const whatsappFloatingHref =
       }`
     : null;
 
+// C2.1: chrome strings follow SiteConfig.locale (absent = "en", as before).
+const strings = chromeStrings(siteConfig);
 // Only linked when the SiteConfig actually has that page — never a
-// dead link guessed at for a business that (in principle, even though
-// packages/website-generator always adds all three today) doesn't have
-// one.
-const LEGAL_LINKS: ReadonlyArray<{ path: string; label: string }> = [
-  { path: "/privacy", label: "Privacy Policy" },
-  { path: "/terms", label: "Terms of Service" },
-  { path: "/cookies", label: "Cookie Policy" },
-];
-const legalLinks = LEGAL_LINKS.filter((link) => pages.some((page) => page.path === link.path));
+// dead link guessed at for a business that doesn't have one.
+const legalLinks = strings.legalLinks.filter((link) => pages.some((page) => page.path === link.path));
 const currentYear = new Date().getFullYear();
+
+// C2.1 SEO: a canonical URL, Open Graph and LocalBusiness JSON-LD, all from
+// the SiteConfig. Without a verified canonical origin (siteUrl, set
+// server-side from the active custom domain) no absolute URL is invented.
+const origin = canonicalOrigin(siteConfig);
+const canonicalUrl = origin && !noindex ? `${origin}${canonicalPath(pagePath)}` : undefined;
+const pageTitle = title ?? pages.find((page) => page.path === pagePath)?.seo?.title ?? seo.title;
+const isHome = pagePath === "/" && !noindex;
+const heroBlock = pages.find((page) => page.path === "/")?.blocks.find((block) => block.type === "hero");
+const heroImage = heroBlock?.type === "hero" ? heroBlock.content.image : undefined;
+const heroImageSrc = heroImage && typeof heroImage.src === "string" ? heroImage.src : undefined;
+const ogImageSrc =
+  (seo.ogImage && typeof seo.ogImage.src === "string" ? seo.ogImage.src : undefined) ?? heroImageSrc;
+const jsonLd = isHome ? buildLocalBusinessJsonLd(siteConfig) : undefined;
+const jsonLdText = jsonLd
+  ? JSON.stringify({ ...jsonLd, ...(origin ? { url: `${origin}/` } : {}), ...(ogImageSrc ? { image: ogImageSrc } : {}) })
+      // Never let business text close the <script> element early.
+      .replace(/</g, "\\u003c")
+  : undefined;
 
 const themeStyle: Record<string, string> = {
   "--ui-font-sans": theme.fonts.sans,
@@ -91,12 +113,24 @@ if (theme.spacing) {
 }
 ---
 
-<html lang="en" style={themeStyle}>
+<html lang={strings.htmlLang} style={themeStyle}>
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{seo.title}</title>
+    <title>{pageTitle}</title>
     <meta name="description" content={seo.description} />
+    {noindex && <meta name="robots" content="noindex" />}
+    {canonicalUrl && <link rel="canonical" href={canonicalUrl} />}
+    {isHome && heroImageSrc && <link rel="preload" as="image" href={heroImageSrc} fetchpriority="high" />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={brand.name} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={seo.description} />
+    <meta property="og:locale" content={strings.ogLocale} />
+    {canonicalUrl && <meta property="og:url" content={canonicalUrl} />}
+    {ogImageSrc && <meta property="og:image" content={ogImageSrc} />}
+    <meta name="twitter:card" content={ogImageSrc ? "summary_large_image" : "summary"} />
+    {jsonLdText && <script is:inline type="application/ld+json" set:html={jsonLdText} />}
   </head>
   <body>
     {/* A8.3.3: the header owns identity + navigation. The tagline is real
@@ -114,14 +148,14 @@ if (theme.spacing) {
         )}
       </a>
       {navItems.length > 0 && (
-        <nav class="site-nav" aria-label="Main">
+        <nav class="site-nav" aria-label={strings.mainNavLabel}>
           <ul class="site-nav__list">
             {navItems.map((item) => (
               <li><a href={item.href}>{item.label}</a></li>
             ))}
           </ul>
           <details class="site-nav__menu">
-            <summary>Menu</summary>
+            <summary>{strings.menuLabel}</summary>
             <ul>
               {navItems.map((item) => (
                 <li><a href={item.href}>{item.label}</a></li>
@@ -137,17 +171,17 @@ if (theme.spacing) {
     <footer class="site-footer">
       <p class="site-footer__copyright">&copy; {currentYear} {brand.name}</p>
       {legalLinks.length > 0 && (
-        <nav class="site-footer__links" aria-label="Legal">
+        <nav class="site-footer__links" aria-label={strings.legalNavLabel}>
           {legalLinks.map((link) => (
             <a href={link.path}>{link.label}</a>
           ))}
           <button type="button" data-open-consent-preferences class="site-footer__consent-link">
-            Manage cookie preferences
+            {strings.consentPreferences}
           </button>
         </nav>
       )}
     </footer>
-    <CookieConsentBanner />
+    <CookieConsentBanner strings={strings.consent} />
     {whatsappFloatingHref && <WhatsAppFloatingButton href={whatsappFloatingHref} />}
     <Analytics businessId={businessId} whatsappTrackingEnabled={whatsapp?.trackingEnabled !== false} />
     <LeadSubmission businessId={businessId} apiBaseUrl={apiBaseUrl} />

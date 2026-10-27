@@ -189,8 +189,15 @@ class SiteConfigPayload(BaseModel):
     whatsapp: dict[str, Any] | None = None
     # A8.3.3: header navigation, generated from the sections that render.
     navigation: list[SiteNavigationItemPayload] | None = Field(default=None, max_length=12)
+    # C2.1: chrome/legal language (packages/site-config SiteLocale). Declared
+    # so extra="ignore" doesn't drop it; absent keeps the old "en" output.
+    locale: Literal["es", "en"] | None = None
+    # C2.1: the canonical public origin. Set server-side right before the
+    # build (app.publishing.domains.canonical_site_url), exactly like
+    # businessId above — a client-sent value is always overwritten.
+    siteUrl: str | None = Field(default=None, max_length=300)  # noqa: N815
 
     @model_serializer(mode="wrap")
     def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
-        # Omitted navigation stays omitted (SiteConfig.navigation is optional).
-        return _drop_unset_optionals(self, handler, frozenset({"navigation"}))
+        # Omitted optional fields stay omitted (they're optional in SiteConfig).
+        return _drop_unset_optionals(self, handler, frozenset({"navigation", "locale", "siteUrl"}))

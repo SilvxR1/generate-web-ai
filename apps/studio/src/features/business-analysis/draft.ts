@@ -78,6 +78,11 @@ export interface LegalProfileDraft {
   address: { streetAddress: string; locality: string; region: string; postalCode: string; country: string };
   privacyContactEmail: string;
   dataProcessors: string;
+  /** C2.1: how long enquiry data is kept, in the owner's own words. */
+  dataRetention: string;
+  /** C2.1: owner-supplied replacement for the generated first-layer
+   * privacy notice under the contact form; blank = generated notice. */
+  firstLayerNotice: string;
 }
 
 export interface BusinessDraft {
@@ -94,6 +99,9 @@ export interface BusinessDraft {
   services: ServiceDraft[];
   contact: { email: string; phone: string; whatsapp: string; website: string };
   leadSources: LeadSource[];
+  /** C2.1: LeadManagementConfig.consent_required — the contact form shows a
+   * required consent checkbox and the API refuses leads without consent. */
+  consentRequired: boolean;
   automation: AutomationDraft;
   legalProfile: LegalProfileDraft;
 }
@@ -133,6 +141,7 @@ export function buildDraftFromAnalysis(response: AnalyzeBusinessResponse, briefi
       website: profile?.contact?.website ?? "",
     },
     leadSources: response.proposed_config?.lead_management?.sources ?? [],
+    consentRequired: response.proposed_config?.lead_management?.consent_required ?? false,
     automation: {
       leadCapture: response.proposed_config?.automation?.lead_capture ?? false,
       leadNotifications: response.proposed_config?.automation?.lead_notifications ?? false,
@@ -157,6 +166,8 @@ export function buildDraftFromAnalysis(response: AnalyzeBusinessResponse, briefi
       },
       privacyContactEmail: response.proposed_config?.legal_profile?.privacy_contact_email ?? "",
       dataProcessors: (response.proposed_config?.legal_profile?.data_processors ?? []).join(", "),
+      dataRetention: response.proposed_config?.legal_profile?.data_retention ?? "",
+      firstLayerNotice: response.proposed_config?.legal_profile?.first_layer_notice ?? "",
     },
   };
 }
@@ -235,6 +246,8 @@ function buildLegalProfile(draft: LegalProfileDraft): BusinessConfig["legal_prof
   const registrationNumber = draft.registrationNumber.trim();
   const taxId = draft.taxId.trim();
   const privacyContactEmail = draft.privacyContactEmail.trim();
+  const dataRetention = draft.dataRetention.trim();
+  const firstLayerNotice = draft.firstLayerNotice.trim();
   const dataProcessors = draft.dataProcessors
     .split(",")
     .map((processor) => processor.trim())
@@ -245,7 +258,14 @@ function buildLegalProfile(draft: LegalProfileDraft): BusinessConfig["legal_prof
   const hasAddress = Boolean(street && locality && country);
 
   const hasAnything = Boolean(
-    legalName || registrationNumber || taxId || privacyContactEmail || dataProcessors.length > 0 || hasAddress,
+    legalName ||
+      registrationNumber ||
+      taxId ||
+      privacyContactEmail ||
+      dataRetention ||
+      firstLayerNotice ||
+      dataProcessors.length > 0 ||
+      hasAddress,
   );
   if (!hasAnything) return undefined;
 
@@ -264,6 +284,8 @@ function buildLegalProfile(draft: LegalProfileDraft): BusinessConfig["legal_prof
       : undefined,
     privacy_contact_email: privacyContactEmail || undefined,
     data_processors: dataProcessors,
+    data_retention: dataRetention || undefined,
+    first_layer_notice: firstLayerNotice || undefined,
   };
 }
 
@@ -336,6 +358,7 @@ export function buildCreatePayload(draft: BusinessDraft): CreateBusinessPayload 
     lead_management: {
       enabled: leadSources.length > 0,
       sources: leadSources,
+      consent_required: draft.consentRequired,
     },
     automation: {
       lead_capture: draft.automation.leadCapture,

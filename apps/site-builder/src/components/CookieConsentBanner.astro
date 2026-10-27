@@ -17,37 +17,36 @@
  * "Accept all" render with equal visual weight; dismissing the banner
  * without choosing is not offered as an "accept" action — the banner
  * stays until an explicit choice is made.
+ *
+ * C2.1: visible text comes from the Layout per SiteConfig.locale
+ * (../lib/i18n.ts); the panel is a labelled region for assistive tech.
  */
+import type { ChromeStrings } from "../lib/i18n.ts";
+
+export interface Props {
+  strings: ChromeStrings["consent"];
+}
+
+const { strings } = Astro.props;
 ---
 
 <div id="gwa-consent-banner" class="consent-banner" hidden>
-  <div class="consent-banner__panel">
-    <p class="consent-banner__text">
-      This site uses cookies. Necessary cookies are always on. Everything else stays off unless you choose to
-      allow it.
-    </p>
+  <div class="consent-banner__panel" role="region" aria-label={strings.dialogLabel}>
+    <p class="consent-banner__text">{strings.text}</p>
     <div class="consent-banner__categories">
       <label class="consent-banner__category">
         <input type="checkbox" checked disabled />
-        Necessary (always on)
+        {strings.necessary}
       </label>
       <label class="consent-banner__category">
         <input type="checkbox" data-consent-category="analytics" />
-        Analytics
-      </label>
-      <label class="consent-banner__category">
-        <input type="checkbox" data-consent-category="marketing" />
-        Marketing
-      </label>
-      <label class="consent-banner__category">
-        <input type="checkbox" data-consent-category="preferences" />
-        Preferences
+        {strings.analytics}
       </label>
     </div>
     <div class="consent-banner__actions">
-      <button type="button" id="gwa-consent-reject">Reject non-essential</button>
-      <button type="button" id="gwa-consent-save">Save preferences</button>
-      <button type="button" id="gwa-consent-accept">Accept all</button>
+      <button type="button" id="gwa-consent-reject">{strings.reject}</button>
+      <button type="button" id="gwa-consent-save">{strings.save}</button>
+      <button type="button" id="gwa-consent-accept">{strings.accept}</button>
     </div>
   </div>
 </div>
@@ -133,7 +132,9 @@
   }
 
   document.getElementById("gwa-consent-accept")?.addEventListener("click", () => {
-    applyAndClose({ analytics: true, marketing: true, preferences: true });
+    // Only analytics is offered: no GWA site has marketing or preference storage
+    // (the record keeps both fields, always false, for stored-choice compatibility).
+    applyAndClose({ analytics: true, marketing: false, preferences: false });
   });
   document.getElementById("gwa-consent-reject")?.addEventListener("click", () => {
     applyAndClose({ analytics: false, marketing: false, preferences: false });

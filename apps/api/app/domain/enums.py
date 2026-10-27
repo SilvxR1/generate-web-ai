@@ -506,6 +506,13 @@ class SourceImportEventKind(StrEnum):
     DISCARDED = "discarded"
 
 
+class LeadDeletionReason(StrEnum):
+    """P1: why a lead was deleted (app.leads.retention)."""
+
+    OPERATOR_REQUEST = "operator_request"  # e.g. the visitor asked for erasure
+    RETENTION_EXPIRED = "retention_expired"  # the business's retention period ran out
+
+
 class ReviewDecisionKind(StrEnum):
     APPROVED = "approved"
     REJECTED = "rejected"

@@ -640,6 +640,24 @@ def test_approval_binds_to_the_exact_artifact_and_publish_promotes_those_bytes(e
     assert _state(env, state["id"])["stage"] == "published"
 
 
+def test_a_spanish_import_with_pending_legal_facts_is_approved_but_never_published(env, built):
+    """C3: the C2.1 legal gate also covers imported sites. The synthetic export
+    is English, so its stored plan summary is marked Spanish here; the Lumen
+    business has no legal profile, so every Spanish fact is pending."""
+    state = _ready(env, built)
+    draft = state["draft"]
+    assert env.client.post(_draft_url(env, draft["id"], "approve"), headers=env.headers).status_code == 200
+    row = env.session.get(SourceImport, uuid.UUID(state["id"]))
+    assert row is not None and row.inspection["site"]["locale"] == "en"
+    row.inspection = {**row.inspection, "site": {**row.inspection["site"], "locale": "es"}}
+    env.session.flush()
+    refused = env.client.post(_draft_url(env, draft["id"], "publish"), headers=env.headers)
+    assert refused.status_code == 409 and refused.json()["error"]["code"] == "legal_facts_incomplete"
+    assert "legal_profile.tax_id (NIF)" in refused.json()["error"]["message"]
+    assert env.publisher.artifacts == []  # nothing reached the host
+    assert _state(env, state["id"])["stage"] == "approved"  # approval kept, safe to retry once facts exist
+
+
 def test_failed_or_stale_visual_qa_blocks_approval(env, built):
     assert built.result.visual_qa is not None
     failing = built.result.model_copy(update={"visual_qa": built.result.visual_qa.model_copy(update={"passed": False})})
@@ -755,7 +773,8 @@ def test_r5_migration_is_the_single_head():
     from alembic.script import ScriptDirectory
 
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
-    # R5.2 (b8e2f4a6c1d3) is the only revision after R5's.
+    # R5.2 (b8e2f4a6c1d3) follows R5's; P1 lead deletion events (c4d9e2a7f1b3) is the single head.
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["b8e2f4a6c1d3"]
+    assert script.get_heads() == ["c4d9e2a7f1b3"]
+    assert script.get_revision("c4d9e2a7f1b3").down_revision == "b8e2f4a6c1d3"
     assert script.get_revision("b8e2f4a6c1d3").down_revision == "a7d3f1c5e8b2"

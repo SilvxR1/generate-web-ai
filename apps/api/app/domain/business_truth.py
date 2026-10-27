@@ -157,6 +157,10 @@ class LegalTruth(_Truth):
     registered_address: AddressTruth | None = None
     privacy_contact_email: str | None = None
     data_processors: list[str] = Field(default_factory=list)
+    # C3: what the Spanish privacy page states for contact-form data
+    # (legal_profile.data_retention, lead_management.consent_required).
+    data_retention: str | None = None
+    consent_required: bool = False
 
 
 class AssetTruth(_Truth):
@@ -383,6 +387,8 @@ def derive_business_truth(
             registered_address=AddressTruth.from_postal(legal.address) if legal else None,
             privacy_contact_email=str(legal.privacy_contact_email) if legal and legal.privacy_contact_email else None,
             data_processors=list(legal.data_processors) if legal else [],
+            data_retention=_strip(legal.data_retention) if legal else None,
+            consent_required=business_config.lead_management.consent_required,
         ),
         logo=_logo(business_config, assets),
         assets=[

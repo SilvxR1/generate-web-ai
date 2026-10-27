@@ -736,9 +736,10 @@ class HiggsfieldTanstackAdapter:
         presentation = overlay.legal if overlay and overlay.legal else LegalPresentation()
         fontshare = any(f["provider"] == "fontshare" for f in m.fonts)
         third = (pf.THIRD_PARTY_DISCLOSURES["fontshare"][locale],) if fontshare else ()
+        storage = (pf.TECHNICAL_STORAGE_DISCLOSURES["tanstack-router"][locale],)  # every site of this family
         builder.add(
             f"{PLATFORM_DIR}/legal-content.json",
-            pf.legal_content_json(context.truth, locale, third),
+            pf.legal_content_json(context.truth, locale, third, storage),
             category="legal",
             reason="legal wording rendered from BusinessTruth (owner/legal review needed)",
         )

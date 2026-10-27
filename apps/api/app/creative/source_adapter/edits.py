@@ -8,6 +8,7 @@ edit can only ever apply to that one place.
 """
 
 import posixpath
+import re
 
 from app.creative.source_adapter import tsx_scan as ts
 from app.creative.source_adapter.plan import Operation, PlanBuilder
@@ -58,12 +59,39 @@ def relative_import(from_module: str, to_module: str) -> str:
 
 def ensure_import(builder: PlanBuilder, path: str, statement: str, *, category: str, reason: str) -> Operation | None:
     """Adds `statement` (one full import line) after the module's last
-    import; nothing if the exact statement is already there."""
+    import. Compared by binding, not by text: names the module already
+    imports from the same specifier (in any statement, however formatted)
+    are not imported again, and only the missing names of a `{ ... }`
+    clause are added. A name already bound by an import of ANOTHER module
+    is refused — the result would not compile (duplicate identifier)."""
     text = builder.tree.text(path)
     line = statement if statement.endswith("\n") else statement + "\n"
     if line in text:
         return None
+    wanted = ts.imports(ts.scan(line))
+    if len(wanted) != 1:
+        raise AdapterError(f"not a single import statement: {statement!r}")
+    want = wanted[0]
     decls = ts.imports(ts.scan(text))
+    names = ts.imported_names(want.clause)
+    if not names:
+        if any(d.spec == want.spec and d.clause is None for d in decls):
+            return None
+    else:
+        bound = {name: d.spec for d in decls for name in ts.imported_names(d.clause)}
+        clash = sorted(n for n in names if n in bound and bound[n] != want.spec)
+        if clash:
+            raise AdapterError(f"{path}: {clash} already imported from another module than {want.spec!r}")
+        missing = [n for n in names if n not in bound]
+        if not missing:
+            return None
+        if missing != names:
+            named = re.fullmatch(r"\{([^}]*)\}", (want.clause or "").strip())
+            if named is None:
+                raise AdapterError(f"{path}: cannot add part of {statement!r}")
+            parts = [p.strip() for p in named.group(1).split(",") if p.strip()]
+            kept = [p for p in parts if p.removeprefix("type ").strip().split(" as ")[-1].strip() in missing]
+            line = f'import {{ {", ".join(kept)} }} from "{want.spec}";\n'
     at = decls[-1].end if decls else 0
     return edit_span(builder, path, at, at, line, category=category, reason=reason)
 

@@ -30,6 +30,9 @@ interface AssetsPanelProps {
    * asset row in place (e.g. one whose `unavailable_reason` shows its
    * underlying file is confirmed gone) rather than creating a duplicate. */
   onReplace: (assetId: string, file: File) => Promise<BusinessAsset>;
+  /** C2.1: PATCH .../assets/{id} alt_text — the description generated
+   * sites use as the image's alt text (blank = a generic fallback). */
+  onUpdateAltText?: (assetId: string, altText: string | null) => Promise<BusinessAsset>;
 }
 
 // Human-readable labels for AssetCategory — the raw enum values
@@ -104,6 +107,7 @@ export function AssetsPanel({
   onAdd,
   onDelete,
   onReplace,
+  onUpdateAltText,
 }: AssetsPanelProps) {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -243,6 +247,7 @@ export function AssetsPanel({
             onEnlarge={setLightboxAsset}
             pendingDelete={pendingDeleteId === logo.id}
             onReplace={handleReplace}
+            onUpdateAltText={onUpdateAltText}
             pendingReplace={pendingReplaceId === logo.id}
             replaceError={replaceError?.assetId === logo.id ? replaceError.message : null}
           />
@@ -277,6 +282,7 @@ export function AssetsPanel({
               onEnlarge={setLightboxAsset}
               pendingDelete={pendingDeleteId === asset.id}
               onReplace={handleReplace}
+              onUpdateAltText={onUpdateAltText}
               pendingReplace={pendingReplaceId === asset.id}
               replaceError={replaceError?.assetId === asset.id ? replaceError.message : null}
             />
@@ -445,6 +451,7 @@ function AssetCard({
   onEnlarge,
   pendingDelete,
   onReplace,
+  onUpdateAltText,
   pendingReplace,
   replaceError,
 }: {
@@ -453,6 +460,7 @@ function AssetCard({
   onEnlarge: (asset: BusinessAsset) => void;
   pendingDelete: boolean;
   onReplace: (assetId: string, file: File) => void;
+  onUpdateAltText?: (assetId: string, altText: string | null) => Promise<BusinessAsset>;
   pendingReplace: boolean;
   replaceError: string | null;
 }) {
@@ -498,6 +506,58 @@ function AssetCard({
           </button>
         </span>
       </div>
+      {onUpdateAltText && <AltTextField asset={asset} onSave={onUpdateAltText} />}
     </li>
+  );
+}
+
+/** C2.1: the image's description for visitors using screen readers, typed
+ * by a human from what the photo really shows — never generated. */
+function AltTextField({
+  asset,
+  onSave,
+}: {
+  asset: BusinessAsset;
+  onSave: (assetId: string, altText: string | null) => Promise<BusinessAsset>;
+}) {
+  const [value, setValue] = useState(asset.alt_text ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const saved = asset.alt_text ?? "";
+  const inputId = `asset-alt-${asset.id}`;
+
+  async function save() {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSave(asset.id, value.trim() || null);
+    } catch (caught) {
+      setError(friendlyErrorMessage(caught, "Could not save the description."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="assets-panel__alt">
+      <label className="field-label" htmlFor={inputId}>
+        Description (alt text)
+      </label>
+      <input
+        id={inputId}
+        type="text"
+        maxLength={300}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+      <button type="button" onClick={save} disabled={isSaving || value.trim() === saved.trim()}>
+        {isSaving ? "Saving…" : "Save description"}
+      </button>
+      {error && (
+        <p className="banner banner--error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

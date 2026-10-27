@@ -122,6 +122,7 @@ def generate_headers_file(
     script_hashes: frozenset[str] = frozenset(),
     public_api_origin: str | None = None,
     csp_extensions: CspExtensions | None = None,
+    canonical_site_url: str | None = None,
 ) -> bytes:
     """Cloudflare Pages' `_headers` file format: a path pattern line
     followed by indented `Header: value` lines. `/*` applies to every
@@ -133,7 +134,14 @@ def generate_headers_file(
     extraction of them. `public_api_origin` is the API origin rendered
     into this build's runtime config (see the module docstring).
     `csp_extensions` is a trusted per-source-family policy (see
-    CspExtensions); None leaves the policy unchanged."""
+    CspExtensions); None leaves the policy unchanged.
+
+    C2.1: `canonical_site_url` is the site's verified custom-domain origin.
+    When set, a second rule marks every *.pages.dev host serving this same
+    artifact (the project's default production alias and the draft-preview
+    project) `X-Robots-Tag: noindex`, so only the custom domain is indexed.
+    Without one, the *.pages.dev host IS the public site and stays
+    indexable (Cloudflare already noindexes per-deployment hash URLs)."""
     script_src_sources = ["'self'", *(f"'sha256-{digest}'" for digest in sorted(script_hashes))]
     api_origin = canonical_public_origin(public_api_origin)
     connect_src_sources = ["'self'", *([api_origin] if api_origin else [])]
@@ -143,4 +151,16 @@ def generate_headers_file(
         f"connect-src {' '.join(connect_src_sources)}; {_CSP_DIRECTIVES_AFTER_CONNECT}"
     )
     lines = ["/*", f"  Content-Security-Policy: {csp}", *(f"  {line}" for line in _OTHER_HEADER_LINES)]
+    if _is_custom_domain_origin(canonical_site_url):
+        # Cloudflare Pages' documented absolute-URL rule form; `:project`
+        # matches any project name. Header rules from both blocks apply.
+        lines += ["", "https://:project.pages.dev/*", "  X-Robots-Tag: noindex"]
     return ("\n".join(lines) + "\n").encode("utf-8")
+
+
+def _is_custom_domain_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+    parts = urlsplit(origin)
+    host = (parts.hostname or "").lower()
+    return parts.scheme == "https" and bool(host) and not host.endswith(".pages.dev")

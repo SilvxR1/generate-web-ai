@@ -34,7 +34,13 @@ const { businessId, apiBaseUrl } = Astro.props;
 
 <script is:inline type="application/json" id="lead-submission-config" set:html={JSON.stringify({ businessId, apiBaseUrl })} />
 <script>
-  import { buildPublicLeadPayload } from "../lib/leadPayload.ts";
+  import { buildPublicLeadPayload, leadSourceUrl, SubmissionIdTracker } from "../lib/leadPayload.ts";
+
+  /** C2.3: a request with no answer after this long is treated like a
+   * network failure, so the visitor can retry (with the same
+   * submission_id) instead of facing a form that stays disabled. */
+  const REQUEST_TIMEOUT_MS = 20_000;
+  const submissionIds = new SubmissionIdTracker<HTMLFormElement>();
 
   declare global {
     interface Window {
@@ -109,20 +115,30 @@ const { businessId, apiBaseUrl } = Astro.props;
     status.textContent = "";
     status.classList.remove("block-contact__status--error", "block-contact__status--success");
 
-    const payload = buildPublicLeadPayload({ fields, serviceLabel: resolveServiceLabel(form) });
+    const canonicalHref = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href;
+    const content = buildPublicLeadPayload({
+      fields,
+      serviceLabel: resolveServiceLabel(form),
+      sourceUrl: leadSourceUrl({ href: window.location.href, canonicalHref }),
+    });
+    // Same content as the previous, failed attempt: a retry, same id.
+    const payload = { ...content, submission_id: submissionIds.idFor(form, content) };
 
     let succeeded = false;
     // A8.3.4-P0.2: the visitor always sees the same safe message below, but
     // the console records WHICH boundary failed (only a category and the
     // HTTP status — never the response body or any submitted field), so a
     // CSP/network block is no longer indistinguishable from a 4xx/429/5xx.
-    let failure: "network_or_csp" | "validation" | "rate_limited" | "server" | null = null;
+    let failure: "network_or_csp" | "timeout" | "validation" | "rate_limited" | "server" | null = null;
     let failureStatus: number | undefined;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
       const response = await fetch(leadsUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       // A non-2xx here is a real backend/network problem (rate limited,
       // validation error, disabled lead capture, ...) — never confused
@@ -137,13 +153,16 @@ const { businessId, apiBaseUrl } = Astro.props;
         failure = response.status === 429 ? "rate_limited" : response.status >= 500 ? "server" : "validation";
       }
     } catch {
-      // fetch() rejects without a response: offline, DNS, CORS, or a
-      // Content-Security-Policy connect-src block.
-      failure = "network_or_csp";
+      // fetch() rejects without a response: offline, DNS, CORS, a
+      // Content-Security-Policy connect-src block, or our own timeout.
+      failure = controller.signal.aborted ? "timeout" : "network_or_csp";
+    } finally {
+      window.clearTimeout(timer);
     }
     if (failure) console.warn("[gwa] lead submission failed", { reason: failure, status: failureStatus });
 
     if (succeeded) {
+      submissionIds.forget(form); // sent: nothing left to retry
       form.dataset.leadSubmissionState = "submitted";
       status.textContent = "Gracias. Hemos recibido tu mensaje y te responderemos en breve.";
       status.classList.add("block-contact__status--success");

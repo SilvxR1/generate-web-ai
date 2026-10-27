@@ -132,6 +132,10 @@ To work on a single app, use Turborepo filtering, e.g.
 `apps/api` is a separate Python project (`uv sync`, `uv run pytest`, see
 `apps/api/README.md`) — not part of the pnpm workspace.
 
+Local services must never reach production: check the machine first and
+start things in the order given in
+[docs/local-development.md](docs/local-development.md).
+
 ### Full stack via Docker Compose
 
 ```bash

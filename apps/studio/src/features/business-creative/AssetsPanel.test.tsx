@@ -235,3 +235,64 @@ describe("AssetsPanel", () => {
     expect(screen.queryByText(/^Alt text$/)).not.toBeInTheDocument();
   });
 });
+
+describe("AssetsPanel alt text (C2.1)", () => {
+  it("saves a typed description for an existing photo, trimmed, and clears it to null", async () => {
+    const user = userEvent.setup();
+    const onUpdateAltText = vi.fn(async (_id: string, altText: string | null) => photoAsset({ alt_text: altText }));
+    const { rerender } = render(
+      <AssetsPanel
+        assets={[photoAsset()]}
+        isLoading={false}
+        error={null}
+        onUpload={vi.fn()}
+        onUploadBatch={vi.fn()}
+        onAdd={vi.fn()}
+        onDelete={vi.fn()}
+        onReplace={vi.fn()}
+        onUpdateAltText={onUpdateAltText}
+      />,
+    );
+
+    const input = screen.getByLabelText("Description (alt text)");
+    const save = screen.getByRole("button", { name: "Save description" });
+    expect(save).toBeDisabled();
+
+    await user.type(input, "  Bolso de ganchillo verde  ");
+    await user.click(save);
+    await waitFor(() => expect(onUpdateAltText).toHaveBeenCalledWith("asset-1", "Bolso de ganchillo verde"));
+
+    rerender(
+      <AssetsPanel
+        assets={[photoAsset({ alt_text: "Bolso de ganchillo verde" })]}
+        isLoading={false}
+        error={null}
+        onUpload={vi.fn()}
+        onUploadBatch={vi.fn()}
+        onAdd={vi.fn()}
+        onDelete={vi.fn()}
+        onReplace={vi.fn()}
+        onUpdateAltText={onUpdateAltText}
+      />,
+    );
+    await user.clear(input);
+    await user.click(save);
+    await waitFor(() => expect(onUpdateAltText).toHaveBeenLastCalledWith("asset-1", null));
+  });
+
+  it("shows no alt-text editor when the caller can't save one", () => {
+    render(
+      <AssetsPanel
+        assets={[photoAsset()]}
+        isLoading={false}
+        error={null}
+        onUpload={vi.fn()}
+        onUploadBatch={vi.fn()}
+        onAdd={vi.fn()}
+        onDelete={vi.fn()}
+        onReplace={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText("Description (alt text)")).toBeNull();
+  });
+});

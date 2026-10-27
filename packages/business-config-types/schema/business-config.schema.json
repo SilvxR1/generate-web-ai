@@ -525,6 +525,10 @@
           "default": true,
           "type": "boolean"
         },
+        "consent_required": {
+          "default": false,
+          "type": "boolean"
+        },
         "destination": {
           "anyOf": [
             {
@@ -549,6 +553,19 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "retention_days": {
+          "anyOf": [
+            {
+              "maximum": 3650,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "sources": {
           "items": {
@@ -590,6 +607,30 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "data_retention": {
+          "anyOf": [
+            {
+              "maxLength": 300,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "first_layer_notice": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "legal_name": {
           "anyOf": [

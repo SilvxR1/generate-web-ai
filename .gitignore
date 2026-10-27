@@ -65,3 +65,6 @@ graphify-out/
 .impeccable/live/deferred-svelte-component-accepts.json
 .impeccable/live/*.png
 # impeccable-ignore-end
+
+# Private client documents and exports (personal data). Never commit.
+docs/clients/

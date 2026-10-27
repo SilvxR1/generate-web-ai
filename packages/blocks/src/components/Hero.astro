@@ -85,7 +85,7 @@ const { eyebrow, heading, subheading, primaryAction, secondaryAction, image, sta
       {image && (
         <div class="block-hero__media">
           <div class="block-hero__frame">
-            <Media src={image.src} alt={image.alt} width={image.width} height={image.height} ratio="4/5" radius="sm" loading="eager" />
+            <Media src={image.src} alt={image.alt} width={image.width} height={image.height} ratio="4/5" radius="sm" loading="eager" fetchpriority="high" />
           </div>
           {stat && (
             <div class="block-hero__stat">

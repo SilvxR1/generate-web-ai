@@ -25,3 +25,15 @@ class LeadManagementConfig(BaseModel):
     # AutomationConfig.follow_up, which is the richer definition of the
     # same capability (see automation.py's docstring).
     follow_up: bool = False
+    # C2.1: when True the generated contact form shows a required consent
+    # checkbox and POST /public/businesses/{id}/leads refuses a submission
+    # without `consent: true` (422 consent_required). Opt-in (default
+    # False) so a site already live without the checkbox keeps working:
+    # enable it only after republishing a site whose form renders it.
+    consent_required: bool = False
+    # P1: how many days a lead is kept after its last activity in GWA (the
+    # later of its last update and its newest note) before the retention
+    # job (app.leads.retention) deletes it. None = never deleted
+    # automatically. Enforcement only: the wording visitors read is the
+    # owner's own legal_profile.data_retention, never derived from this.
+    retention_days: int | None = Field(default=None, ge=1, le=3650)

@@ -133,7 +133,7 @@ def build_site(site_config: SiteConfigPayload) -> WebsiteArtifact:
         if result.returncode != 0:
             raise SiteBuildError(f"astro build failed (exit {result.returncode}): {_tail(result.stderr)}")
 
-        return _read_artifact(out_dir, public_api_origin=public_api_origin)
+        return _read_artifact(out_dir, public_api_origin=public_api_origin, canonical_site_url=site_config.siteUrl)
     except subprocess.TimeoutExpired as exc:
         raise SiteBuildError(f"astro build timed out after {_BUILD_TIMEOUT_SECONDS}s") from exc
     except OSError as exc:
@@ -150,7 +150,14 @@ def _subprocess_env() -> dict[str, str]:
     return dict(os.environ)
 
 
-def _read_artifact(out_dir: Path, *, public_api_origin: str | None = None) -> WebsiteArtifact:
+# C2.1: the English legal paths a site published before the Spanish
+# templates may already have linked or had indexed.
+_LEGACY_LEGAL_REDIRECTS = {"/privacy": "/privacidad/", "/terms": "/aviso-legal/"}
+
+
+def _read_artifact(
+    out_dir: Path, *, public_api_origin: str | None = None, canonical_site_url: str | None = None
+) -> WebsiteArtifact:
     if not out_dir.is_dir():
         raise SiteBuildError(f"astro build reported success but {out_dir} doesn't exist")
 
@@ -173,8 +180,19 @@ def _read_artifact(out_dir: Path, *, public_api_origin: str | None = None) -> We
     # not just index.html.
     html_files = [content for path, content in files.items() if path.endswith(".html")]
     files["_headers"] = generate_headers_file(
-        script_hashes=_inline_script_hashes(html_files), public_api_origin=public_api_origin
+        script_hashes=_inline_script_hashes(html_files),
+        public_api_origin=public_api_origin,
+        canonical_site_url=canonical_site_url,
     )
+    # C2.1: permanent redirects from the old English legal paths, only to a
+    # Spanish page this build actually contains (Cloudflare Pages _redirects).
+    redirects = [
+        f"{source} {target} 301"
+        for source, target in _LEGACY_LEGAL_REDIRECTS.items()
+        if f"{target.strip('/')}/index.html" in files and f"{source.strip('/')}/index.html" not in files
+    ]
+    if redirects:
+        files["_redirects"] = ("\n".join(redirects) + "\n").encode("utf-8")
 
     return WebsiteArtifact(files=files, entry_point="index.html")
 

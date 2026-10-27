@@ -54,7 +54,14 @@ _WHATSAPP_LINK = re.compile(r"wa\.me/")
 _ANIMATION_RULE = re.compile(r"@keyframes|animation\s*:")
 _REDUCED_MOTION_QUERY = re.compile(r"prefers-reduced-motion")
 
-_LEGAL_SLUGS = ("privacy", "terms", "cookies")
+# Each required legal page and the slugs that satisfy it: the English ones,
+# plus (C2.1) the Spanish client templates' /privacidad and /aviso-legal.
+# The first slug names the page in findings, as before.
+_LEGAL_PAGES: tuple[tuple[str, ...], ...] = (("privacy", "privacidad"), ("terms", "aviso-legal"), ("cookies",))
+
+
+def _legal_slug_present(files: dict[str, bytes], slugs: tuple[str, ...]) -> str | None:
+    return next((slug for slug in slugs if f"{slug}/index.html" in files or f"{slug}.html" in files), None)
 
 # A8.3.4-P0: the runtime config the built site's browser scripts read their
 # API origin from. Deterministic builds render `lead-submission-config`
@@ -363,13 +370,13 @@ def _check_public_api_csp(
 
 def _check_legal_pages(files: dict[str, bytes]) -> list[PlatformContractFinding]:
     findings = []
-    for slug in _LEGAL_SLUGS:
-        if f"{slug}/index.html" not in files and f"{slug}.html" not in files:
+    for slugs in _LEGAL_PAGES:
+        if _legal_slug_present(files, slugs) is None:
             findings.append(
                 PlatformContractFinding(
                     rule="missing_legal_page",
                     severity=PlatformContractSeverity.BLOCKING,
-                    message=f"No /{slug} legal page found in the build output.",
+                    message=f"No /{slugs[0]} legal page found in the build output.",
                 )
             )
     return findings
@@ -519,8 +526,9 @@ def _check_legal_links(files: dict[str, bytes], html_files: dict[str, str]) -> l
         return []
     hrefs = {href.split("#")[0].split("?")[0].rstrip("/") or "/" for href in _ANCHOR_HREF.findall(entry)}
     findings = []
-    for slug in _LEGAL_SLUGS:
-        if f"{slug}/index.html" not in files and f"{slug}.html" not in files:
+    for slugs in _LEGAL_PAGES:
+        slug = _legal_slug_present(files, slugs)
+        if slug is None:
             continue  # missing_legal_page reports it
         if not ({f"/{slug}", f"/{slug}.html", f"/{slug}/index.html", slug} & hrefs):
             findings.append(

@@ -741,6 +741,22 @@ dd {
   font-size: 0.8rem;
 }
 
+.assets-panel__alt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0 0.6rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.assets-panel__alt .field-label {
+  margin: 0;
+}
+
+.assets-panel__alt button {
+  align-self: flex-start;
+}
+
 .assets-panel__card-label {
   overflow: hidden;
   text-overflow: ellipsis;
