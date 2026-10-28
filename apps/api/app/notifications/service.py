@@ -21,6 +21,12 @@ deliberately separate, never conflated:
 
 All three never raise for a legitimate "nothing to deliver to (yet)"
 state — only for a real, configured provider call that itself failed.
+
+Reply-To: emails to a lead reply to the business's own contact email
+(the From address is the platform's shared sending domain, whose inbox
+nobody reads); the owner notification about a lead replies to that
+lead. Either is dropped — never the email — when the address is missing
+or fails safe_reply_to.
 """
 
 import re
@@ -32,7 +38,7 @@ from app.db.models.lead import Lead
 from app.domain.business_config import BusinessConfig
 from app.domain.enums import LeadStatus, NotificationDeliveryStatus
 from app.notifications.errors import NotificationSenderError
-from app.notifications.sender import NotificationEmail, NotificationSender
+from app.notifications.sender import NotificationEmail, NotificationSender, safe_reply_to
 
 
 class NotificationDeliveryError(Exception):
@@ -111,6 +117,11 @@ def _submitted_at(when: datetime | None, labels: dict[str, str]) -> str:
         return f"{moment.astimezone(UTC):%d/%m/%Y, %H:%M} (UTC)"
 
 
+def _business_reply_to(business_config: BusinessConfig) -> str | None:
+    contact = business_config.business_profile.contact
+    return safe_reply_to(contact.email) if contact is not None else None
+
+
 def owner_notification_body(*, lead: Lead, business_name: str, locale: str) -> str:
     """P4: what the owner needs to read and answer a contact message —
     never the lead id, the page URL, consent flags or other metadata.
@@ -172,6 +183,7 @@ def deliver_internal_notification(
                     if lead is not None
                     else notification.summary
                 ),
+                reply_to=safe_reply_to(lead.email) if lead is not None else None,
             )
         )
     except NotificationSenderError as exc:
@@ -254,6 +266,7 @@ def deliver_lead_acknowledgement_email(
                     "Gracias por contactarnos. Hemos recibido tu mensaje y te responderemos en breve.\n\n"
                     "Un saludo."
                 ),
+                reply_to=_business_reply_to(business_config),
             )
         )
     except NotificationSenderError as exc:
@@ -336,6 +349,7 @@ def deliver_lead_follow_up_email(
                     "consulta. Si tienes alguna pregunta, responde a este correo y te atenderemos con gusto.\n\n"
                     f"Un saludo,\nEl equipo de {business_name}"
                 ),
+                reply_to=_business_reply_to(business_config),
             )
         )
     except NotificationSenderError as exc:

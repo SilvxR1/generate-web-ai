@@ -49,6 +49,8 @@ class ResendNotificationSender(NotificationSender):
             "subject": message.subject,
             "text": message.body,
         }
+        if message.reply_to:
+            payload["reply_to"] = [message.reply_to]
         # Deliberately no logging of `payload` or of headers (holds the
         # API key) — nothing here is logged at all, so there's nothing
         # for a secret to leak into.
