@@ -39,6 +39,8 @@ class SmtpNotificationSender(NotificationSender):
         mime_message["From"] = self._from_address
         mime_message["To"] = message.to
         mime_message["Subject"] = message.subject
+        if message.reply_to:
+            mime_message["Reply-To"] = message.reply_to
         mime_message.set_content(message.body)
 
         try:
