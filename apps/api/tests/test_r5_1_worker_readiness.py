@@ -38,6 +38,7 @@ from app.db.models.website_draft import WebsiteDraft
 from app.dependencies import get_current_tenant_id, get_current_user
 from app.domain.enums import GenerationFailureKind, GenerationJobStatus, SourceImportStatus, WebsiteDraftStatus
 from app.main import app
+from app.storage.local import LocalStorageProvider
 from app.worker import __main__ as worker_main
 from app.worker import intake, preflight
 from app.worker.protocol import ExecutionRequest, ExecutionResult
@@ -67,6 +68,7 @@ def _worker_process_protection_stubbed(monkeypatch):
 
     monkeypatch.setattr(process_protection, "make_non_dumpable", lambda: None)
     monkeypatch.setattr(process_protection, "is_non_dumpable", lambda: True)
+
 
 def _base_environ(**extra: str) -> dict[str, str]:
     return {
@@ -99,7 +101,9 @@ def _failed(report: preflight.PreflightReport) -> set[str]:
 
 def _claimed_request(env: Env, job: GenerationJob) -> ExecutionRequest:
     """The exact build input the claim handed the worker for this job."""
-    return intake._source_adaptation_request(env.session, job, env.storage)
+    return intake._source_adaptation_request(
+        env.session, job, env.storage, LocalStorageProvider(root_dir=env.tmp / "public")
+    )
 
 
 def _download(env: Env, job: GenerationJob, token: str) -> bytes:

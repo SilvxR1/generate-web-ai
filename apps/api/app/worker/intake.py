@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.creative import business_inputs, source_imports
 from app.creative import generation_jobs as jobs
 from app.creative.frontend_engine.build import artifact_headers
+from app.creative.frontend_engine.sandboxed_browser_qa import MAX_OFFLINE_ASSET_BYTES
 from app.db.models.generation_job import GenerationJob
 from app.db.models.website_draft import WebsiteDraft
 from app.domain.business_config import BusinessConfig
@@ -37,6 +38,7 @@ from app.domain.enums import (
 from app.publishing.csp_policy import DEFAULT_SOURCE_FAMILY, UnsupportedCspRequirementError, parse_family, policy_for
 from app.publishing.drafts import _visual_qa_assets, judge_generative_candidate
 from app.publishing.qa_evidence import visual_qa_evidence
+from app.repositories.business_asset import BusinessAssetRepository
 from app.repositories.generative_website_artifact import GenerativeWebsiteArtifactRepository
 from app.repositories.website_draft import WebsiteDraftRepository
 from app.storage import StorageProvider, generate_storage_key
@@ -178,7 +180,7 @@ def claim_next(
     token = issue_job_token(job_id=job.id, attempt=job.attempts, signing_key=signing_key)
     if job.job_kind is GenerationJobKind.SOURCE_ADAPTATION:
         try:
-            return _source_adaptation_request(session, job, artifact_storage), token
+            return _source_adaptation_request(session, job, artifact_storage, asset_storage), token
         except (IntakeError, source_imports.SourceImportError) as exc:
             jobs.fail(job, kind=GenerationFailureKind.CANDIDATE_REJECTED, error=f"job input refused: {exc}")
             return None
@@ -197,16 +199,22 @@ def claim_next(
 
 
 def _source_adaptation_request(
-    session: Session, job: GenerationJob, artifact_storage: PrivateArtifactStorage
+    session: Session, job: GenerationJob, artifact_storage: PrivateArtifactStorage, asset_storage: StorageProvider
 ) -> ExecutionRequest:
     """R5: a supervised export's build input — identities, the exact stored
     AdaptationPlan and where the site will live. The snapshot itself is
     downloaded with the job token (download_source); no BusinessConfig, no
-    database URL, no storage or provider credential is ever sent."""
+    database URL, no storage or provider credential is ever sent.
+
+    The plan can embed the business's own stored assets by URL (the brand
+    policy's owner-approved logo). Visual QA runs with no network, so exactly
+    the assets the plan references are handed in as bytes, as the generative
+    path does (`_visual_qa_assets`); an unreferenced asset is never sent."""
     row = source_imports.import_for_job(session, job)
     if row is None:
         raise IntakeError("source-adaptation job has no source import")
     plan = source_imports.load_plan(row, artifact_storage)
+    plan_dict = plan.to_dict(include_binary=True)
     return ExecutionRequest(
         job_id=job.id,
         attempt=job.attempts,
@@ -216,10 +224,40 @@ def _source_adaptation_request(
         source_sha256=str(job.source_sha256),
         job_kind=job.job_kind,
         trust_class=job.trust_class,
-        adaptation_plan=plan.to_dict(include_binary=True),
+        adaptation_plan=plan_dict,
         plan_sha256=plan.plan_sha256,
         site_origin=row.site_origin,
+        offline_assets={
+            url: b64(data)
+            for url, data in _referenced_assets(
+                session, job.tenant_id, job.business_id, asset_storage, json.dumps(plan_dict)
+            ).items()
+        },
     )
+
+
+def _referenced_assets(
+    session: Session, tenant_id: uuid.UUID, business_id: uuid.UUID, storage: StorageProvider, plan_text: str
+) -> dict[str, bytes]:
+    """The business's stored assets whose public URL the adaptation plan
+    embeds, as bytes for offline Visual QA. Loads only those (an export's
+    own images ship inside the artifact). Best effort per asset, like
+    `_visual_qa_assets`: one that can't be loaded shows up as a broken image."""
+    assets: dict[str, bytes] = {}
+    total = 0
+    for asset in BusinessAssetRepository(session).list_for_business(tenant_id, business_id):
+        if asset.storage_key is None or asset.unavailable_reason is not None or asset.storage_url not in plan_text:
+            continue
+        try:
+            content = storage.load(asset.storage_key)
+        except Exception:  # noqa: BLE001 — surfaced as a broken-image finding instead
+            logger.warning("visual QA asset could not be loaded (asset_id=%s)", asset.id)
+            continue
+        total += len(content)
+        if total > MAX_OFFLINE_ASSET_BYTES:
+            break
+        assets[asset.storage_url] = content
+    return assets
 
 
 def download_source(job: GenerationJob, artifact_storage: PrivateArtifactStorage) -> bytes:

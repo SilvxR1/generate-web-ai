@@ -26,7 +26,7 @@ from pathlib import Path
 
 from app.creative.frontend_engine.browser_qa import BrowserQAUnavailableError, run_browser_qa
 from app.creative.frontend_engine.sandbox import SandboxError, SandboxRunner, SupervisedProcessRunner
-from app.creative.frontend_engine.sandboxed_browser_qa import run_browser_qa_sandboxed
+from app.creative.frontend_engine.sandboxed_browser_qa import MAX_OFFLINE_ASSET_BYTES, run_browser_qa_sandboxed
 from app.creative.source_adapter.pipeline import plan_csp
 from app.creative.source_adapter.plan import AdaptationPlan, PlanDriftError, apply_plan
 from app.creative.source_adapter.records import AdapterError
@@ -36,7 +36,16 @@ from app.creative.source_adapter.static_build import StaticBuildError, Toolchain
 from app.domain.enums import GenerationFailureKind, GenerationJobKind
 from app.publishing.csp_policy import UnsupportedCspRequirementError
 from app.worker.preflight import browser_env
-from app.worker.protocol import ExecutionRequest, ExecutionResult, VisualQAReport, b64, pack_files, sha256_hex
+from app.worker.protocol import (
+    ExecutionRequest,
+    ExecutionResult,
+    ProtocolError,
+    VisualQAReport,
+    b64,
+    pack_files,
+    sha256_hex,
+    unb64,
+)
 
 logger = logging.getLogger(__name__)
 # R5.1: the whole job (install + build + assemble + QA) must finish well
@@ -215,15 +224,24 @@ def _execute(
             return _failed(
                 request, GenerationFailureKind.RESOURCE_LIMIT, "no time left for Visual QA before the job deadline"
             )
+        # The plan may embed the business's own stored assets (the owner-approved logo); intake hands exactly those
+        # in as bytes because Visual QA has no network.
+        try:
+            assets = {url: unb64(data, limit=MAX_OFFLINE_ASSET_BYTES) for url, data in request.offline_assets.items()}
+        except (ProtocolError, ValueError) as exc:
+            return _failed(request, GenerationFailureKind.CANDIDATE_REJECTED, f"invalid offline assets: {exc}")
         try:
             if runner.name == "bubblewrap":
                 qa = run_browser_qa_sandboxed(
-                    artifact.files, offline_assets={}, capture_screenshots=True, runner=runner
+                    artifact.files, offline_assets=assets, capture_screenshots=True, runner=runner
                 )
             else:
                 with tempfile.TemporaryDirectory(prefix="gwa-qa-home-") as home:
                     qa = run_browser_qa(
-                        artifact.files, offline_assets={}, capture_screenshots=True, browser_env=browser_env(Path(home))
+                        artifact.files,
+                        offline_assets=assets,
+                        capture_screenshots=True,
+                        browser_env=browser_env(Path(home)),
                     )
         except BrowserQAUnavailableError as exc:
             return _failed(request, GenerationFailureKind.SANDBOX_UNAVAILABLE, str(exc), **metadata)
